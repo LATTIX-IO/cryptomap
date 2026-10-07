@@ -1,0 +1,11 @@
+# Default ownership for the Lattix FOSS project.
+# Owners must have explicit write access to this repository.
+
+* @jmsbooth
+
+# Security-sensitive repository configuration.
+.github/ @jmsbooth
+Cargo.toml @jmsbooth
+Cargo.lock @jmsbooth
+**/Cargo.toml @jmsbooth
+SECURITY.md @jmsbooth
