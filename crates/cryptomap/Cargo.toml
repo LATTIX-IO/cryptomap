@@ -7,11 +7,11 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "cryptomap library for the cryptomap project."
+readme = "README.md"
 
 # Prevent accidental publication of placeholder packages.
 # Remove this only when the crate has a real public API, documentation,
 # tests, metadata, and its crates.io name has been re-validated.
-publish = false
-
+publish = ["crates-io"]
 [lints]
 workspace = true
