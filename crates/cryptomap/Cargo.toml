@@ -1,0 +1,17 @@
+[package]
+name = "cryptomap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "cryptomap library for the cryptomap project."
+
+# Prevent accidental publication of placeholder packages.
+# Remove this only when the crate has a real public API, documentation,
+# tests, metadata, and its crates.io name has been re-validated.
+publish = false
+
+[lints]
+workspace = true
