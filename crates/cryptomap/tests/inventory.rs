@@ -39,6 +39,7 @@ fn evidence() -> Evidence {
         kind: EvidenceKind::Direct,
         confidence: Confidence::Confirmed,
         source_sha256: None,
+        inference_rule: None,
     }
 }
 fn observation(name: &str, value: &str) -> Observation {
