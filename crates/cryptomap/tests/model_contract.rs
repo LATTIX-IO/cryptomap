@@ -597,3 +597,28 @@ fn incompatible_metadata_cannot_be_silently_merged_under_the_same_id() {
             .is_err()
     );
 }
+
+#[test]
+fn matching_relationships_accumulate_independent_evidence() {
+    let mut builder=InventoryBuilder::new();
+    builder.add_run(run("r1","app")).unwrap();
+    builder.add_asset(library("app")).unwrap();
+    builder.add_asset(library("lib")).unwrap();
+    builder.add_evidence(ev("first","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
+    builder.add_evidence(ev("second","r1","2026-10-08T01:01:00Z",Confidence::Confirmed)).unwrap();
+    let key=RelationshipId::from_endpoints(RelationshipKind::DependsOn,&id("app"),&id("lib")).unwrap();
+    let backwards=RelationshipId::from_endpoints(RelationshipKind::DependsOn,&id("lib"),&id("app")).unwrap();
+    assert_ne!(key,backwards);
+
+    for evidence in ["first","second"] {
+        builder.add_relationship(Relationship{
+            id:key.clone(), from:id("app"), to:id("lib"),
+            kind:RelationshipKind::DependsOn,
+            evidence:BTreeSet::from([EvidenceId::new(evidence).unwrap()]),
+        }).unwrap();
+    }
+    let snapshot=builder.finalize(InventoryLimits::default()).unwrap();
+    assert_eq!(snapshot.relationships.len(),1);
+    assert_eq!(snapshot.relationships[&key].evidence.len(),2);
+    snapshot.verify(InventoryLimits::default()).unwrap();
+}
