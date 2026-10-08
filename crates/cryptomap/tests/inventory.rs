@@ -1,3 +1,4 @@
+//! Baseline identity, snapshot and integrity integration tests.
 // Integration fixtures use unwrap to express required successful preconditions.
 #![allow(clippy::unwrap_used)]
 use cryptomap::*;
