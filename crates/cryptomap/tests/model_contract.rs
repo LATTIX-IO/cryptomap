@@ -503,3 +503,74 @@ fn case_sensitive_source_use_sites_never_merge() {
         AssetId::from_kind(&lower, &context).unwrap()
     );
 }
+
+#[test]
+fn certificate_reconciliation_preserves_independent_collector_provenance() {
+    let context = IdentityContext::new("prod").unwrap();
+    let fingerprint = "a".repeat(64);
+    let cert_kind = AssetKind::Certificate {
+        fingerprint_sha256: fingerprint,
+        public_key_profile: Some("RSA-3072".into()),
+        signature_profile: Some("SHA256-RSA".into()),
+    };
+    let mut builder = InventoryBuilder::new();
+    let mut file_run = run("file-run", "certificate.pem");
+    file_run.collector = CollectorId::new("filesystem").unwrap();
+    let mut tls_run = run("tls-run", "tls://service.example:443");
+    tls_run.collector = CollectorId::new("tls").unwrap();
+    builder.add_run(file_run).unwrap();
+    builder.add_run(tls_run).unwrap();
+
+    let from_file = builder.ingest_candidate(
+        cert_kind.clone(), &context, BTreeMap::new()).unwrap();
+    let from_tls = builder.ingest_candidate(
+        cert_kind, &context, BTreeMap::new()).unwrap();
+    assert_eq!(from_file, from_tls);
+
+    let mut first = ev("file-evidence", "file-run", "2026-10-08T00:30:00Z", Confidence::High);
+    first.collector = CollectorId::new("filesystem").unwrap();
+    first.source = "certificate.pem".into();
+    let mut second = ev("tls-evidence", "tls-run", "2026-10-08T00:31:00Z", Confidence::Confirmed);
+    second.collector = CollectorId::new("tls").unwrap();
+    second.source = "tls://service.example:443".into();
+    builder.add_evidence(first).unwrap();
+    builder.add_evidence(second).unwrap();
+
+    for (observation_id, evidence_id) in [
+        ("file-obs", "file-evidence"), ("tls-obs", "tls-evidence")
+    ] {
+        builder.add_observation(Observation {
+            id: ObservationId::new(observation_id).unwrap(),
+            asset: from_file.clone(),
+            evidence: EvidenceId::new(evidence_id).unwrap(),
+            property: "certificate:fingerprint".into(),
+            context: None,
+            value: "a".repeat(64),
+        }).unwrap();
+    }
+    let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+    assert_eq!(snapshot.assets.len(), 1);
+    assert_eq!(snapshot.observations_for(&from_file).count(), 2);
+    assert_eq!(snapshot.evidence.len(), 2);
+    assert_eq!(snapshot.conflicts.len(), 0);
+    let json = serde_json::to_string(&snapshot).unwrap();
+    assert_eq!(InventorySnapshot::from_json_verified(&json, InventoryLimits::default()).unwrap(), snapshot);
+}
+
+#[test]
+fn incompatible_metadata_cannot_be_silently_merged_under_the_same_id() {
+    let context = IdentityContext::new("prod").unwrap();
+    let mut builder = InventoryBuilder::new();
+    let first = AssetKind::Certificate {
+        fingerprint_sha256: "a".repeat(64),
+        public_key_profile: Some("RSA-3072".into()),
+        signature_profile: None,
+    };
+    let incompatible = AssetKind::Certificate {
+        fingerprint_sha256: "a".repeat(64),
+        public_key_profile: Some("EC-P256".into()),
+        signature_profile: None,
+    };
+    builder.ingest_candidate(first, &context, BTreeMap::new()).unwrap();
+    assert!(builder.ingest_candidate(incompatible, &context, BTreeMap::new()).is_err());
+}
