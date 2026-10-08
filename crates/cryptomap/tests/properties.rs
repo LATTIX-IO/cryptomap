@@ -1,3 +1,4 @@
+//! Deterministic property-style tests for canonical inventory invariants.
 // Deterministic property-style test corpus. Seeds are fixed for reproducibility.
 #![allow(clippy::unwrap_used)]
 use cryptomap::*;
