@@ -804,7 +804,7 @@ impl InventoryBuilder {
         }
         let mut result = InventorySnapshot {
             id: SnapshotId::new("pending")?,
-            schema_version: 1,
+            schema_version: 2,
             assets: self.assets,
             observations: self.observations,
             evidence: self.evidence,
@@ -886,7 +886,7 @@ pub struct ChangeSet {
 impl InventorySnapshot {
     /// Recalculate the digest and verify internal references on an imported snapshot.
     pub fn verify(&self, limits: InventoryLimits) -> Result<(), InventoryError> {
-        if self.schema_version != 1 {
+        if self.schema_version != 2 {
             return Err(InventoryError::UnsupportedSchema(self.schema_version));
         }
         let mut builder = InventoryBuilder::new();
