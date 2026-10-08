@@ -383,6 +383,22 @@ pub struct Relationship {
     /// Supporting evidence identifiers.
     pub evidence: BTreeSet<EvidenceId>,
 }
+impl RelationshipId {
+    /// Construct a direction-aware, type-specific edge identity independent
+    /// of observation ordering and supporting evidence count.
+    pub fn from_endpoints(
+        kind: RelationshipKind,
+        from: &AssetId,
+        to: &AssetId,
+    ) -> Result<Self, InventoryError> {
+        if from == to && !matches!(kind, RelationshipKind::RelatedTo) {
+            return Err(InventoryError::InvalidIdentifier);
+        }
+        let bytes = serde_json::to_vec(&("cryptomap:relationship:v1", kind, from, to))
+            .map_err(|e| InventoryError::Encoding(e.to_string()))?;
+        Self::new(format!("relationship:v1:{}", hex_digest(&bytes)))
+    }
+}
 /// Distinct contradictory values for the same asset/property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Conflict {
@@ -539,10 +555,12 @@ impl InventoryBuilder {
     }
     /// Insert typed asset relationship.
     pub fn add_relationship(&mut self, entry: Relationship) -> Result<&mut Self, InventoryError> {
-        if let Some(old) = self.relationships.get(&entry.id) {
-            if old != &entry {
+        if let Some(old) = self.relationships.get_mut(&entry.id) {
+            if old.from != entry.from || old.to != entry.to || old.kind != entry.kind {
                 return Err(InventoryError::InvalidIdentifier);
             }
+            old.evidence.extend(entry.evidence);
+            return Ok(self);
         }
         self.relationships.insert(entry.id.clone(), entry);
         Ok(self)
