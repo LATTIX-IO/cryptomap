@@ -8,6 +8,8 @@ pub mod coverage;
 pub mod identity;
 pub mod metadata;
 pub mod query;
+pub mod privacy;
+pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
 pub mod validation;
 pub use coverage::{CollectionRun, CollectionScopeId, CoverageRecord, RunCompleteness};
 pub use identity::{AssetIdentity, IdentityContext};
