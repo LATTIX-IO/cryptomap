@@ -131,7 +131,11 @@ fn type_specific_identity_is_stable_and_scoped() {
         algorithm: None,
     };
     assert_ne!(
-        AssetId::from_kind(&key, &a.clone().with_provider_instance("instance-1").unwrap()).unwrap(),
+        AssetId::from_kind(
+            &key,
+            &a.clone().with_provider_instance("instance-1").unwrap()
+        )
+        .unwrap(),
         AssetId::from_kind(&key, &a.with_provider_instance("instance-2").unwrap()).unwrap()
     );
 }
@@ -373,43 +377,59 @@ fn evidence_collector_must_match_declared_collection_run() {
 
 #[test]
 fn multiple_configured_capabilities_and_distinct_sessions_are_not_conflicts() {
-    let mut b=InventoryBuilder::new();
-    b.add_run(run("r1","app")).unwrap();
+    let mut b = InventoryBuilder::new();
+    b.add_run(run("r1", "app")).unwrap();
     b.add_asset(library("app")).unwrap();
-    b.add_evidence(ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
-    b.add_evidence(ev("e2","r1","2026-10-08T01:01:00Z",Confidence::High)).unwrap();
-    let mut a=obs("o1","e1","TLS_AES_128_GCM_SHA256");
-    a.property="protocol:configured".into();
-    let mut c=obs("o2","e2","TLS_AES_256_GCM_SHA384");
-    c.property="protocol:configured".into();
+    b.add_evidence(ev("e1", "r1", "2026-10-08T01:00:00Z", Confidence::High))
+        .unwrap();
+    b.add_evidence(ev("e2", "r1", "2026-10-08T01:01:00Z", Confidence::High))
+        .unwrap();
+    let mut a = obs("o1", "e1", "TLS_AES_128_GCM_SHA256");
+    a.property = "protocol:configured".into();
+    let mut c = obs("o2", "e2", "TLS_AES_256_GCM_SHA384");
+    c.property = "protocol:configured".into();
     b.add_observation(a).unwrap();
     b.add_observation(c).unwrap();
-    assert!(b.finalize(InventoryLimits::default()).unwrap().conflicts.is_empty());
+    assert!(
+        b.finalize(InventoryLimits::default())
+            .unwrap()
+            .conflicts
+            .is_empty()
+    );
 
-    let mut b=InventoryBuilder::new();
-    b.add_run(run("r1","app")).unwrap();
+    let mut b = InventoryBuilder::new();
+    b.add_run(run("r1", "app")).unwrap();
     b.add_asset(library("app")).unwrap();
-    b.add_evidence(ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
-    b.add_evidence(ev("e2","r1","2026-10-08T01:01:00Z",Confidence::High)).unwrap();
-    let mut a=obs("o1","e1","TLS1.2");
-    let mut c=obs("o2","e2","TLS1.3");
-    a.context=Some("connection-a".into());
-    c.context=Some("connection-b".into());
+    b.add_evidence(ev("e1", "r1", "2026-10-08T01:00:00Z", Confidence::High))
+        .unwrap();
+    b.add_evidence(ev("e2", "r1", "2026-10-08T01:01:00Z", Confidence::High))
+        .unwrap();
+    let mut a = obs("o1", "e1", "TLS1.2");
+    let mut c = obs("o2", "e2", "TLS1.3");
+    a.context = Some("connection-a".into());
+    c.context = Some("connection-b".into());
     b.add_observation(a).unwrap();
     b.add_observation(c).unwrap();
-    assert!(b.finalize(InventoryLimits::default()).unwrap().conflicts.is_empty());
+    assert!(
+        b.finalize(InventoryLimits::default())
+            .unwrap()
+            .conflicts
+            .is_empty()
+    );
 }
 
 #[test]
 fn endpoint_identity_matches_cross_platform_v2_golden_vector() {
-    let context=IdentityContext::new("tenant-a").unwrap();
-    let endpoint=AssetKind::Endpoint{
-        transport:"TCP".into(),
-        host:"EXAMPLE.com.".into(),
-        port:443,
-        scope:"prod".into(),
+    let context = IdentityContext::new("tenant-a").unwrap();
+    let endpoint = AssetKind::Endpoint {
+        transport: "TCP".into(),
+        host: "EXAMPLE.com.".into(),
+        port: 443,
+        scope: "prod".into(),
     };
-    let id=AssetId::from_kind(&endpoint,&context).unwrap();
-    assert_eq!(id.as_str(),
-        "asset:v2:85e78bf3a84092d09e219bd9d48e082aeb5d093afa28e098b66c0af76f66d0d3");
+    let id = AssetId::from_kind(&endpoint, &context).unwrap();
+    assert_eq!(
+        id.as_str(),
+        "asset:v2:85e78bf3a84092d09e219bd9d48e082aeb5d093afa28e098b66c0af76f66d0d3"
+    );
 }

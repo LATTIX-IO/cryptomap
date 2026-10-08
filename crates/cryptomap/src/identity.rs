@@ -18,7 +18,10 @@ pub struct IdentityContext {
 }
 impl IdentityContext {
     /// Pin an exact provider instance for identity derivation of keys and stores.
-    pub fn with_provider_instance(mut self, instance: impl Into<String>) -> Result<Self, InventoryError> {
+    pub fn with_provider_instance(
+        mut self,
+        instance: impl Into<String>,
+    ) -> Result<Self, InventoryError> {
         let instance = instance.into();
         validate_component(&instance)?;
         self.provider_instance = Some(instance);
@@ -130,9 +133,17 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             let id = fingerprint
                 .as_deref()
                 .ok_or(InventoryError::InsufficientIdentity)?;
-            ("key", vec![scope,
-                ctx.provider_instance.clone().ok_or(InventoryError::InsufficientIdentity)?,
-                fold(prov)?, fold(id)?])
+            (
+                "key",
+                vec![
+                    scope,
+                    ctx.provider_instance
+                        .clone()
+                        .ok_or(InventoryError::InsufficientIdentity)?,
+                    fold(prov)?,
+                    fold(id)?,
+                ],
+            )
         }
         AssetKind::Certificate {
             fingerprint_sha256, ..
@@ -187,11 +198,17 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
                 .ok_or(InventoryError::InsufficientIdentity)?;
             ("runtime", vec![scope, fold(name)?, version.to_string()])
         }
-        AssetKind::KeyStore { provider, name } => {
-            ("keystore", vec![scope,
-                ctx.provider_instance.clone().ok_or(InventoryError::InsufficientIdentity)?,
-                fold(provider)?,name.clone()])
-        }
+        AssetKind::KeyStore { provider, name } => (
+            "keystore",
+            vec![
+                scope,
+                ctx.provider_instance
+                    .clone()
+                    .ok_or(InventoryError::InsufficientIdentity)?,
+                fold(provider)?,
+                name.clone(),
+            ],
+        ),
         AssetKind::SourceUse { source, location } => {
             ("source-use", vec![scope, source.clone(), location.clone()])
         }
@@ -238,9 +255,17 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
                 crate::metadata::Observed::Known(v) => v,
                 _ => return Err(InventoryError::InsufficientIdentity),
             };
-            ("key", vec![scope,
-                ctx.provider_instance.clone().ok_or(InventoryError::InsufficientIdentity)?,
-                fold(provider)?,fold(key)?])
+            (
+                "key",
+                vec![
+                    scope,
+                    ctx.provider_instance
+                        .clone()
+                        .ok_or(InventoryError::InsufficientIdentity)?,
+                    fold(provider)?,
+                    fold(key)?,
+                ],
+            )
         }
         AssetKind::DetailedCertificate { metadata: m } => {
             ("certificate", vec![fold(&m.fingerprint_sha256)?])

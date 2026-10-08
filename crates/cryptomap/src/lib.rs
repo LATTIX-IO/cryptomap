@@ -689,14 +689,23 @@ impl InventoryBuilder {
             // belong to one current-state conflict group; historical changes remain history.
             // Set-valued properties represent multiple compatible capabilities,
             // not contradictory scalar state.
-            if matches!(obs.property.as_str(),
-                "protocol:configured" | "algorithm:supported" | "certificate:san" |
-                "key:allowed-usage") {
+            if matches!(
+                obs.property.as_str(),
+                "protocol:configured"
+                    | "algorithm:supported"
+                    | "certificate:san"
+                    | "key:allowed-usage"
+            ) {
                 continue;
             }
             let bucket = validation::utc_seconds(&evidence.observed_at)?.div_euclid(3600);
             grouped
-                .entry((obs.asset.clone(), obs.property.clone(), obs.context.clone(), bucket))
+                .entry((
+                    obs.asset.clone(),
+                    obs.property.clone(),
+                    obs.context.clone(),
+                    bucket,
+                ))
                 .or_default()
                 .entry(obs.value.clone())
                 .or_default()
@@ -786,8 +795,9 @@ impl InventoryBuilder {
         let mut conflicts = BTreeMap::new();
         for ((asset, property, context, bucket), values) in grouped {
             if values.len() > 1 {
-                let bytes = serde_json::to_vec(&(asset.clone(), property.clone(), context.clone(), bucket))
-                    .map_err(|e| InventoryError::Encoding(e.to_string()))?;
+                let bytes =
+                    serde_json::to_vec(&(asset.clone(), property.clone(), context.clone(), bucket))
+                        .map_err(|e| InventoryError::Encoding(e.to_string()))?;
                 let id = ConflictId::new(format!("sha256:{}", hex_digest(&bytes)))?;
                 conflicts.insert(
                     id.clone(),

@@ -173,7 +173,9 @@ impl Observation {
     /// Validate the shape of an evidence-backed claim.
     pub fn validate(&self, limits: &InventoryLimits) -> Result<(), InventoryError> {
         property_key(&self.property)?;
-        if let Some(context)=&self.context {safe_text(context,limits.field_bytes)?;}
+        if let Some(context) = &self.context {
+            safe_text(context, limits.field_bytes)?;
+        }
         safe_text(&self.value, limits.field_bytes)
     }
 }
