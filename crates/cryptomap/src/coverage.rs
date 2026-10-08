@@ -65,7 +65,7 @@ impl CollectionRun {
     }
 }
 /// Typed coverage for one source item within one run.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct CoverageRecord {
     /// Collection run that inspected or attempted the source.
     pub run: CollectionRunId,
