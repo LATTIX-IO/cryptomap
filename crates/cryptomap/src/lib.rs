@@ -603,7 +603,9 @@ impl InventoryBuilder {
         }
         for evidence in self.evidence.values() {
             evidence.validate(&limits)?;
-            if !self.runs.contains_key(&evidence.run) {
+            let run = self.runs.get(&evidence.run).ok_or(InventoryError::InvalidMetadata)?;
+            if run.collector != evidence.collector ||
+                run.collector_version != evidence.collector_version {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
@@ -626,6 +628,25 @@ impl InventoryBuilder {
                 )
             {
                 return Err(InventoryError::InvalidMetadata);
+            }
+        }
+        // Every requested item of a completed run needs an explicit successful outcome.
+        let mut observed_coverage: BTreeMap<(CollectionRunId,String), CoverageState> = BTreeMap::new();
+        for record in &self.coverage_records {
+            let key = (record.run.clone(), record.source_item.clone());
+            if let Some(existing) = observed_coverage.insert(key, record.state) {
+                if existing != record.state { return Err(InventoryError::InvalidMetadata); }
+            }
+        }
+        for run in self.runs.values() {
+            if matches!(run.completeness, RunCompleteness::Complete) {
+                for item in &run.requested {
+                    let key = (run.id.clone(), item.clone());
+                    if !matches!(observed_coverage.get(&key),
+                        Some(CoverageState::InspectedObserved | CoverageState::InspectedNoObservation)) {
+                        return Err(InventoryError::InvalidMetadata);
+                    }
+                }
             }
         }
         self.coverage_records.sort();
