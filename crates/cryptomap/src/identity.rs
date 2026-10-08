@@ -194,9 +194,16 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             certificate_fingerprint,
         } => ("authority", vec![fold(certificate_fingerprint)?]),
         AssetKind::DetailedAlgorithm { metadata: m } => (
-            "algorithm-use", vec![scope, fold(&m.use_site)?, fold(&m.family)?,
-                match &m.profile {crate::metadata::Observed::Known(p)=>fold(p)?,
-                    _=>"unspecified".into()}]
+            "algorithm-use",
+            vec![
+                scope,
+                fold(&m.use_site)?,
+                fold(&m.family)?,
+                match &m.profile {
+                    crate::metadata::Observed::Known(p) => fold(p)?,
+                    _ => "unspecified".into(),
+                },
+            ],
         ),
         AssetKind::DetailedKey { metadata: m } => {
             let provider = match &m.provider {
@@ -207,25 +214,49 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
                 crate::metadata::Observed::Known(v) => v,
                 _ => return Err(InventoryError::InsufficientIdentity),
             };
-            ("key", vec![scope,fold(provider)?,fold(key)?])
+            ("key", vec![scope, fold(provider)?, fold(key)?])
         }
-        AssetKind::DetailedCertificate { metadata: m } => (
-            "certificate", vec![fold(&m.fingerprint_sha256)?]
-        ),
+        AssetKind::DetailedCertificate { metadata: m } => {
+            ("certificate", vec![fold(&m.fingerprint_sha256)?])
+        }
         AssetKind::DetailedProtocol { metadata: m } => {
-            let site=ctx.use_site.clone().ok_or(InventoryError::InsufficientIdentity)?;
-            ("protocol",vec![scope,site,fold(&m.family)?,
-                match &m.version {crate::metadata::Observed::Known(v)=>fold(v)?,
-                    _=>"unspecified".into()},
-                format!("{:?}",m.state)])
+            let site = ctx
+                .use_site
+                .clone()
+                .ok_or(InventoryError::InsufficientIdentity)?;
+            (
+                "protocol",
+                vec![
+                    scope,
+                    site,
+                    fold(&m.family)?,
+                    match &m.version {
+                        crate::metadata::Observed::Known(v) => fold(v)?,
+                        _ => "unspecified".into(),
+                    },
+                    format!("{:?}", m.state),
+                ],
+            )
         }
         AssetKind::DetailedDependency { metadata: m } => (
-            "library",vec![scope,fold(&m.ecosystem)?,fold(&m.name)?,m.version.clone()]
+            "library",
+            vec![
+                scope,
+                fold(&m.ecosystem)?,
+                fold(&m.name)?,
+                m.version.clone(),
+            ],
         ),
         AssetKind::DetailedImplementation { metadata: m } => (
-            "implementation",vec![scope,fold(&m.product)?,
-                match &m.version {crate::metadata::Observed::Known(v)=>v.clone(),
-                    _=>return Err(InventoryError::InsufficientIdentity)}]
+            "implementation",
+            vec![
+                scope,
+                fold(&m.product)?,
+                match &m.version {
+                    crate::metadata::Observed::Known(v) => v.clone(),
+                    _ => return Err(InventoryError::InsufficientIdentity),
+                },
+            ],
         ),
     };
     for p in &parts {
