@@ -90,7 +90,7 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
                     .as_deref()
                     .map(fold)
                     .transpose()?
-                    .unwrap_or_default(),
+                    .unwrap_or_else(|| "unspecified".into()),
             ],
         ),
         AssetKind::Key {
