@@ -472,7 +472,10 @@ impl InventoryBuilder {
         self
     }
     /// Validate references, detect divergent observations and finalize an immutable snapshot.
-    pub fn finalize(mut self, limits: InventoryLimits) -> Result<InventorySnapshot, InventoryError> {
+    pub fn finalize(
+        mut self,
+        limits: InventoryLimits,
+    ) -> Result<InventorySnapshot, InventoryError> {
         for (label, count, max) in [
             ("assets", self.assets.len(), limits.assets),
             ("observations", self.observations.len(), limits.observations),
