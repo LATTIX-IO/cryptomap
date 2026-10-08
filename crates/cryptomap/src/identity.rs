@@ -188,7 +188,9 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             ("runtime", vec![scope, fold(name)?, version.to_string()])
         }
         AssetKind::KeyStore { provider, name } => {
-            ("keystore", vec![scope, fold(provider)?, name.clone()])
+            ("keystore", vec![scope,
+                ctx.provider_instance.clone().ok_or(InventoryError::InsufficientIdentity)?,
+                fold(provider)?,name.clone()])
         }
         AssetKind::SourceUse { source, location } => {
             ("source-use", vec![scope, source.clone(), location.clone()])
