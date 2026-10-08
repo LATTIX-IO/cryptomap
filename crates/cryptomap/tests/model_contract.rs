@@ -460,34 +460,46 @@ fn a_new_complete_scan_of_only_a_subset_cannot_confirm_removal() {
 
 #[test]
 fn duplicate_json_keys_are_rejected_before_snapshot_verification() {
-    let snapshot=make(false);
-    let json=serde_json::to_string(&snapshot).unwrap();
-    let duplicate_header=json.replacen(
-        "\"schema_version\":2", "\"schema_version\":2,\"schema_version\":2", 1);
+    let snapshot = make(false);
+    let json = serde_json::to_string(&snapshot).unwrap();
+    let duplicate_header = json.replacen(
+        "\"schema_version\":2",
+        "\"schema_version\":2,\"schema_version\":2",
+        1,
+    );
     assert_ne!(duplicate_header, json);
     assert!(matches!(
-        InventorySnapshot::from_json_verified(&duplicate_header,InventoryLimits::default()),
+        InventorySnapshot::from_json_verified(&duplicate_header, InventoryLimits::default()),
         Err(InventoryError::Encoding(_))
     ));
 
-    let duplicate_nested=json.replacen(
-        "\"extensions\":{", "\"extensions\":{\"source:tag\":\"safe\",\"source:tag\":\"evil\",", 1);
-    assert_ne!(duplicate_nested,json);
+    let duplicate_nested = json.replacen(
+        "\"extensions\":{",
+        "\"extensions\":{\"source:tag\":\"safe\",\"source:tag\":\"evil\",",
+        1,
+    );
+    assert_ne!(duplicate_nested, json);
     assert!(matches!(
-        InventorySnapshot::from_json_verified(&duplicate_nested,InventoryLimits::default()),
+        InventorySnapshot::from_json_verified(&duplicate_nested, InventoryLimits::default()),
         Err(InventoryError::Encoding(_))
     ));
 }
 
 #[test]
 fn case_sensitive_source_use_sites_never_merge() {
-    let context=IdentityContext::new("tenant-a").unwrap();
-    let upper=AssetKind::AlgorithmUse{
-        family:"AES".into(),profile:Some("GCM".into()),use_site:"src/Crypto.rs:22".into()
+    let context = IdentityContext::new("tenant-a").unwrap();
+    let upper = AssetKind::AlgorithmUse {
+        family: "AES".into(),
+        profile: Some("GCM".into()),
+        use_site: "src/Crypto.rs:22".into(),
     };
-    let lower=AssetKind::AlgorithmUse{
-        family:"aes".into(),profile:Some("gcm".into()),use_site:"src/crypto.rs:22".into()
+    let lower = AssetKind::AlgorithmUse {
+        family: "aes".into(),
+        profile: Some("gcm".into()),
+        use_site: "src/crypto.rs:22".into(),
     };
-    assert_ne!(AssetId::from_kind(&upper,&context).unwrap(),
-               AssetId::from_kind(&lower,&context).unwrap());
+    assert_ne!(
+        AssetId::from_kind(&upper, &context).unwrap(),
+        AssetId::from_kind(&lower, &context).unwrap()
+    );
 }
