@@ -6,12 +6,16 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "cryptomap library for the cryptomap project."
+description = "Evidence-backed cryptographic inventory, observations, and deterministic snapshots."
 readme = "README.md"
 
-# Prevent accidental publication of placeholder packages.
-# Remove this only when the crate has a real public API, documentation,
-# tests, metadata, and its crates.io name has been re-validated.
-publish = ["crates-io"]
+# Guard against publishing before conformance and compatibility requirements are complete.
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
 [lints]
 workspace = true
