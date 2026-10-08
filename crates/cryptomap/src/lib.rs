@@ -204,26 +204,60 @@ pub enum AssetKind {
         version: Option<String>,
     },
     /// Logical cryptographic key storage location.
-    KeyStore { provider: String, name: String },
+    KeyStore {
+        /// Provider identity.
+        provider: String,
+        /// Key store name.
+        name: String,
+    },
     /// Arbitrary source-location identification.
-    SourceUse { source: String, location: String },
+    SourceUse {
+        /// Source file or resource identity.
+        source: String,
+        /// Concrete use-site position.
+        location: String,
+    },
     /// Named trust authority.
-    TrustAnchor { fingerprint: String },
+    TrustAnchor {
+        /// Nonsecret certificate fingerprint.
+        fingerprint: String,
+    },
     /// Source-specific type that has no standardized mapping yet.
-    Extension { namespace: String, kind: String },
+    Extension {
+        /// Namespaced extension owner.
+        namespace: String,
+        /// Source-specific extension kind.
+        kind: String,
+    },
     /// Named crypto provider instance.
-    Provider { name: String, instance: String },
+    Provider {
+        /// Provider name.
+        name: String,
+        /// Provider instance identifier.
+        instance: String,
+    },
     /// A versioned cryptographic implementation.
-    CryptoImplementation { product: String, version: String },
+    CryptoImplementation {
+        /// Product identity.
+        product: String,
+        /// Product version.
+        version: String,
+    },
     /// Issuer/CA identity using a nonsecret certificate fingerprint.
-    Authority { certificate_fingerprint: String },
+    Authority {
+        /// Issuing authority certificate fingerprint.
+        certificate_fingerprint: String,
+    },
     /// Detailed algorithm usage with typed operation and parameters.
     DetailedAlgorithm {
         /// metadata associated with this asset.
         metadata: metadata::AlgorithmMetadata,
     },
     /// Detailed secret-free key inventory.
-    DetailedKey { metadata: metadata::KeyMetadata },
+    DetailedKey {
+        /// Structured, nonsecret key metadata.
+        metadata: metadata::KeyMetadata,
+    },
     /// Detailed certificate metadata.
     DetailedCertificate {
         /// metadata associated with this asset.
