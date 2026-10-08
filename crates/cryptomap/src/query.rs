@@ -155,6 +155,26 @@ impl<'a> InventoryQuery<'a> {
             })
         })
     }
+    /// Select assets with evidence originating in a source with the given
+    /// explicit inspection state.
+    pub fn coverage(self, snapshot: &InventorySnapshot, wanted: crate::CoverageState) -> Self {
+        self.filter(|a| snapshot.observations.values().any(|o| {
+            o.asset == a.id
+                && snapshot.evidence.get(&o.evidence).is_some_and(|e| {
+                    snapshot.coverage.get(&e.source) == Some(&wanted)
+                        || snapshot.coverage_records.iter().any(|r| {
+                            r.source_item == e.source && r.run == e.run && r.state == wanted
+                        })
+                })
+        }))
+    }
+
+    /// Select current assets that were added or materially changed between
+    /// two inventory snapshots, using a previously computed ChangeSet.
+    pub fn added_or_changed(self, changes: &crate::ChangeSet) -> Self {
+        self.filter(|a| changes.added.contains(&a.id) || changes.changed.contains(&a.id))
+    }
+
     /// Collect deterministic asset IDs, with a maximum result cap.
     pub fn ids(&self, max: usize) -> Result<Vec<AssetId>, InventoryError> {
         if self.assets.len() > max {
