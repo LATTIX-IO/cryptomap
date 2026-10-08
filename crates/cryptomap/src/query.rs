@@ -21,35 +21,37 @@ impl<'a> InventoryQuery<'a> {
     }
     /// Filter by normalized algorithm family or exact profile.
     pub fn algorithm(self, needle: &str) -> Self {
-        self.filter(|a| {
-            match &a.kind {
-                AssetKind::AlgorithmUse{family,profile,..} =>
-                    family.eq_ignore_ascii_case(needle) || profile.as_deref()==Some(needle),
-                AssetKind::DetailedAlgorithm{metadata:m} =>
-                    m.family.eq_ignore_ascii_case(needle) ||
-                    matches!(&m.profile,crate::metadata::Observed::Known(p) if p==needle),
-                _ => false
+        self.filter(|a| match &a.kind {
+            AssetKind::AlgorithmUse {
+                family, profile, ..
+            } => family.eq_ignore_ascii_case(needle) || profile.as_deref() == Some(needle),
+            AssetKind::DetailedAlgorithm { metadata: m } => {
+                m.family.eq_ignore_ascii_case(needle)
+                    || matches!(&m.profile,crate::metadata::Observed::Known(p) if p==needle)
             }
+            _ => false,
         })
     }
     /// Filter by protocol family and optional observation state.
     pub fn protocol(self, family: &str) -> Self {
-        self.filter(|a|match &a.kind {
-            AssetKind::Protocol{family:f,..} => f.eq_ignore_ascii_case(family),
-            AssetKind::DetailedProtocol{metadata:m} => m.family.eq_ignore_ascii_case(family),
-            _=>false
+        self.filter(|a| match &a.kind {
+            AssetKind::Protocol { family: f, .. } => f.eq_ignore_ascii_case(family),
+            AssetKind::DetailedProtocol { metadata: m } => m.family.eq_ignore_ascii_case(family),
+            _ => false,
         })
     }
     /// Filter by package ecosystem and name.
     pub fn package(self, ecosystem: &str, name: &str) -> Self {
-        self.filter(|a| {
-            match &a.kind {
-                AssetKind::Library{ecosystem:e,name:n,..} =>
-                    e.eq_ignore_ascii_case(ecosystem)&&n.eq_ignore_ascii_case(name),
-                AssetKind::DetailedDependency{metadata:m} =>
-                    m.ecosystem.eq_ignore_ascii_case(ecosystem)&&m.name.eq_ignore_ascii_case(name),
-                _=>false
+        self.filter(|a| match &a.kind {
+            AssetKind::Library {
+                ecosystem: e,
+                name: n,
+                ..
+            } => e.eq_ignore_ascii_case(ecosystem) && n.eq_ignore_ascii_case(name),
+            AssetKind::DetailedDependency { metadata: m } => {
+                m.ecosystem.eq_ignore_ascii_case(ecosystem) && m.name.eq_ignore_ascii_case(name)
             }
+            _ => false,
         })
     }
     /// Filter by a provider identifier.
@@ -58,21 +60,21 @@ impl<'a> InventoryQuery<'a> {
             AssetKind::Key { provider: p, .. } => p.as_deref() == Some(provider),
             AssetKind::KeyStore { provider: p, .. } => p == provider,
             AssetKind::Provider { name, .. } => name == provider,
-            AssetKind::DetailedKey { metadata:m } => matches!(&m.provider,
+            AssetKind::DetailedKey { metadata: m } => matches!(&m.provider,
                 crate::metadata::Observed::Known(p) if p==provider),
             _ => false,
         })
     }
     /// Filter by certificate fingerprint.
     pub fn certificate(self, fingerprint: &str) -> Self {
-        self.filter(|a| {
-            match &a.kind {
-                AssetKind::Certificate{fingerprint_sha256,..} =>
-                    fingerprint_sha256.eq_ignore_ascii_case(fingerprint),
-                AssetKind::DetailedCertificate{metadata:m} =>
-                    m.fingerprint_sha256.eq_ignore_ascii_case(fingerprint),
-                _=>false
+        self.filter(|a| match &a.kind {
+            AssetKind::Certificate {
+                fingerprint_sha256, ..
+            } => fingerprint_sha256.eq_ignore_ascii_case(fingerprint),
+            AssetKind::DetailedCertificate { metadata: m } => {
+                m.fingerprint_sha256.eq_ignore_ascii_case(fingerprint)
             }
+            _ => false,
         })
     }
     /// Filter by endpoint host.
@@ -84,13 +86,18 @@ impl<'a> InventoryQuery<'a> {
     /// Select endpoint/protocol assets that are configured or negotiated.
     pub fn protocol_state(self, wanted: crate::ProtocolState) -> Self {
         self.filter(|a| match &a.kind {
-            AssetKind::Protocol{state,..} => *state==wanted,
-            AssetKind::DetailedProtocol{metadata:m} => matches!(
-                (&m.state,wanted),
-                (crate::metadata::ProtocolObservation::Configured,crate::ProtocolState::Configured)
-                | (crate::metadata::ProtocolObservation::Negotiated,crate::ProtocolState::Negotiated)
+            AssetKind::Protocol { state, .. } => *state == wanted,
+            AssetKind::DetailedProtocol { metadata: m } => matches!(
+                (&m.state, wanted),
+                (
+                    crate::metadata::ProtocolObservation::Configured,
+                    crate::ProtocolState::Configured
+                ) | (
+                    crate::metadata::ProtocolObservation::Negotiated,
+                    crate::ProtocolState::Negotiated
+                )
             ),
-            _=>false
+            _ => false,
         })
     }
     /// Select assets that have at least one observation from a source name.
