@@ -11,6 +11,19 @@ fn asset(name: &str) -> Asset {
         extensions: BTreeMap::new(),
     }
 }
+fn test_run() -> CollectionRun {
+    CollectionRun {
+        id: CollectionRunId::new("run1").unwrap(),
+        collector: CollectorId::new("unit").unwrap(),
+        collector_version: "1".into(),
+        scope: CollectionScopeId::new("fixture-scope").unwrap(),
+        requested: BTreeSet::from(["fixture".into()]),
+        started_at: "2026-10-08T00:00:00Z".into(),
+        ended_at: "2026-10-08T01:00:00Z".into(),
+        completeness: RunCompleteness::Complete,
+    }
+}
+
 fn evidence() -> Evidence {
     Evidence {
         id: EvidenceId::new("ev1").unwrap(),
@@ -47,11 +60,13 @@ fn id_validation_and_serde() {
 #[test]
 fn insertion_order_does_not_change_snapshot_digest() {
     let mut a=InventoryBuilder::new();
+    a.add_run(test_run()).unwrap();
     a.add_asset(asset("library")).unwrap();
     a.add_evidence(evidence()).unwrap();
     a.add_observation(observation("a","AES")).unwrap();
     a.add_observation(observation("b","SHA")).unwrap();
     let mut b=InventoryBuilder::new();
+    b.add_run(test_run()).unwrap();
     b.add_observation(observation("b","SHA")).unwrap();
     b.add_evidence(evidence()).unwrap();
     b.add_observation(observation("a","AES")).unwrap();
@@ -68,6 +83,7 @@ fn insertion_order_does_not_change_snapshot_digest() {
 #[test]
 fn duplicate_and_dangling_references_are_rejected() {
     let mut b=InventoryBuilder::new();
+    b.add_run(test_run()).unwrap();
     b.add_asset(asset("library")).unwrap();
     b.add_asset(asset("library")).unwrap();
     let mut changed=asset("library");
@@ -86,22 +102,26 @@ fn duplicate_and_dangling_references_are_rejected() {
 #[test]
 fn limits_coverage_diff_and_round_trip() {
     let mut a=InventoryBuilder::new();
+    a.add_run(test_run()).unwrap();
     a.add_asset(asset("library")).unwrap();
     a.set_coverage("repo",CoverageState::InspectedObserved);
     let one=a.finalize(InventoryLimits::default()).unwrap();
     assert_eq!(one.query_assets(|a|matches!(a.kind,AssetKind::Library{..})).count(),1);
     let json=serde_json::to_string(&one).unwrap();
-    let restored:InventorySnapshot=serde_json::from_str(&json).unwrap();
+    let restored=InventorySnapshot::from_json_verified(&json, InventoryLimits::default()).unwrap();
     assert_eq!(one,restored);
     let mut b=InventoryBuilder::new();
+    b.add_run(test_run()).unwrap();
     b.add_asset(asset("other")).unwrap();
     b.set_coverage("repo",CoverageState::Partial);
     let two=b.finalize(InventoryLimits::default()).unwrap();
     let diff=one.diff(&two);
-    assert!(diff.removed.contains(&id("library")));
+    assert!(diff.tentative_removed.contains(&id("library")));
+    assert!(diff.removed.is_empty());
     assert!(diff.added.contains(&id("other")));
     assert!(diff.coverage_changed.contains("repo"));
     let mut limited=InventoryBuilder::new();
+    limited.add_run(test_run()).unwrap();
     limited.add_asset(asset("library")).unwrap();
     assert!(matches!(limited.finalize(InventoryLimits{assets:0,..InventoryLimits::default()}),Err(InventoryError::LimitExceeded("assets"))));
 }
