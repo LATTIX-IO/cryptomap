@@ -236,7 +236,9 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
                 crate::metadata::Observed::Known(v) => v,
                 _ => return Err(InventoryError::InsufficientIdentity),
             };
-            ("key", vec![scope, fold(provider)?, fold(key)?])
+            ("key", vec![scope,
+                ctx.provider_instance.clone().ok_or(InventoryError::InsufficientIdentity)?,
+                fold(provider)?,fold(key)?])
         }
         AssetKind::DetailedCertificate { metadata: m } => {
             ("certificate", vec![fold(&m.fingerprint_sha256)?])
