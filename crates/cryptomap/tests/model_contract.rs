@@ -57,6 +57,7 @@ fn obs(idstr: &str, ev_id: &str, value: &str) -> Observation {
         asset: id("app"),
         evidence: EvidenceId::new(ev_id).unwrap(),
         property: "protocol:negotiated".into(),
+        context: None,
         value: value.into(),
     }
 }
