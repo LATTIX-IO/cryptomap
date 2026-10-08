@@ -9,13 +9,24 @@ use std::net::IpAddr;
 pub struct IdentityContext {
     /// Logical scope of the collection, including tenant/environment separation.
     pub scope: String,
+    /// Optional stable endpoint, workload or source use-site for ambiguous instances.
+    #[serde(default)]
+    pub use_site: Option<String>,
 }
 impl IdentityContext {
+    /// Specify a stable use-site identity when a profile alone is ambiguous.
+    pub fn with_use_site(mut self, site: impl Into<String>) -> Result<Self, InventoryError> {
+        let site = site.into();
+        validate_component(&site)?;
+        self.use_site = Some(site);
+        Ok(self)
+    }
+
     /// Construct a validated identity scope.
     pub fn new(scope: impl Into<String>) -> Result<Self, InventoryError> {
         let scope = scope.into();
         validate_component(&scope)?;
-        Ok(Self { scope })
+        Ok(Self { scope, use_site: None })
     }
 }
 /// Identity result, retaining the canonical key components for inspection.
@@ -159,7 +170,8 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
         }
         AssetKind::TrustAnchor { fingerprint } => ("trust-anchor", vec![fold(fingerprint)?]),
         AssetKind::Extension { namespace, kind } => {
-            ("extension", vec![scope, fold(namespace)?, fold(kind)?])
+            ("extension", vec![scope,ctx.use_site.clone().ok_or(InventoryError::InsufficientIdentity)?,
+                fold(namespace)?, fold(kind)?])
         }
         AssetKind::Provider { name, instance } => {
             ("provider", vec![scope, fold(name)?, instance.clone()])
