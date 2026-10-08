@@ -399,3 +399,17 @@ fn multiple_configured_capabilities_and_distinct_sessions_are_not_conflicts() {
     b.add_observation(c).unwrap();
     assert!(b.finalize(InventoryLimits::default()).unwrap().conflicts.is_empty());
 }
+
+#[test]
+fn endpoint_identity_matches_cross_platform_v2_golden_vector() {
+    let context=IdentityContext::new("tenant-a").unwrap();
+    let endpoint=AssetKind::Endpoint{
+        transport:"TCP".into(),
+        host:"EXAMPLE.com.".into(),
+        port:443,
+        scope:"prod".into(),
+    };
+    let id=AssetId::from_kind(&endpoint,&context).unwrap();
+    assert_eq!(id.as_str(),
+        "asset:v2:85e78bf3a84092d09e219bd9d48e082aeb5d093afa28e098b66c0af76f66d0d3");
+}
