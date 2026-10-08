@@ -59,6 +59,38 @@ impl<'a> InventoryQuery<'a> {
             |a| matches!(&a.kind,AssetKind::Endpoint{host:h,..} if h.eq_ignore_ascii_case(host)),
         )
     }
+    /// Select endpoint/protocol assets that are configured or negotiated.
+    pub fn protocol_state(self, wanted: crate::ProtocolState) -> Self {
+        self.filter(|a| matches!(&a.kind, AssetKind::Protocol { state, .. } if *state == wanted))
+    }
+    /// Select assets that have at least one observation from a source name.
+    pub fn source(self, snapshot: &InventorySnapshot, source: &str) -> Self {
+        self.filter(|a| snapshot.observations.values().any(|o| o.asset == a.id
+            && snapshot.evidence.get(&o.evidence).is_some_and(|e| e.source == source)))
+    }
+    /// Select assets with directly observed evidence meeting a confidence floor.
+    pub fn confidence(self, snapshot: &InventorySnapshot, min: Confidence) -> Self {
+        self.filter(|a| snapshot.observations.values().any(|o| o.asset == a.id
+            && snapshot.evidence.get(&o.evidence).is_some_and(|e| e.confidence >= min)))
+    }
+    /// Select assets with observations in the given inclusive UTC time interval.
+    pub fn observed_between(self, snapshot: &InventorySnapshot, start: i64, end: i64) -> Self {
+        self.filter(|a| snapshot.observations.values().any(|o| o.asset == a.id
+            && snapshot.evidence.get(&o.evidence)
+                .and_then(|e| crate::validation::utc_seconds(&e.observed_at).ok())
+                .is_some_and(|t| t >= start && t <= end)))
+    }
+    /// Select assets with unresolved conflicts in a snapshot.
+    pub fn with_conflict(self, snapshot: &InventorySnapshot) -> Self {
+        self.filter(|a| snapshot.conflicts.values().any(|c| c.asset == a.id))
+    }
+    /// Select assets related to a given canonical asset.
+    pub fn connected_to(self, snapshot: &InventorySnapshot, endpoint: &AssetId,
+        kind: Option<RelationshipKind>) -> Self {
+        self.filter(|a| snapshot.relationships.values().any(|r|
+            (&r.from == endpoint && r.to == a.id || &r.to == endpoint && r.from == a.id)
+            && kind.as_ref().is_none_or(|k| k == &r.kind)))
+    }
     /// Collect deterministic asset IDs, with a maximum result cap.
     pub fn ids(&self, max: usize) -> Result<Vec<AssetId>, InventoryError> {
         if self.assets.len() > max {
