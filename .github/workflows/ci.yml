@@ -1,39 +1,64 @@
-name: ci
+name: Rust CI
 
 on:
   push:
     branches:
       - main
   pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  rust:
+  rust-checks:
     name: Rust checks
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Install stable Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Check formatting
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Check workspace
-        run: cargo check --workspace --all-targets --all-features
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features --locked
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features --locked
 
       - name: Documentation
-        run: cargo doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --all-features --no-deps --locked
+
+      - name: Install supply-chain tools
+        run: |
+          cargo install --locked cargo-audit
+          cargo install --locked cargo-deny
+          cargo install --locked cargo-semver-checks
+
+      - name: RustSec audit
+        run: cargo audit
+
+      - name: Dependency policy
+        run: cargo deny check
+
+      - name: SemVer compatibility
+        run: cargo semver-checks check-release --workspace --all-features
