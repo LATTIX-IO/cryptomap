@@ -11,6 +11,7 @@ pub mod privacy;
 pub mod query;
 pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
 pub mod validation;
+mod strict_json;
 pub use coverage::{CollectionRun, CollectionScopeId, CoverageRecord, RunCompleteness};
 pub use identity::{AssetIdentity, IdentityContext};
 pub use metadata::{
@@ -934,8 +935,10 @@ impl InventorySnapshot {
         if input.len() > limits.snapshot_bytes {
             return Err(InventoryError::LimitExceeded("snapshot bytes"));
         }
-        let snapshot: Self =
+        let strict: strict_json::StrictJson =
             serde_json::from_str(input).map_err(|e| InventoryError::Encoding(e.to_string()))?;
+        let snapshot: Self = serde_json::from_value(strict.0)
+            .map_err(|e| InventoryError::Encoding(e.to_string()))?;
         snapshot.verify(limits)?;
         Ok(snapshot)
     }
