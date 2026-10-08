@@ -1,0 +1,13 @@
+[workspace]
+changelog_update = true
+dependencies_update = true
+git_release_enable = true
+git_tag_enable = true
+semver_check = true
+release_always = false
+pr_branch_prefix = "release-plz-"
+pr_labels = ["release"]
+
+[changelog]
+protect_breaking_commits = true
+sort_commits = "newest"
