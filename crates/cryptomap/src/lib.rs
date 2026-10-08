@@ -110,22 +110,31 @@ identifier!(SnapshotId);
 /// Collector's explicitly reported confidence (not a security score).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Confidence {
+    /// Unknown is one supported Confidence variant.
     Unknown,
+    /// Low is one supported Confidence variant.
     Low,
+    /// Medium is one supported Confidence variant.
     Medium,
+    /// High is one supported Confidence variant.
     High,
+    /// Confirmed is one supported Confidence variant.
     Confirmed,
 }
 /// Whether the source directly observed the fact or inferred it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EvidenceKind {
+    /// Direct is one supported EvidenceKind variant.
     Direct,
+    /// Inferred is one supported EvidenceKind variant.
     Inferred,
 }
 /// Observed protocol state must distinguish configuration from negotiation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProtocolState {
+    /// Configured is one supported ProtocolState variant.
     Configured,
+    /// Negotiated is one supported ProtocolState variant.
     Negotiated,
 }
 /// Supported canonical asset families.
@@ -133,44 +142,65 @@ pub enum ProtocolState {
 pub enum AssetKind {
     /// Crypto operation at a particular use site.
     AlgorithmUse {
+        /// family associated with this asset.
         family: String,
+        /// profile associated with this asset.
         profile: Option<String>,
+        /// use site associated with this asset.
         use_site: String,
     },
     /// Key metadata; raw key material is intentionally not part of this type.
     Key {
+        /// algorithm associated with this asset.
         algorithm: Option<String>,
+        /// provider associated with this asset.
         provider: Option<String>,
+        /// fingerprint associated with this asset.
         fingerprint: Option<String>,
     },
     /// Certificate metadata; the certificate body is not stored by default.
     Certificate {
+        /// fingerprint sha256 associated with this asset.
         fingerprint_sha256: String,
+        /// public key profile associated with this asset.
         public_key_profile: Option<String>,
+        /// signature profile associated with this asset.
         signature_profile: Option<String>,
     },
     /// Configured or negotiated protocol fact.
     Protocol {
+        /// family associated with this asset.
         family: String,
+        /// version associated with this asset.
         version: Option<String>,
+        /// state associated with this asset.
         state: ProtocolState,
     },
     /// Scoped transport endpoint.
     Endpoint {
+        /// transport associated with this asset.
         transport: String,
+        /// host associated with this asset.
         host: String,
+        /// port associated with this asset.
         port: u16,
+        /// scope associated with this asset.
         scope: String,
     },
     /// Versioned package dependency.
     Library {
+        /// ecosystem associated with this asset.
         ecosystem: String,
+        /// name associated with this asset.
         name: String,
+        /// version associated with this asset.
         version: String,
     },
     /// Runtime or cryptographic software implementation.
     Runtime {
+        /// name associated with this asset.
         name: String,
+        /// version associated with this asset.
         version: Option<String>,
     },
     /// Logical cryptographic key storage location.
@@ -189,24 +219,29 @@ pub enum AssetKind {
     Authority { certificate_fingerprint: String },
     /// Detailed algorithm usage with typed operation and parameters.
     DetailedAlgorithm {
+        /// metadata associated with this asset.
         metadata: metadata::AlgorithmMetadata,
     },
     /// Detailed secret-free key inventory.
     DetailedKey { metadata: metadata::KeyMetadata },
     /// Detailed certificate metadata.
     DetailedCertificate {
+        /// metadata associated with this asset.
         metadata: metadata::CertificateMetadata,
     },
     /// Detailed protocol observation.
     DetailedProtocol {
+        /// metadata associated with this asset.
         metadata: metadata::ProtocolMetadata,
     },
     /// Detailed software/package dependency metadata.
     DetailedDependency {
+        /// metadata associated with this asset.
         metadata: metadata::DependencyMetadata,
     },
     /// Detailed crypto implementation metadata.
     DetailedImplementation {
+        /// metadata associated with this asset.
         metadata: metadata::ImplementationMetadata,
     },
 }
@@ -323,11 +358,17 @@ pub struct Conflict {
 /// Collection coverage of an explicitly scoped source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum CoverageState {
+    /// InspectedObserved is one supported CoverageState variant.
     InspectedObserved,
+    /// InspectedNoObservation is one supported CoverageState variant.
     InspectedNoObservation,
+    /// NotInspected is one supported CoverageState variant.
     NotInspected,
+    /// Unsupported is one supported CoverageState variant.
     Unsupported,
+    /// Failed is one supported CoverageState variant.
     Failed,
+    /// Partial is one supported CoverageState variant.
     Partial,
 }
 /// Coverage state for a collector/scope item.
