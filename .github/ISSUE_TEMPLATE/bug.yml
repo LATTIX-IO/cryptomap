@@ -3,7 +3,14 @@ description: Report a reproducible defect
 title: "bug: "
 labels:
   - bug
+
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not disclose suspected vulnerabilities here.**
+        Use the repository's private vulnerability reporting link instead.
+
   - type: textarea
     id: summary
     attributes:
@@ -11,6 +18,7 @@ body:
       description: What is wrong?
     validations:
       required: true
+
   - type: textarea
     id: reproduction
     attributes:
@@ -18,12 +26,14 @@ body:
       description: Minimal steps or code needed to reproduce the problem.
     validations:
       required: true
+
   - type: textarea
     id: expected
     attributes:
       label: Expected behavior
     validations:
       required: true
+
   - type: textarea
     id: environment
     attributes:
@@ -31,8 +41,3 @@ body:
       description: Rust version, OS, target, crate version, enabled features, and relevant dependencies.
     validations:
       required: true
-  - type: textarea
-    id: security
-    attributes:
-      label: Security considerations
-      description: If this may be a vulnerability, stop and use Private Vulnerability Reporting instead.

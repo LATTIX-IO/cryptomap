@@ -1,5 +1,6 @@
 [workspace]
 changelog_update = true
+changelog_path = "./CHANGELOG.md"
 dependencies_update = true
 git_release_enable = true
 git_tag_enable = true
