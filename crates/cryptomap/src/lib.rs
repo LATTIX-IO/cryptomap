@@ -944,23 +944,29 @@ impl InventorySnapshot {
         let old: BTreeSet<_> = self.assets.keys().cloned().collect();
         let new: BTreeSet<_> = newer.assets.keys().cloned().collect();
         let common = old.intersection(&new);
-        let complete = !newer.coverage.is_empty()
-            && newer.coverage.values().all(|state| {
-                matches!(
-                    state,
-                    CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
-                )
-            })
-            && newer
-                .runs
-                .values()
-                .all(|run| matches!(run.completeness, RunCompleteness::Complete))
-            && newer.coverage_records.iter().all(|record| {
-                matches!(
-                    record.state,
-                    CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
-                )
-            });
+        // A complete scan of only a SUBSET of prior sources cannot prove removals.
+        // Scope equality is evaluated using normalized source keys, not run IDs.
+        let old_scope: BTreeSet<(u8, String, String)> = self.coverage.keys()
+            .map(|item| (0, String::new(), item.clone()))
+            .chain(self.runs.values().flat_map(|run| run.requested.iter().map(move |item|
+                (1, run.scope.as_str().to_owned(), item.clone()))))
+            .collect();
+        let covered_now: BTreeSet<(u8, String, String)> = newer.coverage.iter()
+            .filter(|(_, state)| matches!(state,
+                CoverageState::InspectedObserved | CoverageState::InspectedNoObservation))
+            .map(|(item, _)| (0, String::new(), item.clone()))
+            .chain(newer.coverage_records.iter().filter(|record| matches!(record.state,
+                CoverageState::InspectedObserved | CoverageState::InspectedNoObservation))
+                .filter_map(|record| newer.runs.get(&record.run).map(|run|
+                    (1, run.scope.as_str().to_owned(), record.source_item.clone()))))
+            .collect();
+        let complete = !old_scope.is_empty()
+            && old_scope.is_subset(&covered_now)
+            && newer.coverage.values().all(|state| matches!(state,
+                CoverageState::InspectedObserved | CoverageState::InspectedNoObservation))
+            && newer.runs.values().all(|run| matches!(run.completeness, RunCompleteness::Complete))
+            && newer.coverage_records.iter().all(|record| matches!(record.state,
+                CoverageState::InspectedObserved | CoverageState::InspectedNoObservation));
         let old_obs: BTreeSet<_> = self.observations.keys().cloned().collect();
         let new_obs: BTreeSet<_> = newer.observations.keys().cloned().collect();
         let old_evidence: BTreeSet<_> = self.evidence.keys().cloned().collect();
