@@ -158,15 +158,17 @@ impl<'a> InventoryQuery<'a> {
     /// Select assets with evidence originating in a source with the given
     /// explicit inspection state.
     pub fn coverage(self, snapshot: &InventorySnapshot, wanted: crate::CoverageState) -> Self {
-        self.filter(|a| snapshot.observations.values().any(|o| {
-            o.asset == a.id
-                && snapshot.evidence.get(&o.evidence).is_some_and(|e| {
-                    snapshot.coverage.get(&e.source) == Some(&wanted)
-                        || snapshot.coverage_records.iter().any(|r| {
-                            r.source_item == e.source && r.run == e.run && r.state == wanted
-                        })
-                })
-        }))
+        self.filter(|a| {
+            snapshot.observations.values().any(|o| {
+                o.asset == a.id
+                    && snapshot.evidence.get(&o.evidence).is_some_and(|e| {
+                        snapshot.coverage.get(&e.source) == Some(&wanted)
+                            || snapshot.coverage_records.iter().any(|r| {
+                                r.source_item == e.source && r.run == e.run && r.state == wanted
+                            })
+                    })
+            })
+        })
     }
 
     /// Select current assets that were added or materially changed between

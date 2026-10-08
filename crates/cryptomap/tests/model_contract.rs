@@ -600,48 +600,84 @@ fn incompatible_metadata_cannot_be_silently_merged_under_the_same_id() {
 
 #[test]
 fn matching_relationships_accumulate_independent_evidence() {
-    let mut builder=InventoryBuilder::new();
-    builder.add_run(run("r1","app")).unwrap();
+    let mut builder = InventoryBuilder::new();
+    builder.add_run(run("r1", "app")).unwrap();
     builder.add_asset(library("app")).unwrap();
     builder.add_asset(library("lib")).unwrap();
-    builder.add_evidence(ev("first","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
-    builder.add_evidence(ev("second","r1","2026-10-08T01:01:00Z",Confidence::Confirmed)).unwrap();
-    let key=RelationshipId::from_endpoints(RelationshipKind::DependsOn,&id("app"),&id("lib")).unwrap();
-    let backwards=RelationshipId::from_endpoints(RelationshipKind::DependsOn,&id("lib"),&id("app")).unwrap();
-    assert_ne!(key,backwards);
+    builder
+        .add_evidence(ev("first", "r1", "2026-10-08T01:00:00Z", Confidence::High))
+        .unwrap();
+    builder
+        .add_evidence(ev(
+            "second",
+            "r1",
+            "2026-10-08T01:01:00Z",
+            Confidence::Confirmed,
+        ))
+        .unwrap();
+    let key = RelationshipId::from_endpoints(RelationshipKind::DependsOn, &id("app"), &id("lib"))
+        .unwrap();
+    let backwards =
+        RelationshipId::from_endpoints(RelationshipKind::DependsOn, &id("lib"), &id("app"))
+            .unwrap();
+    assert_ne!(key, backwards);
 
-    for evidence in ["first","second"] {
-        builder.add_relationship(Relationship{
-            id:key.clone(), from:id("app"), to:id("lib"),
-            kind:RelationshipKind::DependsOn,
-            evidence:BTreeSet::from([EvidenceId::new(evidence).unwrap()]),
-        }).unwrap();
+    for evidence in ["first", "second"] {
+        builder
+            .add_relationship(Relationship {
+                id: key.clone(),
+                from: id("app"),
+                to: id("lib"),
+                kind: RelationshipKind::DependsOn,
+                evidence: BTreeSet::from([EvidenceId::new(evidence).unwrap()]),
+            })
+            .unwrap();
     }
-    let snapshot=builder.finalize(InventoryLimits::default()).unwrap();
-    assert_eq!(snapshot.relationships.len(),1);
-    assert_eq!(snapshot.relationships[&key].evidence.len(),2);
+    let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+    assert_eq!(snapshot.relationships.len(), 1);
+    assert_eq!(snapshot.relationships[&key].evidence.len(), 2);
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
 
 #[test]
 fn query_supports_collected_scope_and_snapshot_change_filters() {
-    let original=InventoryBuilder::new().finalize(InventoryLimits::default()).unwrap();
-    let mut builder=InventoryBuilder::new();
-    builder.add_run(run("r1","file1")).unwrap();
+    let original = InventoryBuilder::new()
+        .finalize(InventoryLimits::default())
+        .unwrap();
+    let mut builder = InventoryBuilder::new();
+    builder.add_run(run("r1", "file1")).unwrap();
     builder.add_asset(library("app")).unwrap();
-    let mut evidence=ev("e1","r1","2026-10-08T01:00:00Z",Confidence::Confirmed);
-    evidence.source="file1".into();
+    let mut evidence = ev("e1", "r1", "2026-10-08T01:00:00Z", Confidence::Confirmed);
+    evidence.source = "file1".into();
     builder.add_evidence(evidence).unwrap();
-    builder.add_observation(Observation {
-        id:ObservationId::new("o1").unwrap(),
-        asset:id("app"), evidence:EvidenceId::new("e1").unwrap(),
-        property:"package:version".into(),context:None,value:"1.0".into()
-    }).unwrap();
-    builder.set_coverage("file1",CoverageState::InspectedObserved);
-    let snapshot=builder.finalize(InventoryLimits::default()).unwrap();
-    let delta=original.diff(&snapshot);
-    assert_eq!(snapshot.query()
-        .coverage(&snapshot,CoverageState::InspectedObserved)
-        .added_or_changed(&delta).ids(10).unwrap(),vec![id("app")]);
-    assert!(snapshot.query().coverage(&snapshot,CoverageState::Failed).ids(10).unwrap().is_empty());
+    builder
+        .add_observation(Observation {
+            id: ObservationId::new("o1").unwrap(),
+            asset: id("app"),
+            evidence: EvidenceId::new("e1").unwrap(),
+            property: "package:version".into(),
+            context: None,
+            value: "1.0".into(),
+        })
+        .unwrap();
+    builder.set_coverage("file1", CoverageState::InspectedObserved);
+    let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+    let delta = original.diff(&snapshot);
+    assert_eq!(
+        snapshot
+            .query()
+            .coverage(&snapshot, CoverageState::InspectedObserved)
+            .added_or_changed(&delta)
+            .ids(10)
+            .unwrap(),
+        vec![id("app")]
+    );
+    assert!(
+        snapshot
+            .query()
+            .coverage(&snapshot, CoverageState::Failed)
+            .ids(10)
+            .unwrap()
+            .is_empty()
+    );
 }
