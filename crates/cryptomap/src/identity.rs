@@ -60,14 +60,14 @@ impl AssetIdentity {
         for item in &self.components {
             validate_component(item)?;
         }
-        let encoded = serde_json::to_vec(&("cryptomap:asset:v1", self))
+        let encoded = serde_json::to_vec(&("cryptomap:asset:v2", self))
             .map_err(|e| InventoryError::Encoding(e.to_string()))?;
         let digest = Sha256::digest(encoded);
         let hex = digest
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
-        AssetId::new(format!("asset:v1:{hex}"))
+        AssetId::new(format!("asset:v2:{hex}"))
     }
 }
 fn validate_component(s: &str) -> Result<(), InventoryError> {
@@ -289,7 +289,7 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
         validate_component(p)?;
     }
     Ok(AssetIdentity {
-        version: 1,
+        version: 2,
         kind: name.into(),
         components: std::mem::take(&mut parts),
     })
