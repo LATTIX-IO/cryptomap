@@ -99,3 +99,44 @@ pub struct DependencyMetadata {
     /// Whether a direct dependency.
     pub direct: Observed<bool>,
 }
+
+/// Detailed algorithm observation with explicit operation and profile metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlgorithmMetadata {
+    /// Normalized family.
+    pub family: String,
+    /// Exact algorithm/profile/parameter set if known.
+    pub profile: Observed<String>,
+    /// Intended/observed operation class.
+    pub operation: AlgorithmOperation,
+    /// Source-specific cryptographic use-site.
+    pub use_site: String,
+    /// Unmodified source identifier if available.
+    pub raw_identifier: Observed<String>,
+    /// Key size when observed.
+    pub key_bits: Observed<u32>,
+}
+/// Protocol metadata separating enabled configuration and live negotiation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProtocolMetadata {
+    /// Protocol family (for example, TLS or SSH).
+    pub family: String,
+    /// Protocol version when observed.
+    pub version: Observed<String>,
+    /// Configured versus negotiated state.
+    pub state: ProtocolObservation,
+    /// Client/server or producer/consumer role.
+    pub role: Observed<String>,
+    /// Exact negotiated/configured profile when known.
+    pub cryptographic_profile: Observed<String>,
+}
+/// A specific deployment instance of a cryptographic implementation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImplementationMetadata {
+    /// Product/library/runtime name.
+    pub product: String,
+    /// Version when known.
+    pub version: Observed<String>,
+    /// Source/package identifier.
+    pub source: Observed<String>,
+}
