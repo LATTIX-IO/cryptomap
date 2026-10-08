@@ -438,8 +438,12 @@ fn endpoint_identity_matches_cross_platform_v2_golden_vector() {
 fn a_new_complete_scan_of_only_a_subset_cannot_confirm_removal() {
     fn snapshot(assets: &[&str], coverage: &[&str]) -> InventorySnapshot {
         let mut builder = InventoryBuilder::new();
-        for name in assets { builder.add_asset(library(name)).unwrap(); }
-        for name in coverage { builder.set_coverage(*name, CoverageState::InspectedObserved); }
+        for name in assets {
+            builder.add_asset(library(name)).unwrap();
+        }
+        for name in coverage {
+            builder.set_coverage(*name, CoverageState::InspectedObserved);
+        }
         builder.finalize(InventoryLimits::default()).unwrap()
     }
     let old = snapshot(&["a", "b"], &["file-a", "file-b"]);
