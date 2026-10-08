@@ -1,37 +1,58 @@
 # cryptomap
 
-Evidence-backed cryptographic inventory types, observations, deterministic snapshots, and snapshot comparisons.
+Evidence-backed Rust cryptographic inventory: typed assets, evidence, scoped collection runs, canonical identity, deterministic snapshots, query and change detection.
 
-## Scope
+## Architecture
 
-The public model distinguishes an `Asset` (canonical logical entity) from an `Observation` (one evidence-backed claim), `Evidence` (collector/source provenance), and an `InventorySnapshot` (finalized immutable inventory). The crate intentionally does not make compliance decisions, scan arbitrary hosts, or store private-key material.
+cryptomap stores **observed facts**. It does not execute cryptography, decide policy compliance, or plan post-quantum migration. Its downstream consumers are cryptopolicy and cryptoshift.
 
-## Example
+- Asset: canonical logical object/use.
+- Observation: immutable, evidence-backed assertion about one asset.
+- Evidence: collector/run/source/timestamp and direct/inferred confidence.
+- CollectionRun and CoverageRecord: explicit attempted scope and completion.
+- InventorySnapshot: sorted, SHA-256-bound serialized state; use `from_json_verified` when importing untrusted data.
+- ChangeSet: asset, observation, evidence/confidence, relationship, conflict and coverage deltas. Apparent removal after partial collection is **tentative**, not confirmed.
+
+## Quickstart
 
 ```rust
-use cryptomap::{Asset, AssetId, AssetKind, InventoryBuilder, InventoryLimits};
+use cryptomap::{AssetKind, IdentityContext, InventoryBuilder, InventoryLimits};
 use std::collections::BTreeMap;
 
-let mut inventory = InventoryBuilder::new();
-inventory.add_asset(Asset {
-    id: AssetId::new("package:cargo/openssl@1").unwrap(),
-    kind: AssetKind::Library {
+let context = IdentityContext::new("enterprise-prod").unwrap();
+let mut builder = InventoryBuilder::new();
+let key = builder.ingest_candidate(
+    AssetKind::Library {
         ecosystem: "cargo".into(),
         name: "openssl".into(),
-        version: "1".into(),
+        version: "3.0.0".into(),
     },
-    extensions: BTreeMap::new(),
-}).unwrap();
+    &context,
+    BTreeMap::new(),
+).unwrap();
 
-let snapshot = inventory.finalize(InventoryLimits::default()).unwrap();
-assert_eq!(snapshot.assets.len(), 1);
+let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+snapshot.verify(InventoryLimits::default()).unwrap();
+assert!(snapshot.assets.contains_key(&key));
 ```
 
-## Current status
+## Security and data contracts
 
-FOSS-2 / FOSS-3 implementation is in progress. This first slice establishes typed asset/observation/evidence/relationship identities, deterministic map ordering and snapshot digests, cross-reference validation, conflict preservation, coverage, asset-level diff, and query primitives.
+- Normal inventory fields do not require private/symmetric key bytes.
+- Metadata validators reject recognized private-key PEM markers and oversized fields; collectors remain responsible for never submitting secrets. Pattern checking is not a guarantee against arbitrary secret leakage.
+- Asset IDs use a versioned, type-specific canonical tuple. Ambiguous identities fail rather than merging across tenants or use sites.
+- Source evidence and confidence are distinct from compliance, vulnerability severity, or migration readiness.
+- Collector scope/coverage is explicit, including failed, unsupported, and partially inspected source items.
+- No implicit host/network discovery occurs in the inventory model.
+- Snapshot hashes bind source/provenance and schema semantics. Distinct collection runs can produce distinct snapshot digests even for the same underlying assets.
 
-Remaining before story acceptance: canonical identity derivation across collectors, comprehensive asset and relationship variants, observation/evidence-aware diff classification, explicit confidence-change detection, snapshot deserialization verification, property/fuzz tests, provenance-rich fixture corpus, and release packaging. The Rust dependency lockfile must be regenerated and tests run.
+## Development and validation
+
+The FOSS-2 story is tracked in [Linear](https://linear.app/lattix/issue/FOSS-2/implement-canonical-cryptographic-inventory-model) and [draft PR #3](https://github.com/LATTIX-IO/cryptomap/pull/3).
+
+Required checks: `cargo fmt --all -- --check`, `cargo check --workspace --all-targets --all-features --locked`, `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, `cargo test --workspace --all-features --locked`, `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked`, dependency/deny/audit gates, and acceptance-fixture review.
+
+The API remains pre-1.0 until all child issue acceptance criteria and CI checks pass. crates.io publishing is disabled.
 
 ## License
 
