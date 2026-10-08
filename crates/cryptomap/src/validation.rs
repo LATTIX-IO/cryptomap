@@ -153,9 +153,14 @@ impl Evidence {
         safe_text(&self.source, limits.field_bytes)?;
         utc_seconds(&self.observed_at)?;
         if matches!(self.kind, crate::EvidenceKind::Inferred) {
-            let rule=self.inference_rule.as_deref().ok_or(InventoryError::InvalidMetadata)?;
-            if rule.is_empty() { return Err(InventoryError::InvalidMetadata); }
-            safe_text(rule,128)?;
+            let rule = self
+                .inference_rule
+                .as_deref()
+                .ok_or(InventoryError::InvalidMetadata)?;
+            if rule.is_empty() {
+                return Err(InventoryError::InvalidMetadata);
+            }
+            safe_text(rule, 128)?;
         }
         if let Some(digest) = &self.source_sha256 {
             if digest.len() != 64 || !digest.bytes().all(|x| x.is_ascii_hexdigit()) {
