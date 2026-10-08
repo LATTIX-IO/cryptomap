@@ -51,6 +51,7 @@ fn observation(name: &str, value: &str) -> Observation {
         asset: id("library"),
         evidence: EvidenceId::new("ev1").unwrap(),
         property: "config:crypto".into(),
+        context: None,
         value: value.into(),
     }
 }
