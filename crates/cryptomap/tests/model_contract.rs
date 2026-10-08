@@ -433,3 +433,23 @@ fn endpoint_identity_matches_cross_platform_v2_golden_vector() {
         "asset:v2:85e78bf3a84092d09e219bd9d48e082aeb5d093afa28e098b66c0af76f66d0d3"
     );
 }
+
+#[test]
+fn a_new_complete_scan_of_only_a_subset_cannot_confirm_removal() {
+    fn snapshot(assets: &[&str], coverage: &[&str]) -> InventorySnapshot {
+        let mut builder = InventoryBuilder::new();
+        for name in assets { builder.add_asset(library(name)).unwrap(); }
+        for name in coverage { builder.set_coverage(*name, CoverageState::InspectedObserved); }
+        builder.finalize(InventoryLimits::default()).unwrap()
+    }
+    let old = snapshot(&["a", "b"], &["file-a", "file-b"]);
+    let subset = snapshot(&["a"], &["file-a"]);
+    let delta = old.diff(&subset);
+    assert!(delta.removed.is_empty());
+    assert!(delta.tentative_removed.contains(&id("b")));
+
+    let fully_inspected = snapshot(&["a"], &["file-a", "file-b"]);
+    let delta = old.diff(&fully_inspected);
+    assert!(delta.removed.contains(&id("b")));
+    assert!(delta.tentative_removed.is_empty());
+}
