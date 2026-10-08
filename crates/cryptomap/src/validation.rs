@@ -194,16 +194,19 @@ impl Asset {
         let preview = String::from_utf8_lossy(&kind);
         safe_text(&preview, limits.record_bytes)?;
         match &self.kind {
-            AssetKind::Certificate { fingerprint_sha256, .. }
-            | AssetKind::TrustAnchor { fingerprint: fingerprint_sha256 }
-                if fingerprint_sha256.len() != 64 ||
-                    !fingerprint_sha256.bytes().all(|b| b.is_ascii_hexdigit()) =>
+            AssetKind::Certificate {
+                fingerprint_sha256, ..
+            }
+            | AssetKind::TrustAnchor {
+                fingerprint: fingerprint_sha256,
+            } if fingerprint_sha256.len() != 64
+                || !fingerprint_sha256.bytes().all(|b| b.is_ascii_hexdigit()) =>
             {
                 return Err(InventoryError::InvalidMetadata);
             }
             AssetKind::DetailedCertificate { metadata: m }
-                if m.fingerprint_sha256.len() != 64 ||
-                    !m.fingerprint_sha256.bytes().all(|b| b.is_ascii_hexdigit()) =>
+                if m.fingerprint_sha256.len() != 64
+                    || !m.fingerprint_sha256.bytes().all(|b| b.is_ascii_hexdigit()) =>
             {
                 return Err(InventoryError::InvalidMetadata);
             }
