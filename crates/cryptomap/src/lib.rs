@@ -590,24 +590,26 @@ impl InventoryBuilder {
             let from = &self.assets[&rel.from].kind;
             let to = &self.assets[&rel.to].kind;
             let valid = match rel.kind {
-                RelationshipKind::UsesAlgorithm => matches!(to, AssetKind::AlgorithmUse { .. }),
-                RelationshipKind::UsesKey => matches!(to, AssetKind::Key { .. }),
+                RelationshipKind::UsesAlgorithm => matches!(to, AssetKind::AlgorithmUse { .. } | AssetKind::DetailedAlgorithm { .. }),
+                RelationshipKind::UsesKey => matches!(to, AssetKind::Key { .. } | AssetKind::DetailedKey { .. }),
                 RelationshipKind::UsesCertificate | RelationshipKind::ValidatedBy => matches!(
                     to,
                     AssetKind::Certificate { .. }
+                        | AssetKind::DetailedCertificate { .. }
                         | AssetKind::TrustAnchor { .. }
                         | AssetKind::Authority { .. }
                 ),
                 RelationshipKind::StoredIn => {
-                    matches!(from, AssetKind::Key { .. })
+                    matches!(from, AssetKind::Key { .. } | AssetKind::DetailedKey { .. })
                         && matches!(to, AssetKind::KeyStore { .. } | AssetKind::Provider { .. })
                 }
                 RelationshipKind::IssuedBy => {
-                    matches!(from, AssetKind::Certificate { .. })
+                    matches!(from, AssetKind::Certificate { .. } | AssetKind::DetailedCertificate { .. })
                         && matches!(
                             to,
                             AssetKind::Authority { .. }
                                 | AssetKind::Certificate { .. }
+                                | AssetKind::DetailedCertificate { .. }
                                 | AssetKind::TrustAnchor { .. }
                         )
                 }
@@ -617,7 +619,7 @@ impl InventoryBuilder {
                         AssetKind::Protocol {
                             state: ProtocolState::Negotiated,
                             ..
-                        }
+                        } | AssetKind::DetailedProtocol { metadata: metadata::ProtocolMetadata {state: metadata::ProtocolObservation::Negotiated, ..} }
                     ) && matches!(to, AssetKind::Endpoint { .. })
                 }
                 RelationshipKind::ConfiguredFor => matches!(
@@ -625,9 +627,9 @@ impl InventoryBuilder {
                     AssetKind::Protocol {
                         state: ProtocolState::Configured,
                         ..
-                    } | AssetKind::AlgorithmUse { .. }
+                    } | AssetKind::DetailedProtocol { metadata: metadata::ProtocolMetadata {state: metadata::ProtocolObservation::Configured, ..} } | AssetKind::AlgorithmUse { .. } | AssetKind::DetailedAlgorithm { .. }
                 ),
-                RelationshipKind::ImplementsProtocol => matches!(to, AssetKind::Protocol { .. }),
+                RelationshipKind::ImplementsProtocol => matches!(to, AssetKind::Protocol { .. } | AssetKind::DetailedProtocol { .. }),
                 _ => true,
             };
             if !valid {
