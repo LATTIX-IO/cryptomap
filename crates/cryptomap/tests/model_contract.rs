@@ -45,6 +45,7 @@ fn ev(idstr: &str, run_id: &str, time: &str, conf: Confidence) -> Evidence {
         kind: EvidenceKind::Direct,
         confidence: conf,
         source_sha256: None,
+        inference_rule: None,
     }
 }
 fn obs(idstr: &str, ev_id: &str, value: &str) -> Observation {
