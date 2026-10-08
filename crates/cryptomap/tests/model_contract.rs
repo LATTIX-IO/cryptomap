@@ -622,3 +622,26 @@ fn matching_relationships_accumulate_independent_evidence() {
     assert_eq!(snapshot.relationships[&key].evidence.len(),2);
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
+
+#[test]
+fn query_supports_collected_scope_and_snapshot_change_filters() {
+    let original=InventoryBuilder::new().finalize(InventoryLimits::default()).unwrap();
+    let mut builder=InventoryBuilder::new();
+    builder.add_run(run("r1","file1")).unwrap();
+    builder.add_asset(library("app")).unwrap();
+    let mut evidence=ev("e1","r1","2026-10-08T01:00:00Z",Confidence::Confirmed);
+    evidence.source="file1".into();
+    builder.add_evidence(evidence).unwrap();
+    builder.add_observation(Observation {
+        id:ObservationId::new("o1").unwrap(),
+        asset:id("app"), evidence:EvidenceId::new("e1").unwrap(),
+        property:"package:version".into(),context:None,value:"1.0".into()
+    }).unwrap();
+    builder.set_coverage("file1",CoverageState::InspectedObserved);
+    let snapshot=builder.finalize(InventoryLimits::default()).unwrap();
+    let delta=original.diff(&snapshot);
+    assert_eq!(snapshot.query()
+        .coverage(&snapshot,CoverageState::InspectedObserved)
+        .added_or_changed(&delta).ids(10).unwrap(),vec![id("app")]);
+    assert!(snapshot.query().coverage(&snapshot,CoverageState::Failed).ids(10).unwrap().is_empty());
+}
