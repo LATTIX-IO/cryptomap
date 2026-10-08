@@ -767,18 +767,24 @@ pub struct ChangeSet {
     pub observations_added: BTreeSet<ObservationId>,
     /// Removed observation identifiers.
     pub observations_removed: BTreeSet<ObservationId>,
+    /// Observation absences not confirmed because collection is incomplete.
+    pub observations_tentative_removed: BTreeSet<ObservationId>,
     /// Observations with changed content under the same identifier.
     pub observations_changed: BTreeSet<ObservationId>,
     /// Evidence entries newly available.
     pub evidence_added: BTreeSet<EvidenceId>,
     /// Evidence entries no longer referenced/present.
     pub evidence_removed: BTreeSet<EvidenceId>,
+    /// Unconfirmed evidence absences under incomplete coverage.
+    pub evidence_tentative_removed: BTreeSet<EvidenceId>,
     /// Evidence with updated confidence.
     pub confidence_changed: BTreeSet<EvidenceId>,
     /// New relationships.
     pub relationships_added: BTreeSet<RelationshipId>,
     /// Removed relationships.
     pub relationships_removed: BTreeSet<RelationshipId>,
+    /// Unconfirmed relationship absences under incomplete coverage.
+    pub relationships_tentative_removed: BTreeSet<RelationshipId>,
     /// Same relationship identifier with modified metadata.
     pub relationships_changed: BTreeSet<RelationshipId>,
     /// Conflict IDs whose competing evidence sets changed.
@@ -888,14 +894,16 @@ impl InventorySnapshot {
                 .cloned()
                 .collect(),
             observations_added: new_obs.difference(&old_obs).cloned().collect(),
-            observations_removed: old_obs.difference(&new_obs).cloned().collect(),
+            observations_removed: if complete {old_obs.difference(&new_obs).cloned().collect()} else {BTreeSet::new()},
+            observations_tentative_removed: if complete {BTreeSet::new()} else {old_obs.difference(&new_obs).cloned().collect()},
             observations_changed: old_obs
                 .intersection(&new_obs)
                 .filter(|id| self.observations.get(*id) != newer.observations.get(*id))
                 .cloned()
                 .collect(),
             evidence_added: new_evidence.difference(&old_evidence).cloned().collect(),
-            evidence_removed: old_evidence.difference(&new_evidence).cloned().collect(),
+            evidence_removed: if complete {old_evidence.difference(&new_evidence).cloned().collect()} else {BTreeSet::new()},
+            evidence_tentative_removed: if complete {BTreeSet::new()} else {old_evidence.difference(&new_evidence).cloned().collect()},
             confidence_changed: old_evidence
                 .intersection(&new_evidence)
                 .filter(|id| {
@@ -905,7 +913,8 @@ impl InventorySnapshot {
                 .cloned()
                 .collect(),
             relationships_added: new_rel.difference(&old_rel).cloned().collect(),
-            relationships_removed: old_rel.difference(&new_rel).cloned().collect(),
+            relationships_removed: if complete {old_rel.difference(&new_rel).cloned().collect()} else {BTreeSet::new()},
+            relationships_tentative_removed: if complete {BTreeSet::new()} else {old_rel.difference(&new_rel).cloned().collect()},
             relationships_changed: old_rel
                 .intersection(&new_rel)
                 .filter(|id| self.relationships.get(*id) != newer.relationships.get(*id))
