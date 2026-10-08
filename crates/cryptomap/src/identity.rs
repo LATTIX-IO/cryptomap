@@ -12,8 +12,19 @@ pub struct IdentityContext {
     /// Optional stable endpoint, workload or source use-site for ambiguous instances.
     #[serde(default)]
     pub use_site: Option<String>,
+    /// Concrete key provider instance, required for key and key-store identities.
+    #[serde(default)]
+    pub provider_instance: Option<String>,
 }
 impl IdentityContext {
+    /// Pin an exact provider instance for identity derivation of keys and stores.
+    pub fn with_provider_instance(mut self, instance: impl Into<String>) -> Result<Self, InventoryError> {
+        let instance = instance.into();
+        validate_component(&instance)?;
+        self.provider_instance = Some(instance);
+        Ok(self)
+    }
+
     /// Specify a stable use-site identity when a profile alone is ambiguous.
     pub fn with_use_site(mut self, site: impl Into<String>) -> Result<Self, InventoryError> {
         let site = site.into();
@@ -29,6 +40,7 @@ impl IdentityContext {
         Ok(Self {
             scope,
             use_site: None,
+            provider_instance: None,
         })
     }
 }
@@ -118,7 +130,9 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             let id = fingerprint
                 .as_deref()
                 .ok_or(InventoryError::InsufficientIdentity)?;
-            ("key", vec![scope, fold(prov)?, fold(id)?])
+            ("key", vec![scope,
+                ctx.provider_instance.clone().ok_or(InventoryError::InsufficientIdentity)?,
+                fold(prov)?, fold(id)?])
         }
         AssetKind::Certificate {
             fingerprint_sha256, ..
