@@ -308,3 +308,27 @@ fn coverage_cannot_claim_complete_when_sources_failed() {
     });
     assert!(b.finalize(InventoryLimits::default()).is_err());
 }
+
+#[test]
+fn redacted_reports_do_not_expose_sensitive_inventory_metadata() {
+    let mut builder = InventoryBuilder::new();
+    builder.add_asset(Asset {
+        id: AssetId::new("secret-internal-hostname").unwrap(),
+        kind: AssetKind::Endpoint {
+            transport: "tcp".into(),
+            host: "internal.secret.example".into(),
+            port: 443,
+            scope: "private-network".into(),
+        },
+        extensions: BTreeMap::new(),
+    }).unwrap();
+    builder.set_coverage("internal.secret.example", CoverageState::InspectedObserved);
+    let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+    let view = snapshot.redacted_report();
+    let rendered = serde_json::to_string(&view).unwrap();
+    assert_eq!(view.asset_count, 1);
+    assert!(!rendered.contains("internal.secret.example"));
+    assert!(!rendered.contains("private-network"));
+    assert!(!rendered.contains("secret-internal-hostname"));
+    assert!(!rendered.contains(&snapshot.id.to_string()));
+}
