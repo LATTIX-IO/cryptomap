@@ -420,6 +420,24 @@ impl InventoryBuilder {
                 return Err(InventoryError::DanglingRelationship(rel.id.to_string()));
             }
             if rel.evidence.iter().any(|id| !self.evidence.contains_key(id)) { return Err(InventoryError::InvalidIdentifier); }
+            let from = &self.assets[&rel.from].kind;
+            let to = &self.assets[&rel.to].kind;
+            let valid = match rel.kind {
+                RelationshipKind::UsesAlgorithm => matches!(to, AssetKind::AlgorithmUse { .. }),
+                RelationshipKind::UsesKey => matches!(to, AssetKind::Key { .. }),
+                RelationshipKind::UsesCertificate | RelationshipKind::ValidatedBy =>
+                    matches!(to, AssetKind::Certificate { .. } | AssetKind::TrustAnchor { .. } | AssetKind::Authority { .. }),
+                RelationshipKind::StoredIn => matches!(from, AssetKind::Key { .. })
+                    && matches!(to, AssetKind::KeyStore { .. } | AssetKind::Provider { .. }),
+                RelationshipKind::IssuedBy => matches!(from, AssetKind::Certificate { .. })
+                    && matches!(to, AssetKind::Authority { .. } | AssetKind::Certificate { .. } | AssetKind::TrustAnchor { .. }),
+                RelationshipKind::NegotiatedAt => matches!(from, AssetKind::Protocol { state: ProtocolState::Negotiated, .. })
+                    && matches!(to, AssetKind::Endpoint { .. }),
+                RelationshipKind::ConfiguredFor => matches!(from, AssetKind::Protocol { state: ProtocolState::Configured, .. } | AssetKind::AlgorithmUse { .. }),
+                RelationshipKind::ImplementsProtocol => matches!(to, AssetKind::Protocol { .. }),
+                _ => true,
+            };
+            if !valid { return Err(InventoryError::InvalidMetadata); }
         }
         let mut conflicts = BTreeMap::new();
         for ((asset,property,bucket),values) in grouped {
@@ -463,6 +481,28 @@ pub struct ChangeSet {
     pub changed: BTreeSet<AssetId>,
     /// Canonical metadata is unchanged.
     pub unchanged: BTreeSet<AssetId>,
+    /// Potential removals that cannot be confirmed under incomplete collection.
+    pub tentative_removed: BTreeSet<AssetId>,
+    /// Newly observed facts.
+    pub observations_added: BTreeSet<ObservationId>,
+    /// Removed observation identifiers.
+    pub observations_removed: BTreeSet<ObservationId>,
+    /// Observations with changed content under the same identifier.
+    pub observations_changed: BTreeSet<ObservationId>,
+    /// Evidence entries newly available.
+    pub evidence_added: BTreeSet<EvidenceId>,
+    /// Evidence entries no longer referenced/present.
+    pub evidence_removed: BTreeSet<EvidenceId>,
+    /// Evidence with updated confidence.
+    pub confidence_changed: BTreeSet<EvidenceId>,
+    /// New relationships.
+    pub relationships_added: BTreeSet<RelationshipId>,
+    /// Removed relationships.
+    pub relationships_removed: BTreeSet<RelationshipId>,
+    /// Same relationship identifier with modified metadata.
+    pub relationships_changed: BTreeSet<RelationshipId>,
+    /// Conflict IDs whose competing evidence sets changed.
+    pub conflicts_changed: BTreeSet<ConflictId>,
     /// Scope items with changed coverage state.
     pub coverage_changed: BTreeSet<String>,
     /// Conflicts newly present in the later snapshot.
@@ -471,16 +511,66 @@ pub struct ChangeSet {
     pub conflicts_resolved: BTreeSet<ConflictId>,
 }
 impl InventorySnapshot {
+    /// Recalculate the digest and verify internal references on an imported snapshot.
+    pub fn verify(&self, limits:InventoryLimits)->Result<(),InventoryError>{
+        if self.schema_version!=1 {return Err(InventoryError::UnsupportedSchema(self.schema_version));}
+        let mut builder=InventoryBuilder::new();
+        for run in self.runs.values(){builder.add_run(run.clone())?;}
+        for asset in self.assets.values(){builder.add_asset(asset.clone())?;}
+        for evidence in self.evidence.values(){builder.add_evidence(evidence.clone())?;}
+        for observation in self.observations.values(){builder.add_observation(observation.clone())?;}
+        for relationship in self.relationships.values(){builder.add_relationship(relationship.clone())?;}
+        for (source,state) in &self.coverage{builder.set_coverage(source.clone(),*state);}
+        for record in &self.coverage_records{builder.add_coverage_record(record.clone());}
+        let verified=builder.finalize(limits)?;
+        if verified.id!=self.id || verified!=*self {return Err(InventoryError::DigestMismatch);}
+        Ok(())
+    }
+    /// Decode JSON only after verifying schema, source references and canonical digest.
+    pub fn from_json_verified(input:&str,limits:InventoryLimits)->Result<Self,InventoryError>{
+        if input.len()>limits.snapshot_bytes{return Err(InventoryError::LimitExceeded("snapshot bytes"));}
+        let snapshot:Self=serde_json::from_str(input).map_err(|e|InventoryError::Encoding(e.to_string()))?;
+        snapshot.verify(limits)?;
+        Ok(snapshot)
+    }
     /// Compare this snapshot (old) with a newer snapshot deterministically.
     pub fn diff(&self, newer:&Self)->ChangeSet {
         let old: BTreeSet<_> = self.assets.keys().cloned().collect();
         let new: BTreeSet<_> = newer.assets.keys().cloned().collect();
         let common = old.intersection(&new);
+        let complete = !newer.coverage.is_empty()
+            && newer.coverage.values().all(|state|
+                matches!(state, CoverageState::InspectedObserved | CoverageState::InspectedNoObservation))
+            && newer.runs.values().all(|run| matches!(run.completeness,RunCompleteness::Complete))
+            && newer.coverage_records.iter().all(|record|
+                matches!(record.state,CoverageState::InspectedObserved|CoverageState::InspectedNoObservation));
+        let old_obs: BTreeSet<_> = self.observations.keys().cloned().collect();
+        let new_obs: BTreeSet<_> = newer.observations.keys().cloned().collect();
+        let old_evidence: BTreeSet<_> = self.evidence.keys().cloned().collect();
+        let new_evidence: BTreeSet<_> = newer.evidence.keys().cloned().collect();
+        let old_rel: BTreeSet<_> = self.relationships.keys().cloned().collect();
+        let new_rel: BTreeSet<_> = newer.relationships.keys().cloned().collect();
         ChangeSet {
             added:new.difference(&old).cloned().collect(),
-            removed:old.difference(&new).cloned().collect(),
+            removed: if complete {old.difference(&new).cloned().collect()} else {BTreeSet::new()},
+            tentative_removed: if complete {BTreeSet::new()} else {old.difference(&new).cloned().collect()},
             changed:common.clone().filter(|id|self.assets.get(*id)!=newer.assets.get(*id)).cloned().collect(),
             unchanged:old.intersection(&new).filter(|id|self.assets.get(*id)==newer.assets.get(*id)).cloned().collect(),
+            observations_added:new_obs.difference(&old_obs).cloned().collect(),
+            observations_removed:old_obs.difference(&new_obs).cloned().collect(),
+            observations_changed:old_obs.intersection(&new_obs)
+                .filter(|id|self.observations.get(*id)!=newer.observations.get(*id)).cloned().collect(),
+            evidence_added:new_evidence.difference(&old_evidence).cloned().collect(),
+            evidence_removed:old_evidence.difference(&new_evidence).cloned().collect(),
+            confidence_changed:old_evidence.intersection(&new_evidence)
+                .filter(|id|self.evidence.get(*id).map(|e|e.confidence)!=newer.evidence.get(*id).map(|e|e.confidence))
+                .cloned().collect(),
+            relationships_added:new_rel.difference(&old_rel).cloned().collect(),
+            relationships_removed:old_rel.difference(&new_rel).cloned().collect(),
+            relationships_changed:old_rel.intersection(&new_rel)
+                .filter(|id|self.relationships.get(*id)!=newer.relationships.get(*id)).cloned().collect(),
+            conflicts_changed:self.conflicts.keys().filter(|id|newer.conflicts.contains_key(*id)
+                && self.conflicts.get(*id)!=newer.conflicts.get(*id)).cloned().collect(),
             coverage_changed:self.coverage.keys().chain(newer.coverage.keys()).filter(|k|self.coverage.get(*k)!=newer.coverage.get(*k)).cloned().collect(),
             conflicts_introduced:newer.conflicts.keys().filter(|id|!self.conflicts.contains_key(*id)).cloned().collect(),
             conflicts_resolved:self.conflicts.keys().filter(|id|!newer.conflicts.contains_key(*id)).cloned().collect(),
