@@ -328,6 +328,9 @@ pub struct Observation {
     pub evidence: EvidenceId,
     /// Property observed; field names are namespaced to avoid ambiguity.
     pub property: String,
+    /// Optional connection, configuration instance, or producer context.
+    #[serde(default)]
+    pub context: Option<String>,
     /// Observed value, which is not overwritten by later observations.
     pub value: String,
 }
@@ -388,6 +391,12 @@ pub struct Conflict {
     pub asset: AssetId,
     /// Conflicting property.
     pub property: String,
+    /// Context shared by the conflicting observations, if known.
+    #[serde(default)]
+    pub context: Option<String>,
+    /// UTC hour bucket of the conflicting observations.
+    #[serde(default)]
+    pub utc_hour: i64,
     /// Values and the observations backing each value.
     pub values: BTreeMap<String, BTreeSet<ObservationId>>,
 }
@@ -664,7 +673,7 @@ impl InventoryBuilder {
         self.coverage_records.sort();
         self.coverage_records.dedup();
         let mut grouped: BTreeMap<
-            (AssetId, String, i64),
+            (AssetId, String, Option<String>, i64),
             BTreeMap<String, BTreeSet<ObservationId>>,
         > = BTreeMap::new();
         for obs in self.observations.values() {
@@ -678,9 +687,16 @@ impl InventoryBuilder {
             obs.validate(&limits)?;
             // Only observations in the same UTC hour and with identical typed property
             // belong to one current-state conflict group; historical changes remain history.
+            // Set-valued properties represent multiple compatible capabilities,
+            // not contradictory scalar state.
+            if matches!(obs.property.as_str(),
+                "protocol:configured" | "algorithm:supported" | "certificate:san" |
+                "key:allowed-usage") {
+                continue;
+            }
             let bucket = validation::utc_seconds(&evidence.observed_at)?.div_euclid(3600);
             grouped
-                .entry((obs.asset.clone(), obs.property.clone(), bucket))
+                .entry((obs.asset.clone(), obs.property.clone(), obs.context.clone(), bucket))
                 .or_default()
                 .entry(obs.value.clone())
                 .or_default()
