@@ -113,7 +113,7 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             "algorithm-use",
             vec![
                 scope,
-                fold(use_site)?,
+                use_site.clone(),
                 fold(family)?,
                 profile
                     .as_deref()
@@ -238,7 +238,7 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             "algorithm-use",
             vec![
                 scope,
-                fold(&m.use_site)?,
+                m.use_site.clone(),
                 fold(&m.family)?,
                 match &m.profile {
                     crate::metadata::Observed::Known(p) => fold(p)?,
