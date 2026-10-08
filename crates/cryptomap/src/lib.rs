@@ -296,7 +296,7 @@ pub struct Conflict {
     pub values: BTreeMap<String, BTreeSet<ObservationId>>,
 }
 /// Collection coverage of an explicitly scoped source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum CoverageState {
     InspectedObserved,
     InspectedNoObservation,
@@ -472,7 +472,7 @@ impl InventoryBuilder {
         self
     }
     /// Validate references, detect divergent observations and finalize an immutable snapshot.
-    pub fn finalize(self, limits: InventoryLimits) -> Result<InventorySnapshot, InventoryError> {
+    pub fn finalize(mut self, limits: InventoryLimits) -> Result<InventorySnapshot, InventoryError> {
         for (label, count, max) in [
             ("assets", self.assets.len(), limits.assets),
             ("observations", self.observations.len(), limits.observations),
@@ -523,6 +523,8 @@ impl InventoryBuilder {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
+        self.coverage_records.sort();
+        self.coverage_records.dedup();
         let mut grouped: BTreeMap<
             (AssetId, String, i64),
             BTreeMap<String, BTreeSet<ObservationId>>,
