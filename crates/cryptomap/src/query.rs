@@ -148,6 +148,12 @@ impl AssetKind {
             Self::Provider { .. } => "provider",
             Self::CryptoImplementation { .. } => "implementation",
             Self::Authority { .. } => "authority",
+            Self::DetailedAlgorithm { .. } => "algorithm-use",
+            Self::DetailedKey { .. } => "key",
+            Self::DetailedCertificate { .. } => "certificate",
+            Self::DetailedProtocol { .. } => "protocol",
+            Self::DetailedDependency { .. } => "library",
+            Self::DetailedImplementation { .. } => "implementation",
         }
     }
 }
