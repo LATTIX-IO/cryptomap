@@ -56,7 +56,7 @@ fn obs(idstr: &str, ev_id: &str, value: &str) -> Observation {
         id: ObservationId::new(idstr).unwrap(),
         asset: id("app"),
         evidence: EvidenceId::new(ev_id).unwrap(),
-        property: "protocol:configured".into(),
+        property: "protocol:negotiated".into(),
         value: value.into(),
     }
 }
@@ -130,8 +130,8 @@ fn type_specific_identity_is_stable_and_scoped() {
         algorithm: None,
     };
     assert_ne!(
-        AssetId::from_kind(&key, &a).unwrap(),
-        AssetId::from_kind(&key, &b).unwrap()
+        AssetId::from_kind(&key, &a.clone().with_provider_instance("instance-1").unwrap()).unwrap(),
+        AssetId::from_kind(&key, &a.with_provider_instance("instance-2").unwrap()).unwrap()
     );
 }
 #[test]
