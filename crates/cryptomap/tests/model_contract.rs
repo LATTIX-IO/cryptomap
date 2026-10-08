@@ -370,3 +370,32 @@ fn evidence_collector_must_match_declared_collection_run() {
         Err(InventoryError::InvalidMetadata)
     ));
 }
+
+#[test]
+fn multiple_configured_capabilities_and_distinct_sessions_are_not_conflicts() {
+    let mut b=InventoryBuilder::new();
+    b.add_run(run("r1","app")).unwrap();
+    b.add_asset(library("app")).unwrap();
+    b.add_evidence(ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
+    b.add_evidence(ev("e2","r1","2026-10-08T01:01:00Z",Confidence::High)).unwrap();
+    let mut a=obs("o1","e1","TLS_AES_128_GCM_SHA256");
+    a.property="protocol:configured".into();
+    let mut c=obs("o2","e2","TLS_AES_256_GCM_SHA384");
+    c.property="protocol:configured".into();
+    b.add_observation(a).unwrap();
+    b.add_observation(c).unwrap();
+    assert!(b.finalize(InventoryLimits::default()).unwrap().conflicts.is_empty());
+
+    let mut b=InventoryBuilder::new();
+    b.add_run(run("r1","app")).unwrap();
+    b.add_asset(library("app")).unwrap();
+    b.add_evidence(ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
+    b.add_evidence(ev("e2","r1","2026-10-08T01:01:00Z",Confidence::High)).unwrap();
+    let mut a=obs("o1","e1","TLS1.2");
+    let mut c=obs("o2","e2","TLS1.3");
+    a.context=Some("connection-a".into());
+    c.context=Some("connection-b".into());
+    b.add_observation(a).unwrap();
+    b.add_observation(c).unwrap();
+    assert!(b.finalize(InventoryLimits::default()).unwrap().conflicts.is_empty());
+}
