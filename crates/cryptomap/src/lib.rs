@@ -220,6 +220,9 @@ pub struct Evidence {
     pub confidence: Confidence,
     /// Optional content digest without embedding the source content.
     pub source_sha256: Option<String>,
+    /// Inference-rule identifier, mandatory for inferred observations.
+    #[serde(default)]
+    pub inference_rule: Option<String>,
 }
 /// Immutable claim attached to one asset and supported by evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
