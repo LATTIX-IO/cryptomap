@@ -51,6 +51,7 @@ fn assemble(order: &[usize]) -> InventorySnapshot {
             asset: AssetId::new(format!("a{i}")).unwrap(),
             evidence: EvidenceId::new(format!("e:file{i}")).unwrap(),
             property: "package:version".into(),
+            context: None,
             value: "1.0".into(),
         })
         .unwrap();
@@ -137,6 +138,7 @@ fn prohibited_key_material_cannot_enter_observation() {
         asset: AssetId::new("a1").unwrap(),
         evidence: EvidenceId::new("e:file1").unwrap(),
         property: "key:material".into(),
+        context: None,
         value: "-----BEGIN PRIVATE KEY-----".into(),
     })
     .unwrap();
