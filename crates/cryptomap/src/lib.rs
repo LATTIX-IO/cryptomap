@@ -894,16 +894,32 @@ impl InventorySnapshot {
                 .cloned()
                 .collect(),
             observations_added: new_obs.difference(&old_obs).cloned().collect(),
-            observations_removed: if complete {old_obs.difference(&new_obs).cloned().collect()} else {BTreeSet::new()},
-            observations_tentative_removed: if complete {BTreeSet::new()} else {old_obs.difference(&new_obs).cloned().collect()},
+            observations_removed: if complete {
+                old_obs.difference(&new_obs).cloned().collect()
+            } else {
+                BTreeSet::new()
+            },
+            observations_tentative_removed: if complete {
+                BTreeSet::new()
+            } else {
+                old_obs.difference(&new_obs).cloned().collect()
+            },
             observations_changed: old_obs
                 .intersection(&new_obs)
                 .filter(|id| self.observations.get(*id) != newer.observations.get(*id))
                 .cloned()
                 .collect(),
             evidence_added: new_evidence.difference(&old_evidence).cloned().collect(),
-            evidence_removed: if complete {old_evidence.difference(&new_evidence).cloned().collect()} else {BTreeSet::new()},
-            evidence_tentative_removed: if complete {BTreeSet::new()} else {old_evidence.difference(&new_evidence).cloned().collect()},
+            evidence_removed: if complete {
+                old_evidence.difference(&new_evidence).cloned().collect()
+            } else {
+                BTreeSet::new()
+            },
+            evidence_tentative_removed: if complete {
+                BTreeSet::new()
+            } else {
+                old_evidence.difference(&new_evidence).cloned().collect()
+            },
             confidence_changed: old_evidence
                 .intersection(&new_evidence)
                 .filter(|id| {
@@ -913,8 +929,16 @@ impl InventorySnapshot {
                 .cloned()
                 .collect(),
             relationships_added: new_rel.difference(&old_rel).cloned().collect(),
-            relationships_removed: if complete {old_rel.difference(&new_rel).cloned().collect()} else {BTreeSet::new()},
-            relationships_tentative_removed: if complete {BTreeSet::new()} else {old_rel.difference(&new_rel).cloned().collect()},
+            relationships_removed: if complete {
+                old_rel.difference(&new_rel).cloned().collect()
+            } else {
+                BTreeSet::new()
+            },
+            relationships_tentative_removed: if complete {
+                BTreeSet::new()
+            } else {
+                old_rel.difference(&new_rel).cloned().collect()
+            },
             relationships_changed: old_rel
                 .intersection(&new_rel)
                 .filter(|id| self.relationships.get(*id) != newer.relationships.get(*id))
