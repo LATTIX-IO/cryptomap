@@ -672,10 +672,9 @@ impl InventoryBuilder {
         }
         self.coverage_records.sort();
         self.coverage_records.dedup();
-        let mut grouped: BTreeMap<
-            (AssetId, String, Option<String>, i64),
-            BTreeMap<String, BTreeSet<ObservationId>>,
-        > = BTreeMap::new();
+        type ConflictContext = (AssetId, String, Option<String>, i64);
+        type ConflictEvidence = BTreeMap<String, BTreeSet<ObservationId>>;
+        let mut grouped: BTreeMap<ConflictContext, ConflictEvidence> = BTreeMap::new();
         for obs in self.observations.values() {
             if !self.assets.contains_key(&obs.asset) {
                 return Err(InventoryError::MissingAsset(obs.asset.to_string()));
