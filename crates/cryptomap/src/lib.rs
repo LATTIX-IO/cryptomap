@@ -784,9 +784,9 @@ impl InventoryBuilder {
             }
         }
         let mut conflicts = BTreeMap::new();
-        for ((asset, property, bucket), values) in grouped {
+        for ((asset, property, context, bucket), values) in grouped {
             if values.len() > 1 {
-                let bytes = serde_json::to_vec(&(asset.clone(), property.clone(), bucket))
+                let bytes = serde_json::to_vec(&(asset.clone(), property.clone(), context.clone(), bucket))
                     .map_err(|e| InventoryError::Encoding(e.to_string()))?;
                 let id = ConflictId::new(format!("sha256:{}", hex_digest(&bytes)))?;
                 conflicts.insert(
@@ -795,6 +795,8 @@ impl InventoryBuilder {
                         id,
                         asset,
                         property,
+                        context,
+                        utc_hour: bucket,
                         values,
                     },
                 );
