@@ -188,17 +188,27 @@ pub enum AssetKind {
     /// Issuer/CA identity using a nonsecret certificate fingerprint.
     Authority { certificate_fingerprint: String },
     /// Detailed algorithm usage with typed operation and parameters.
-    DetailedAlgorithm { metadata: metadata::AlgorithmMetadata },
+    DetailedAlgorithm {
+        metadata: metadata::AlgorithmMetadata,
+    },
     /// Detailed secret-free key inventory.
     DetailedKey { metadata: metadata::KeyMetadata },
     /// Detailed certificate metadata.
-    DetailedCertificate { metadata: metadata::CertificateMetadata },
+    DetailedCertificate {
+        metadata: metadata::CertificateMetadata,
+    },
     /// Detailed protocol observation.
-    DetailedProtocol { metadata: metadata::ProtocolMetadata },
+    DetailedProtocol {
+        metadata: metadata::ProtocolMetadata,
+    },
     /// Detailed software/package dependency metadata.
-    DetailedDependency { metadata: metadata::DependencyMetadata },
+    DetailedDependency {
+        metadata: metadata::DependencyMetadata,
+    },
     /// Detailed crypto implementation metadata.
-    DetailedImplementation { metadata: metadata::ImplementationMetadata },
+    DetailedImplementation {
+        metadata: metadata::ImplementationMetadata,
+    },
 }
 /// Canonical asset identity and typed metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
