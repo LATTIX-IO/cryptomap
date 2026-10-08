@@ -312,16 +312,18 @@ fn coverage_cannot_claim_complete_when_sources_failed() {
 #[test]
 fn redacted_reports_do_not_expose_sensitive_inventory_metadata() {
     let mut builder = InventoryBuilder::new();
-    builder.add_asset(Asset {
-        id: AssetId::new("secret-internal-hostname").unwrap(),
-        kind: AssetKind::Endpoint {
-            transport: "tcp".into(),
-            host: "internal.secret.example".into(),
-            port: 443,
-            scope: "private-network".into(),
-        },
-        extensions: BTreeMap::new(),
-    }).unwrap();
+    builder
+        .add_asset(Asset {
+            id: AssetId::new("secret-internal-hostname").unwrap(),
+            kind: AssetKind::Endpoint {
+                transport: "tcp".into(),
+                host: "internal.secret.example".into(),
+                port: 443,
+                scope: "private-network".into(),
+            },
+            extensions: BTreeMap::new(),
+        })
+        .unwrap();
     builder.set_coverage("internal.secret.example", CoverageState::InspectedObserved);
     let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
     let view = snapshot.redacted_report();
@@ -335,31 +337,35 @@ fn redacted_reports_do_not_expose_sensitive_inventory_metadata() {
 
 #[test]
 fn complete_collection_requires_a_coverage_record_for_every_requested_item() {
-    let mut completed=run("complete","file1");
-    completed.completeness=RunCompleteness::Complete;
-    let mut invalid=InventoryBuilder::new();
+    let mut completed = run("complete", "file1");
+    completed.completeness = RunCompleteness::Complete;
+    let mut invalid = InventoryBuilder::new();
     invalid.add_run(completed.clone()).unwrap();
-    assert!(matches!(invalid.finalize(InventoryLimits::default()),
-        Err(InventoryError::InvalidMetadata)));
+    assert!(matches!(
+        invalid.finalize(InventoryLimits::default()),
+        Err(InventoryError::InvalidMetadata)
+    ));
 
-    let mut valid=InventoryBuilder::new();
+    let mut valid = InventoryBuilder::new();
     valid.add_run(completed).unwrap();
-    valid.add_coverage_record(CoverageRecord{
-        run:CollectionRunId::new("complete").unwrap(),
-        source_item:"file1".into(),
-        state:CoverageState::InspectedNoObservation,
-        reason_code:None,
+    valid.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("complete").unwrap(),
+        source_item: "file1".into(),
+        state: CoverageState::InspectedNoObservation,
+        reason_code: None,
     });
     assert!(valid.finalize(InventoryLimits::default()).is_ok());
 }
 
 #[test]
 fn evidence_collector_must_match_declared_collection_run() {
-    let mut builder=InventoryBuilder::new();
-    builder.add_run(run("r1","file1")).unwrap();
-    let mut mismatched=ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High);
-    mismatched.collector=CollectorId::new("unrelated").unwrap();
+    let mut builder = InventoryBuilder::new();
+    builder.add_run(run("r1", "file1")).unwrap();
+    let mut mismatched = ev("e1", "r1", "2026-10-08T01:00:00Z", Confidence::High);
+    mismatched.collector = CollectorId::new("unrelated").unwrap();
     builder.add_evidence(mismatched).unwrap();
-    assert!(matches!(builder.finalize(InventoryLimits::default()),
-        Err(InventoryError::InvalidMetadata)));
+    assert!(matches!(
+        builder.finalize(InventoryLimits::default()),
+        Err(InventoryError::InvalidMetadata)
+    ));
 }

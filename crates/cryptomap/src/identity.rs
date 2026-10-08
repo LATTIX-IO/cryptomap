@@ -135,7 +135,9 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
                 "protocol",
                 vec![
                     scope,
-                    ctx.use_site.clone().ok_or(InventoryError::InsufficientIdentity)?,
+                    ctx.use_site
+                        .clone()
+                        .ok_or(InventoryError::InsufficientIdentity)?,
                     fold(family)?,
                     fold(ver)?,
                     format!("{state:?}"),
