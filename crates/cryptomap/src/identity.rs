@@ -26,7 +26,10 @@ impl IdentityContext {
     pub fn new(scope: impl Into<String>) -> Result<Self, InventoryError> {
         let scope = scope.into();
         validate_component(&scope)?;
-        Ok(Self { scope, use_site: None })
+        Ok(Self {
+            scope,
+            use_site: None,
+        })
     }
 }
 /// Identity result, retaining the canonical key components for inspection.
@@ -169,10 +172,17 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             ("source-use", vec![scope, source.clone(), location.clone()])
         }
         AssetKind::TrustAnchor { fingerprint } => ("trust-anchor", vec![fold(fingerprint)?]),
-        AssetKind::Extension { namespace, kind } => {
-            ("extension", vec![scope,ctx.use_site.clone().ok_or(InventoryError::InsufficientIdentity)?,
-                fold(namespace)?, fold(kind)?])
-        }
+        AssetKind::Extension { namespace, kind } => (
+            "extension",
+            vec![
+                scope,
+                ctx.use_site
+                    .clone()
+                    .ok_or(InventoryError::InsufficientIdentity)?,
+                fold(namespace)?,
+                fold(kind)?,
+            ],
+        ),
         AssetKind::Provider { name, instance } => {
             ("provider", vec![scope, fold(name)?, instance.clone()])
         }
