@@ -4,6 +4,15 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod coverage;
+pub mod identity;
+pub mod metadata;
+pub mod query;
+pub mod validation;
+pub use coverage::{CollectionRun,CollectionScopeId,CoverageRecord,RunCompleteness};
+pub use identity::{AssetIdentity,IdentityContext};
+pub use metadata::{AlgorithmOperation,CertificateMetadata,DependencyMetadata,KeyMetadata,Observed,ProtocolObservation};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use sha2::{Digest, Sha256};
@@ -24,6 +33,18 @@ pub enum InventoryError {
     LimitExceeded(&'static str),
     /// Canonical encoding failed.
     Encoding(String),
+    /// Identity attributes do not uniquely identify one asset.
+    InsufficientIdentity,
+    /// Bounded metadata failed validation.
+    InvalidMetadata,
+    /// A timestamp is not a valid timezone-aware RFC3339 value.
+    InvalidTimestamp,
+    /// Inventory content includes prohibited secret material.
+    ProhibitedMaterial,
+    /// An imported snapshot digest does not match its canonical contents.
+    DigestMismatch,
+    /// A serialized schema version is not supported.
+    UnsupportedSchema(u32),
 }
 impl fmt::Display for InventoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{self:?}") }
@@ -102,6 +123,12 @@ pub enum AssetKind {
     TrustAnchor { fingerprint: String },
     /// Source-specific type that has no standardized mapping yet.
     Extension { namespace: String, kind: String },
+    /// Named crypto provider instance.
+    Provider { name: String, instance: String },
+    /// A versioned cryptographic implementation.
+    CryptoImplementation { product: String, version: String },
+    /// Issuer/CA identity using a nonsecret certificate fingerprint.
+    Authority { certificate_fingerprint: String },
 }
 /// Canonical asset identity and typed metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +196,20 @@ pub enum RelationshipKind {
     PossibleAlias,
     /// Generic typed relation pending a richer profile.
     RelatedTo,
+    /// The protocol was observed negotiating at an endpoint.
+    NegotiatedAt,
+    /// A protocol or algorithm was configured for an asset.
+    ConfiguredFor,
+    /// A key was stored in a provider or key store.
+    StoredIn,
+    /// A certificate was issued by an authority.
+    IssuedBy,
+    /// An explicit validation relationship was observed.
+    ValidatedBy,
+    /// One logical asset contains another.
+    Contains,
+    /// An implementation provides a protocol.
+    ImplementsProtocol,
 }
 /// Evidence-linked asset relationship.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,9 +259,26 @@ pub struct InventoryLimits {
     pub evidence: usize,
     /// Maximum relationships.
     pub relationships: usize,
+    /// Maximum number of namespaced extension fields per asset.
+    pub extension_entries: usize,
+    /// Maximum bytes per metadata field.
+    pub field_bytes: usize,
+    /// Maximum serialized bytes in one asset.
+    pub record_bytes: usize,
+    /// Maximum canonical serialized snapshot bytes.
+    pub snapshot_bytes: usize,
+    /// Maximum collection runs.
+    pub runs: usize,
+    /// Maximum coverage records.
+    pub coverage_records: usize,
 }
 impl Default for InventoryLimits {
-    fn default() -> Self { Self { assets: 100_000, observations: 500_000, evidence: 500_000, relationships: 1_000_000 } }
+    fn default() -> Self { Self {
+        assets: 100_000, observations: 500_000, evidence: 500_000,
+        relationships: 1_000_000, extension_entries: 32, field_bytes: 2048,
+        record_bytes: 16384, snapshot_bytes: 256_000_000, runs: 10_000,
+        coverage_records: 500_000
+    } }
 }
 /// Immutable, canonicalized evidence-backed inventory snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,6 +299,12 @@ pub struct InventorySnapshot {
     pub conflicts: BTreeMap<ConflictId, Conflict>,
     /// Reported collection coverage.
     pub coverage: BTreeMap<String, CoverageState>,
+    /// Collector runs identifying the scope and time of each observation.
+    #[serde(default)]
+    pub runs: BTreeMap<CollectionRunId, CollectionRun>,
+    /// Typed source-item coverage records.
+    #[serde(default)]
+    pub coverage_records: Vec<CoverageRecord>,
 }
 /// Mutable accumulator; finalize validates and computes canonical snapshot identity.
 #[derive(Debug, Default)]
@@ -250,6 +314,8 @@ pub struct InventoryBuilder {
     evidence: BTreeMap<EvidenceId, Evidence>,
     relationships: BTreeMap<RelationshipId, Relationship>,
     coverage: BTreeMap<String, CoverageState>,
+    runs: BTreeMap<CollectionRunId, CollectionRun>,
+    coverage_records: Vec<CoverageRecord>,
 }
 impl InventoryBuilder {
     /// New empty builder.
@@ -282,6 +348,29 @@ impl InventoryBuilder {
         }
         self.relationships.insert(entry.id.clone(), entry); Ok(self)
     }
+    /// Register an explicit collection run.
+    pub fn add_run(&mut self, run: CollectionRun) -> Result<&mut Self, InventoryError> {
+        run.validate()?;
+        if let Some(old) = self.runs.get(&run.id) {
+            if old != &run { return Err(InventoryError::InvalidMetadata); }
+        }
+        self.runs.insert(run.id.clone(), run);
+        Ok(self)
+    }
+    /// Record collection scope and completeness for one item.
+    pub fn add_coverage_record(&mut self, record: CoverageRecord) -> &mut Self {
+        self.coverage_records.push(record);
+        self
+    }
+    /// Accept a candidate with source-derived identity rather than trusting a caller ID.
+    pub fn ingest_candidate(
+        &mut self, kind: AssetKind, context: &IdentityContext,
+        extensions: BTreeMap<String, String>
+    ) -> Result<AssetId, InventoryError> {
+        let id = AssetId::from_kind(&kind, context)?;
+        self.add_asset(Asset { id: id.clone(), kind, extensions })?;
+        Ok(id)
+    }
     /// Record whether the requested scope item was inspected.
     pub fn set_coverage(&mut self, item: impl Into<String>, state: CoverageState) -> &mut Self {
         self.coverage.insert(item.into(), state); self
@@ -292,13 +381,38 @@ impl InventoryBuilder {
             ("assets",self.assets.len(),limits.assets),
             ("observations",self.observations.len(),limits.observations),
             ("evidence",self.evidence.len(),limits.evidence),
-            ("relationships",self.relationships.len(),limits.relationships)
+            ("relationships",self.relationships.len(),limits.relationships),
+            ("runs",self.runs.len(),limits.runs),
+            ("coverage records",self.coverage_records.len(),limits.coverage_records)
         ] { if count > max { return Err(InventoryError::LimitExceeded(label)); } }
-        let mut grouped: BTreeMap<(AssetId,String), BTreeMap<String,BTreeSet<ObservationId>>> = BTreeMap::new();
+        for asset in self.assets.values() {asset.validate(&limits)?;}
+        for evidence in self.evidence.values() {
+            evidence.validate(&limits)?;
+            if !self.runs.contains_key(&evidence.run) {
+                return Err(InventoryError::InvalidMetadata);
+            }
+        }
+        for run in self.runs.values() {run.validate()?;}
+        for record in &self.coverage_records {
+            validation::safe_text(&record.source_item,limits.field_bytes)?;
+            let run=self.runs.get(&record.run).ok_or(InventoryError::InvalidMetadata)?;
+            if !run.requested.contains(&record.source_item) {
+                return Err(InventoryError::InvalidMetadata);
+            }
+            if matches!(run.completeness,RunCompleteness::Complete)
+                && matches!(record.state,CoverageState::Failed|CoverageState::Partial|CoverageState::NotInspected) {
+                return Err(InventoryError::InvalidMetadata);
+            }
+        }
+        let mut grouped: BTreeMap<(AssetId,String,i64), BTreeMap<String,BTreeSet<ObservationId>>> = BTreeMap::new();
         for obs in self.observations.values() {
             if !self.assets.contains_key(&obs.asset) { return Err(InventoryError::MissingAsset(obs.asset.to_string())); }
-            if !self.evidence.contains_key(&obs.evidence) { return Err(InventoryError::InvalidIdentifier); }
-            grouped.entry((obs.asset.clone(),obs.property.clone())).or_default()
+            let evidence=self.evidence.get(&obs.evidence).ok_or(InventoryError::InvalidIdentifier)?;
+            obs.validate(&limits)?;
+            // Only observations in the same UTC hour and with identical typed property
+            // belong to one current-state conflict group; historical changes remain history.
+            let bucket=validation::utc_seconds(&evidence.observed_at)?.div_euclid(3600);
+            grouped.entry((obs.asset.clone(),obs.property.clone(),bucket)).or_default()
                 .entry(obs.value.clone()).or_default().insert(obs.id.clone());
         }
         for rel in self.relationships.values() {
@@ -308,9 +422,9 @@ impl InventoryBuilder {
             if rel.evidence.iter().any(|id| !self.evidence.contains_key(id)) { return Err(InventoryError::InvalidIdentifier); }
         }
         let mut conflicts = BTreeMap::new();
-        for ((asset,property),values) in grouped {
+        for ((asset,property,bucket),values) in grouped {
             if values.len() > 1 {
-                let bytes = serde_json::to_vec(&(asset.clone(),property.clone()))
+                let bytes = serde_json::to_vec(&(asset.clone(),property.clone(),bucket))
                     .map_err(|e| InventoryError::Encoding(e.to_string()))?;
                 let id = ConflictId::new(format!("sha256:{}",hex_digest(&bytes)))?;
                 conflicts.insert(id.clone(),Conflict{id,asset,property,values});
@@ -319,12 +433,17 @@ impl InventoryBuilder {
         let mut result = InventorySnapshot {
             id: SnapshotId::new("pending")?,schema_version:1,assets:self.assets,
             observations:self.observations,evidence:self.evidence,
-            relationships:self.relationships,conflicts,coverage:self.coverage
+            relationships:self.relationships,conflicts,coverage:self.coverage,
+            runs:self.runs,coverage_records:self.coverage_records
         };
         let semantic_bytes = serde_json::to_vec(&(
             result.schema_version,&result.assets,&result.observations,&result.evidence,
-            &result.relationships,&result.conflicts,&result.coverage
+            &result.relationships,&result.conflicts,&result.coverage,
+            &result.runs,&result.coverage_records
         )).map_err(|e| InventoryError::Encoding(e.to_string()))?;
+        if semantic_bytes.len()>limits.snapshot_bytes {
+            return Err(InventoryError::LimitExceeded("snapshot bytes"));
+        }
         result.id = SnapshotId::new(format!("sha256:{}",hex_digest(&semantic_bytes)))?;
         Ok(result)
     }
