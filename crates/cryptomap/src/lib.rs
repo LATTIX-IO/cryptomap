@@ -9,14 +9,17 @@ pub mod identity;
 pub mod metadata;
 pub mod query;
 pub mod validation;
-pub use coverage::{CollectionRun,CollectionScopeId,CoverageRecord,RunCompleteness};
-pub use identity::{AssetIdentity,IdentityContext};
-pub use metadata::{AlgorithmOperation,CertificateMetadata,DependencyMetadata,KeyMetadata,Observed,ProtocolObservation};
+pub use coverage::{CollectionRun, CollectionScopeId, CoverageRecord, RunCompleteness};
+pub use identity::{AssetIdentity, IdentityContext};
+pub use metadata::{
+    AlgorithmOperation, CertificateMetadata, DependencyMetadata, KeyMetadata, Observed,
+    ProtocolObservation,
+};
 
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use sha2::{Digest, Sha256};
-use serde::{Deserialize, Serialize};
 
 /// Errors returned by inventory validation and finalization.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +50,9 @@ pub enum InventoryError {
     UnsupportedSchema(u32),
 }
 impl fmt::Display for InventoryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{self:?}") }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 impl std::error::Error for InventoryError {}
 
@@ -61,24 +66,37 @@ macro_rules! identifier {
             /// Construct a nonempty identifier without surrounding whitespace or control characters.
             pub fn new(value: impl Into<String>) -> Result<Self, InventoryError> {
                 let value = value.into();
-                if value.is_empty() || value.len() > 512 || value.trim() != value ||
-                    value.chars().any(char::is_control) { return Err(InventoryError::InvalidIdentifier); }
+                if value.is_empty()
+                    || value.len() > 512
+                    || value.trim() != value
+                    || value.chars().any(char::is_control)
+                {
+                    return Err(InventoryError::InvalidIdentifier);
+                }
                 Ok(Self(value))
             }
             /// Borrow the identifier string.
-            pub fn as_str(&self) -> &str { &self.0 }
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
         }
         impl TryFrom<String> for $name {
             type Error = InventoryError;
-            fn try_from(value: String) -> Result<Self, Self::Error> { Self::new(value) }
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::new(value)
+            }
         }
         impl From<$name> for String {
-            fn from(value: $name) -> Self { value.0 }
+            fn from(value: $name) -> Self {
+                value.0
+            }
         }
         impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0) }
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&self.0)
+            }
         }
-    }
+    };
 }
 identifier!(AssetId);
 identifier!(ObservationId);
@@ -91,30 +109,70 @@ identifier!(SnapshotId);
 
 /// Collector's explicitly reported confidence (not a security score).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Confidence { Unknown, Low, Medium, High, Confirmed }
+pub enum Confidence {
+    Unknown,
+    Low,
+    Medium,
+    High,
+    Confirmed,
+}
 /// Whether the source directly observed the fact or inferred it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum EvidenceKind { Direct, Inferred }
+pub enum EvidenceKind {
+    Direct,
+    Inferred,
+}
 /// Observed protocol state must distinguish configuration from negotiation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ProtocolState { Configured, Negotiated }
+pub enum ProtocolState {
+    Configured,
+    Negotiated,
+}
 /// Supported canonical asset families.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AssetKind {
     /// Crypto operation at a particular use site.
-    AlgorithmUse { family: String, profile: Option<String>, use_site: String },
+    AlgorithmUse {
+        family: String,
+        profile: Option<String>,
+        use_site: String,
+    },
     /// Key metadata; raw key material is intentionally not part of this type.
-    Key { algorithm: Option<String>, provider: Option<String>, fingerprint: Option<String> },
+    Key {
+        algorithm: Option<String>,
+        provider: Option<String>,
+        fingerprint: Option<String>,
+    },
     /// Certificate metadata; the certificate body is not stored by default.
-    Certificate { fingerprint_sha256: String, public_key_profile: Option<String>, signature_profile: Option<String> },
+    Certificate {
+        fingerprint_sha256: String,
+        public_key_profile: Option<String>,
+        signature_profile: Option<String>,
+    },
     /// Configured or negotiated protocol fact.
-    Protocol { family: String, version: Option<String>, state: ProtocolState },
+    Protocol {
+        family: String,
+        version: Option<String>,
+        state: ProtocolState,
+    },
     /// Scoped transport endpoint.
-    Endpoint { transport: String, host: String, port: u16, scope: String },
+    Endpoint {
+        transport: String,
+        host: String,
+        port: u16,
+        scope: String,
+    },
     /// Versioned package dependency.
-    Library { ecosystem: String, name: String, version: String },
+    Library {
+        ecosystem: String,
+        name: String,
+        version: String,
+    },
     /// Runtime or cryptographic software implementation.
-    Runtime { name: String, version: Option<String> },
+    Runtime {
+        name: String,
+        version: Option<String>,
+    },
     /// Logical cryptographic key storage location.
     KeyStore { provider: String, name: String },
     /// Arbitrary source-location identification.
@@ -239,7 +297,14 @@ pub struct Conflict {
 }
 /// Collection coverage of an explicitly scoped source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CoverageState { InspectedObserved, InspectedNoObservation, NotInspected, Unsupported, Failed, Partial }
+pub enum CoverageState {
+    InspectedObserved,
+    InspectedNoObservation,
+    NotInspected,
+    Unsupported,
+    Failed,
+    Partial,
+}
 /// Coverage state for a collector/scope item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Coverage {
@@ -273,12 +338,20 @@ pub struct InventoryLimits {
     pub coverage_records: usize,
 }
 impl Default for InventoryLimits {
-    fn default() -> Self { Self {
-        assets: 100_000, observations: 500_000, evidence: 500_000,
-        relationships: 1_000_000, extension_entries: 32, field_bytes: 2048,
-        record_bytes: 16384, snapshot_bytes: 256_000_000, runs: 10_000,
-        coverage_records: 500_000
-    } }
+    fn default() -> Self {
+        Self {
+            assets: 100_000,
+            observations: 500_000,
+            evidence: 500_000,
+            relationships: 1_000_000,
+            extension_entries: 32,
+            field_bytes: 2048,
+            record_bytes: 16384,
+            snapshot_bytes: 256_000_000,
+            runs: 10_000,
+            coverage_records: 500_000,
+        }
+    }
 }
 /// Immutable, canonicalized evidence-backed inventory snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -319,40 +392,56 @@ pub struct InventoryBuilder {
 }
 impl InventoryBuilder {
     /// New empty builder.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// Insert an asset; identical identities merge only if semantically equal.
     pub fn add_asset(&mut self, asset: Asset) -> Result<&mut Self, InventoryError> {
         if let Some(old) = self.assets.get(&asset.id) {
-            if old != &asset { return Err(InventoryError::InvalidIdentifier); }
+            if old != &asset {
+                return Err(InventoryError::InvalidIdentifier);
+            }
         }
-        self.assets.insert(asset.id.clone(), asset); Ok(self)
+        self.assets.insert(asset.id.clone(), asset);
+        Ok(self)
     }
     /// Insert one immutable evidence record.
     pub fn add_evidence(&mut self, entry: Evidence) -> Result<&mut Self, InventoryError> {
         if let Some(old) = self.evidence.get(&entry.id) {
-            if old != &entry { return Err(InventoryError::DuplicateObservation(entry.id.to_string())); }
+            if old != &entry {
+                return Err(InventoryError::DuplicateObservation(entry.id.to_string()));
+            }
         }
-        self.evidence.insert(entry.id.clone(), entry); Ok(self)
+        self.evidence.insert(entry.id.clone(), entry);
+        Ok(self)
     }
     /// Insert one observation without overwriting a conflicting observation ID.
     pub fn add_observation(&mut self, entry: Observation) -> Result<&mut Self, InventoryError> {
         if let Some(old) = self.observations.get(&entry.id) {
-            if old != &entry { return Err(InventoryError::DuplicateObservation(entry.id.to_string())); }
+            if old != &entry {
+                return Err(InventoryError::DuplicateObservation(entry.id.to_string()));
+            }
         }
-        self.observations.insert(entry.id.clone(), entry); Ok(self)
+        self.observations.insert(entry.id.clone(), entry);
+        Ok(self)
     }
     /// Insert typed asset relationship.
     pub fn add_relationship(&mut self, entry: Relationship) -> Result<&mut Self, InventoryError> {
         if let Some(old) = self.relationships.get(&entry.id) {
-            if old != &entry { return Err(InventoryError::InvalidIdentifier); }
+            if old != &entry {
+                return Err(InventoryError::InvalidIdentifier);
+            }
         }
-        self.relationships.insert(entry.id.clone(), entry); Ok(self)
+        self.relationships.insert(entry.id.clone(), entry);
+        Ok(self)
     }
     /// Register an explicit collection run.
     pub fn add_run(&mut self, run: CollectionRun) -> Result<&mut Self, InventoryError> {
         run.validate()?;
         if let Some(old) = self.runs.get(&run.id) {
-            if old != &run { return Err(InventoryError::InvalidMetadata); }
+            if old != &run {
+                return Err(InventoryError::InvalidMetadata);
+            }
         }
         self.runs.insert(run.id.clone(), run);
         Ok(self)
@@ -364,111 +453,208 @@ impl InventoryBuilder {
     }
     /// Accept a candidate with source-derived identity rather than trusting a caller ID.
     pub fn ingest_candidate(
-        &mut self, kind: AssetKind, context: &IdentityContext,
-        extensions: BTreeMap<String, String>
+        &mut self,
+        kind: AssetKind,
+        context: &IdentityContext,
+        extensions: BTreeMap<String, String>,
     ) -> Result<AssetId, InventoryError> {
         let id = AssetId::from_kind(&kind, context)?;
-        self.add_asset(Asset { id: id.clone(), kind, extensions })?;
+        self.add_asset(Asset {
+            id: id.clone(),
+            kind,
+            extensions,
+        })?;
         Ok(id)
     }
     /// Record whether the requested scope item was inspected.
     pub fn set_coverage(&mut self, item: impl Into<String>, state: CoverageState) -> &mut Self {
-        self.coverage.insert(item.into(), state); self
+        self.coverage.insert(item.into(), state);
+        self
     }
     /// Validate references, detect divergent observations and finalize an immutable snapshot.
     pub fn finalize(self, limits: InventoryLimits) -> Result<InventorySnapshot, InventoryError> {
         for (label, count, max) in [
-            ("assets",self.assets.len(),limits.assets),
-            ("observations",self.observations.len(),limits.observations),
-            ("evidence",self.evidence.len(),limits.evidence),
-            ("relationships",self.relationships.len(),limits.relationships),
-            ("runs",self.runs.len(),limits.runs),
-            ("coverage records",self.coverage_records.len(),limits.coverage_records)
-        ] { if count > max { return Err(InventoryError::LimitExceeded(label)); } }
-        for asset in self.assets.values() {asset.validate(&limits)?;}
+            ("assets", self.assets.len(), limits.assets),
+            ("observations", self.observations.len(), limits.observations),
+            ("evidence", self.evidence.len(), limits.evidence),
+            (
+                "relationships",
+                self.relationships.len(),
+                limits.relationships,
+            ),
+            ("runs", self.runs.len(), limits.runs),
+            (
+                "coverage records",
+                self.coverage_records.len(),
+                limits.coverage_records,
+            ),
+        ] {
+            if count > max {
+                return Err(InventoryError::LimitExceeded(label));
+            }
+        }
+        for asset in self.assets.values() {
+            asset.validate(&limits)?;
+        }
         for evidence in self.evidence.values() {
             evidence.validate(&limits)?;
             if !self.runs.contains_key(&evidence.run) {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
-        for run in self.runs.values() {run.validate()?;}
+        for run in self.runs.values() {
+            run.validate()?;
+        }
         for record in &self.coverage_records {
-            validation::safe_text(&record.source_item,limits.field_bytes)?;
-            let run=self.runs.get(&record.run).ok_or(InventoryError::InvalidMetadata)?;
+            validation::safe_text(&record.source_item, limits.field_bytes)?;
+            let run = self
+                .runs
+                .get(&record.run)
+                .ok_or(InventoryError::InvalidMetadata)?;
             if !run.requested.contains(&record.source_item) {
                 return Err(InventoryError::InvalidMetadata);
             }
-            if matches!(run.completeness,RunCompleteness::Complete)
-                && matches!(record.state,CoverageState::Failed|CoverageState::Partial|CoverageState::NotInspected) {
+            if matches!(run.completeness, RunCompleteness::Complete)
+                && matches!(
+                    record.state,
+                    CoverageState::Failed | CoverageState::Partial | CoverageState::NotInspected
+                )
+            {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
-        let mut grouped: BTreeMap<(AssetId,String,i64), BTreeMap<String,BTreeSet<ObservationId>>> = BTreeMap::new();
+        let mut grouped: BTreeMap<
+            (AssetId, String, i64),
+            BTreeMap<String, BTreeSet<ObservationId>>,
+        > = BTreeMap::new();
         for obs in self.observations.values() {
-            if !self.assets.contains_key(&obs.asset) { return Err(InventoryError::MissingAsset(obs.asset.to_string())); }
-            let evidence=self.evidence.get(&obs.evidence).ok_or(InventoryError::InvalidIdentifier)?;
+            if !self.assets.contains_key(&obs.asset) {
+                return Err(InventoryError::MissingAsset(obs.asset.to_string()));
+            }
+            let evidence = self
+                .evidence
+                .get(&obs.evidence)
+                .ok_or(InventoryError::InvalidIdentifier)?;
             obs.validate(&limits)?;
             // Only observations in the same UTC hour and with identical typed property
             // belong to one current-state conflict group; historical changes remain history.
-            let bucket=validation::utc_seconds(&evidence.observed_at)?.div_euclid(3600);
-            grouped.entry((obs.asset.clone(),obs.property.clone(),bucket)).or_default()
-                .entry(obs.value.clone()).or_default().insert(obs.id.clone());
+            let bucket = validation::utc_seconds(&evidence.observed_at)?.div_euclid(3600);
+            grouped
+                .entry((obs.asset.clone(), obs.property.clone(), bucket))
+                .or_default()
+                .entry(obs.value.clone())
+                .or_default()
+                .insert(obs.id.clone());
         }
         for rel in self.relationships.values() {
             if !self.assets.contains_key(&rel.from) || !self.assets.contains_key(&rel.to) {
                 return Err(InventoryError::DanglingRelationship(rel.id.to_string()));
             }
-            if rel.evidence.iter().any(|id| !self.evidence.contains_key(id)) { return Err(InventoryError::InvalidIdentifier); }
+            if rel
+                .evidence
+                .iter()
+                .any(|id| !self.evidence.contains_key(id))
+            {
+                return Err(InventoryError::InvalidIdentifier);
+            }
             let from = &self.assets[&rel.from].kind;
             let to = &self.assets[&rel.to].kind;
             let valid = match rel.kind {
                 RelationshipKind::UsesAlgorithm => matches!(to, AssetKind::AlgorithmUse { .. }),
                 RelationshipKind::UsesKey => matches!(to, AssetKind::Key { .. }),
-                RelationshipKind::UsesCertificate | RelationshipKind::ValidatedBy =>
-                    matches!(to, AssetKind::Certificate { .. } | AssetKind::TrustAnchor { .. } | AssetKind::Authority { .. }),
-                RelationshipKind::StoredIn => matches!(from, AssetKind::Key { .. })
-                    && matches!(to, AssetKind::KeyStore { .. } | AssetKind::Provider { .. }),
-                RelationshipKind::IssuedBy => matches!(from, AssetKind::Certificate { .. })
-                    && matches!(to, AssetKind::Authority { .. } | AssetKind::Certificate { .. } | AssetKind::TrustAnchor { .. }),
-                RelationshipKind::NegotiatedAt => matches!(from, AssetKind::Protocol { state: ProtocolState::Negotiated, .. })
-                    && matches!(to, AssetKind::Endpoint { .. }),
-                RelationshipKind::ConfiguredFor => matches!(from, AssetKind::Protocol { state: ProtocolState::Configured, .. } | AssetKind::AlgorithmUse { .. }),
+                RelationshipKind::UsesCertificate | RelationshipKind::ValidatedBy => matches!(
+                    to,
+                    AssetKind::Certificate { .. }
+                        | AssetKind::TrustAnchor { .. }
+                        | AssetKind::Authority { .. }
+                ),
+                RelationshipKind::StoredIn => {
+                    matches!(from, AssetKind::Key { .. })
+                        && matches!(to, AssetKind::KeyStore { .. } | AssetKind::Provider { .. })
+                }
+                RelationshipKind::IssuedBy => {
+                    matches!(from, AssetKind::Certificate { .. })
+                        && matches!(
+                            to,
+                            AssetKind::Authority { .. }
+                                | AssetKind::Certificate { .. }
+                                | AssetKind::TrustAnchor { .. }
+                        )
+                }
+                RelationshipKind::NegotiatedAt => {
+                    matches!(
+                        from,
+                        AssetKind::Protocol {
+                            state: ProtocolState::Negotiated,
+                            ..
+                        }
+                    ) && matches!(to, AssetKind::Endpoint { .. })
+                }
+                RelationshipKind::ConfiguredFor => matches!(
+                    from,
+                    AssetKind::Protocol {
+                        state: ProtocolState::Configured,
+                        ..
+                    } | AssetKind::AlgorithmUse { .. }
+                ),
                 RelationshipKind::ImplementsProtocol => matches!(to, AssetKind::Protocol { .. }),
                 _ => true,
             };
-            if !valid { return Err(InventoryError::InvalidMetadata); }
+            if !valid {
+                return Err(InventoryError::InvalidMetadata);
+            }
         }
         let mut conflicts = BTreeMap::new();
-        for ((asset,property,bucket),values) in grouped {
+        for ((asset, property, bucket), values) in grouped {
             if values.len() > 1 {
-                let bytes = serde_json::to_vec(&(asset.clone(),property.clone(),bucket))
+                let bytes = serde_json::to_vec(&(asset.clone(), property.clone(), bucket))
                     .map_err(|e| InventoryError::Encoding(e.to_string()))?;
-                let id = ConflictId::new(format!("sha256:{}",hex_digest(&bytes)))?;
-                conflicts.insert(id.clone(),Conflict{id,asset,property,values});
+                let id = ConflictId::new(format!("sha256:{}", hex_digest(&bytes)))?;
+                conflicts.insert(
+                    id.clone(),
+                    Conflict {
+                        id,
+                        asset,
+                        property,
+                        values,
+                    },
+                );
             }
         }
         let mut result = InventorySnapshot {
-            id: SnapshotId::new("pending")?,schema_version:1,assets:self.assets,
-            observations:self.observations,evidence:self.evidence,
-            relationships:self.relationships,conflicts,coverage:self.coverage,
-            runs:self.runs,coverage_records:self.coverage_records
+            id: SnapshotId::new("pending")?,
+            schema_version: 1,
+            assets: self.assets,
+            observations: self.observations,
+            evidence: self.evidence,
+            relationships: self.relationships,
+            conflicts,
+            coverage: self.coverage,
+            runs: self.runs,
+            coverage_records: self.coverage_records,
         };
         let semantic_bytes = serde_json::to_vec(&(
-            result.schema_version,&result.assets,&result.observations,&result.evidence,
-            &result.relationships,&result.conflicts,&result.coverage,
-            &result.runs,&result.coverage_records
-        )).map_err(|e| InventoryError::Encoding(e.to_string()))?;
-        if semantic_bytes.len()>limits.snapshot_bytes {
+            result.schema_version,
+            &result.assets,
+            &result.observations,
+            &result.evidence,
+            &result.relationships,
+            &result.conflicts,
+            &result.coverage,
+            &result.runs,
+            &result.coverage_records,
+        ))
+        .map_err(|e| InventoryError::Encoding(e.to_string()))?;
+        if semantic_bytes.len() > limits.snapshot_bytes {
             return Err(InventoryError::LimitExceeded("snapshot bytes"));
         }
-        result.id = SnapshotId::new(format!("sha256:{}",hex_digest(&semantic_bytes)))?;
+        result.id = SnapshotId::new(format!("sha256:{}", hex_digest(&semantic_bytes)))?;
         Ok(result)
     }
 }
-fn hex_digest(bytes:&[u8])->String {
+fn hex_digest(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
-    digest.iter().map(|b|format!("{b:02x}")).collect()
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 /// Deterministic asset-level changes between snapshots.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -512,38 +698,73 @@ pub struct ChangeSet {
 }
 impl InventorySnapshot {
     /// Recalculate the digest and verify internal references on an imported snapshot.
-    pub fn verify(&self, limits:InventoryLimits)->Result<(),InventoryError>{
-        if self.schema_version!=1 {return Err(InventoryError::UnsupportedSchema(self.schema_version));}
-        let mut builder=InventoryBuilder::new();
-        for run in self.runs.values(){builder.add_run(run.clone())?;}
-        for asset in self.assets.values(){builder.add_asset(asset.clone())?;}
-        for evidence in self.evidence.values(){builder.add_evidence(evidence.clone())?;}
-        for observation in self.observations.values(){builder.add_observation(observation.clone())?;}
-        for relationship in self.relationships.values(){builder.add_relationship(relationship.clone())?;}
-        for (source,state) in &self.coverage{builder.set_coverage(source.clone(),*state);}
-        for record in &self.coverage_records{builder.add_coverage_record(record.clone());}
-        let verified=builder.finalize(limits)?;
-        if verified.id!=self.id || verified!=*self {return Err(InventoryError::DigestMismatch);}
+    pub fn verify(&self, limits: InventoryLimits) -> Result<(), InventoryError> {
+        if self.schema_version != 1 {
+            return Err(InventoryError::UnsupportedSchema(self.schema_version));
+        }
+        let mut builder = InventoryBuilder::new();
+        for run in self.runs.values() {
+            builder.add_run(run.clone())?;
+        }
+        for asset in self.assets.values() {
+            builder.add_asset(asset.clone())?;
+        }
+        for evidence in self.evidence.values() {
+            builder.add_evidence(evidence.clone())?;
+        }
+        for observation in self.observations.values() {
+            builder.add_observation(observation.clone())?;
+        }
+        for relationship in self.relationships.values() {
+            builder.add_relationship(relationship.clone())?;
+        }
+        for (source, state) in &self.coverage {
+            builder.set_coverage(source.clone(), *state);
+        }
+        for record in &self.coverage_records {
+            builder.add_coverage_record(record.clone());
+        }
+        let verified = builder.finalize(limits)?;
+        if verified.id != self.id || verified != *self {
+            return Err(InventoryError::DigestMismatch);
+        }
         Ok(())
     }
     /// Decode JSON only after verifying schema, source references and canonical digest.
-    pub fn from_json_verified(input:&str,limits:InventoryLimits)->Result<Self,InventoryError>{
-        if input.len()>limits.snapshot_bytes{return Err(InventoryError::LimitExceeded("snapshot bytes"));}
-        let snapshot:Self=serde_json::from_str(input).map_err(|e|InventoryError::Encoding(e.to_string()))?;
+    pub fn from_json_verified(
+        input: &str,
+        limits: InventoryLimits,
+    ) -> Result<Self, InventoryError> {
+        if input.len() > limits.snapshot_bytes {
+            return Err(InventoryError::LimitExceeded("snapshot bytes"));
+        }
+        let snapshot: Self =
+            serde_json::from_str(input).map_err(|e| InventoryError::Encoding(e.to_string()))?;
         snapshot.verify(limits)?;
         Ok(snapshot)
     }
     /// Compare this snapshot (old) with a newer snapshot deterministically.
-    pub fn diff(&self, newer:&Self)->ChangeSet {
+    pub fn diff(&self, newer: &Self) -> ChangeSet {
         let old: BTreeSet<_> = self.assets.keys().cloned().collect();
         let new: BTreeSet<_> = newer.assets.keys().cloned().collect();
         let common = old.intersection(&new);
         let complete = !newer.coverage.is_empty()
-            && newer.coverage.values().all(|state|
-                matches!(state, CoverageState::InspectedObserved | CoverageState::InspectedNoObservation))
-            && newer.runs.values().all(|run| matches!(run.completeness,RunCompleteness::Complete))
-            && newer.coverage_records.iter().all(|record|
-                matches!(record.state,CoverageState::InspectedObserved|CoverageState::InspectedNoObservation));
+            && newer.coverage.values().all(|state| {
+                matches!(
+                    state,
+                    CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
+                )
+            })
+            && newer
+                .runs
+                .values()
+                .all(|run| matches!(run.completeness, RunCompleteness::Complete))
+            && newer.coverage_records.iter().all(|record| {
+                matches!(
+                    record.state,
+                    CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
+                )
+            });
         let old_obs: BTreeSet<_> = self.observations.keys().cloned().collect();
         let new_obs: BTreeSet<_> = newer.observations.keys().cloned().collect();
         let old_evidence: BTreeSet<_> = self.evidence.keys().cloned().collect();
@@ -551,37 +772,89 @@ impl InventorySnapshot {
         let old_rel: BTreeSet<_> = self.relationships.keys().cloned().collect();
         let new_rel: BTreeSet<_> = newer.relationships.keys().cloned().collect();
         ChangeSet {
-            added:new.difference(&old).cloned().collect(),
-            removed: if complete {old.difference(&new).cloned().collect()} else {BTreeSet::new()},
-            tentative_removed: if complete {BTreeSet::new()} else {old.difference(&new).cloned().collect()},
-            changed:common.clone().filter(|id|self.assets.get(*id)!=newer.assets.get(*id)).cloned().collect(),
-            unchanged:old.intersection(&new).filter(|id|self.assets.get(*id)==newer.assets.get(*id)).cloned().collect(),
-            observations_added:new_obs.difference(&old_obs).cloned().collect(),
-            observations_removed:old_obs.difference(&new_obs).cloned().collect(),
-            observations_changed:old_obs.intersection(&new_obs)
-                .filter(|id|self.observations.get(*id)!=newer.observations.get(*id)).cloned().collect(),
-            evidence_added:new_evidence.difference(&old_evidence).cloned().collect(),
-            evidence_removed:old_evidence.difference(&new_evidence).cloned().collect(),
-            confidence_changed:old_evidence.intersection(&new_evidence)
-                .filter(|id|self.evidence.get(*id).map(|e|e.confidence)!=newer.evidence.get(*id).map(|e|e.confidence))
-                .cloned().collect(),
-            relationships_added:new_rel.difference(&old_rel).cloned().collect(),
-            relationships_removed:old_rel.difference(&new_rel).cloned().collect(),
-            relationships_changed:old_rel.intersection(&new_rel)
-                .filter(|id|self.relationships.get(*id)!=newer.relationships.get(*id)).cloned().collect(),
-            conflicts_changed:self.conflicts.keys().filter(|id|newer.conflicts.contains_key(*id)
-                && self.conflicts.get(*id)!=newer.conflicts.get(*id)).cloned().collect(),
-            coverage_changed:self.coverage.keys().chain(newer.coverage.keys()).filter(|k|self.coverage.get(*k)!=newer.coverage.get(*k)).cloned().collect(),
-            conflicts_introduced:newer.conflicts.keys().filter(|id|!self.conflicts.contains_key(*id)).cloned().collect(),
-            conflicts_resolved:self.conflicts.keys().filter(|id|!newer.conflicts.contains_key(*id)).cloned().collect(),
+            added: new.difference(&old).cloned().collect(),
+            removed: if complete {
+                old.difference(&new).cloned().collect()
+            } else {
+                BTreeSet::new()
+            },
+            tentative_removed: if complete {
+                BTreeSet::new()
+            } else {
+                old.difference(&new).cloned().collect()
+            },
+            changed: common
+                .clone()
+                .filter(|id| self.assets.get(*id) != newer.assets.get(*id))
+                .cloned()
+                .collect(),
+            unchanged: old
+                .intersection(&new)
+                .filter(|id| self.assets.get(*id) == newer.assets.get(*id))
+                .cloned()
+                .collect(),
+            observations_added: new_obs.difference(&old_obs).cloned().collect(),
+            observations_removed: old_obs.difference(&new_obs).cloned().collect(),
+            observations_changed: old_obs
+                .intersection(&new_obs)
+                .filter(|id| self.observations.get(*id) != newer.observations.get(*id))
+                .cloned()
+                .collect(),
+            evidence_added: new_evidence.difference(&old_evidence).cloned().collect(),
+            evidence_removed: old_evidence.difference(&new_evidence).cloned().collect(),
+            confidence_changed: old_evidence
+                .intersection(&new_evidence)
+                .filter(|id| {
+                    self.evidence.get(*id).map(|e| e.confidence)
+                        != newer.evidence.get(*id).map(|e| e.confidence)
+                })
+                .cloned()
+                .collect(),
+            relationships_added: new_rel.difference(&old_rel).cloned().collect(),
+            relationships_removed: old_rel.difference(&new_rel).cloned().collect(),
+            relationships_changed: old_rel
+                .intersection(&new_rel)
+                .filter(|id| self.relationships.get(*id) != newer.relationships.get(*id))
+                .cloned()
+                .collect(),
+            conflicts_changed: self
+                .conflicts
+                .keys()
+                .filter(|id| {
+                    newer.conflicts.contains_key(*id)
+                        && self.conflicts.get(*id) != newer.conflicts.get(*id)
+                })
+                .cloned()
+                .collect(),
+            coverage_changed: self
+                .coverage
+                .keys()
+                .chain(newer.coverage.keys())
+                .filter(|k| self.coverage.get(*k) != newer.coverage.get(*k))
+                .cloned()
+                .collect(),
+            conflicts_introduced: newer
+                .conflicts
+                .keys()
+                .filter(|id| !self.conflicts.contains_key(*id))
+                .cloned()
+                .collect(),
+            conflicts_resolved: self
+                .conflicts
+                .keys()
+                .filter(|id| !newer.conflicts.contains_key(*id))
+                .cloned()
+                .collect(),
         }
     }
     /// Iterate assets matching a caller-provided predicate.
-    pub fn query_assets(&self, predicate:impl Fn(&Asset)->bool)->impl Iterator<Item=&Asset> {
-        self.assets.values().filter(move |asset|predicate(asset))
+    pub fn query_assets(&self, predicate: impl Fn(&Asset) -> bool) -> impl Iterator<Item = &Asset> {
+        self.assets.values().filter(move |asset| predicate(asset))
     }
     /// Return all evidence-backed observations for one asset.
-    pub fn observations_for(&self, id:&AssetId)->impl Iterator<Item=&Observation> {
-        self.observations.values().filter(move |obs|&obs.asset==id)
+    pub fn observations_for(&self, id: &AssetId) -> impl Iterator<Item = &Observation> {
+        self.observations
+            .values()
+            .filter(move |obs| &obs.asset == id)
     }
 }

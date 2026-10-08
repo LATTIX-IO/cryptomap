@@ -31,11 +31,16 @@ pub struct AssetIdentity {
 impl AssetIdentity {
     /// Hash the canonical tuple with an identity-domain separator.
     pub fn asset_id(&self) -> Result<AssetId, InventoryError> {
-        for item in &self.components { validate_component(item)?; }
+        for item in &self.components {
+            validate_component(item)?;
+        }
         let encoded = serde_json::to_vec(&("cryptomap:asset:v1", self))
             .map_err(|e| InventoryError::Encoding(e.to_string()))?;
         let digest = Sha256::digest(encoded);
-        let hex = digest.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let hex = digest
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         AssetId::new(format!("asset:v1:{hex}"))
     }
 }
@@ -51,8 +56,13 @@ fn fold(s: &str) -> Result<String, InventoryError> {
 }
 fn host(value: &str) -> Result<String, InventoryError> {
     validate_component(value)?;
-    let unbracketed = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')).unwrap_or(value);
-    if let Ok(ip) = unbracketed.parse::<IpAddr>() { return Ok(ip.to_string()); }
+    let unbracketed = value
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(value);
+    if let Ok(ip) = unbracketed.parse::<IpAddr>() {
+        return Ok(ip.to_string());
+    }
     let name = value.trim_end_matches('.');
     if name.is_empty() || name.contains('/') || name.contains(':') || name.contains(' ') {
         return Err(InventoryError::InsufficientIdentity);
@@ -66,44 +76,110 @@ fn host(value: &str) -> Result<String, InventoryError> {
 pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, InventoryError> {
     let scope = ctx.scope.clone();
     let (name, mut parts) = match kind {
-        AssetKind::AlgorithmUse { family, profile, use_site } =>
-            ("algorithm-use", vec![scope, fold(use_site)?, fold(family)?, profile.as_deref().map(fold).transpose()?.unwrap_or_default()]),
-        AssetKind::Key { provider, fingerprint, .. } => {
-            let prov = provider.as_deref().ok_or(InventoryError::InsufficientIdentity)?;
-            let id = fingerprint.as_deref().ok_or(InventoryError::InsufficientIdentity)?;
+        AssetKind::AlgorithmUse {
+            family,
+            profile,
+            use_site,
+        } => (
+            "algorithm-use",
+            vec![
+                scope,
+                fold(use_site)?,
+                fold(family)?,
+                profile
+                    .as_deref()
+                    .map(fold)
+                    .transpose()?
+                    .unwrap_or_default(),
+            ],
+        ),
+        AssetKind::Key {
+            provider,
+            fingerprint,
+            ..
+        } => {
+            let prov = provider
+                .as_deref()
+                .ok_or(InventoryError::InsufficientIdentity)?;
+            let id = fingerprint
+                .as_deref()
+                .ok_or(InventoryError::InsufficientIdentity)?;
             ("key", vec![scope, fold(prov)?, fold(id)?])
-        },
-        AssetKind::Certificate { fingerprint_sha256, .. } =>
-            ("certificate", vec![fold(fingerprint_sha256)?]),
-        AssetKind::Protocol { family, version, state } => {
-            let ver = version.as_deref().ok_or(InventoryError::InsufficientIdentity)?;
-            ("protocol", vec![scope, fold(family)?, fold(ver)?, format!("{state:?}")])
-        },
-        AssetKind::Endpoint { transport, host: h, port, scope: endpoint_scope } =>
-            ("endpoint", vec![scope, fold(endpoint_scope)?, fold(transport)?, host(h)?, port.to_string()]),
-        AssetKind::Library { ecosystem, name, version } =>
-            ("library", vec![scope, fold(ecosystem)?, fold(name)?, version.clone()]),
+        }
+        AssetKind::Certificate {
+            fingerprint_sha256, ..
+        } => ("certificate", vec![fold(fingerprint_sha256)?]),
+        AssetKind::Protocol {
+            family,
+            version,
+            state,
+        } => {
+            let ver = version
+                .as_deref()
+                .ok_or(InventoryError::InsufficientIdentity)?;
+            (
+                "protocol",
+                vec![scope, fold(family)?, fold(ver)?, format!("{state:?}")],
+            )
+        }
+        AssetKind::Endpoint {
+            transport,
+            host: h,
+            port,
+            scope: endpoint_scope,
+        } => (
+            "endpoint",
+            vec![
+                scope,
+                fold(endpoint_scope)?,
+                fold(transport)?,
+                host(h)?,
+                port.to_string(),
+            ],
+        ),
+        AssetKind::Library {
+            ecosystem,
+            name,
+            version,
+        } => (
+            "library",
+            vec![scope, fold(ecosystem)?, fold(name)?, version.clone()],
+        ),
         AssetKind::Runtime { name, version } => {
-            let version = version.as_deref().ok_or(InventoryError::InsufficientIdentity)?;
+            let version = version
+                .as_deref()
+                .ok_or(InventoryError::InsufficientIdentity)?;
             ("runtime", vec![scope, fold(name)?, version.to_string()])
-        },
-        AssetKind::KeyStore { provider, name } =>
-            ("keystore", vec![scope, fold(provider)?, name.clone()]),
-        AssetKind::SourceUse { source, location } =>
-            ("source-use", vec![scope, source.clone(), location.clone()]),
-        AssetKind::TrustAnchor { fingerprint } =>
-            ("trust-anchor", vec![fold(fingerprint)?]),
-        AssetKind::Extension { namespace, kind } =>
-            ("extension", vec![scope, fold(namespace)?, fold(kind)?]),
-        AssetKind::Provider { name, instance } =>
-            ("provider", vec![scope, fold(name)?, instance.clone()]),
-        AssetKind::CryptoImplementation { product, version } =>
-            ("implementation", vec![scope, fold(product)?, version.clone()]),
-        AssetKind::Authority { certificate_fingerprint } =>
-            ("authority", vec![fold(certificate_fingerprint)?]),
+        }
+        AssetKind::KeyStore { provider, name } => {
+            ("keystore", vec![scope, fold(provider)?, name.clone()])
+        }
+        AssetKind::SourceUse { source, location } => {
+            ("source-use", vec![scope, source.clone(), location.clone()])
+        }
+        AssetKind::TrustAnchor { fingerprint } => ("trust-anchor", vec![fold(fingerprint)?]),
+        AssetKind::Extension { namespace, kind } => {
+            ("extension", vec![scope, fold(namespace)?, fold(kind)?])
+        }
+        AssetKind::Provider { name, instance } => {
+            ("provider", vec![scope, fold(name)?, instance.clone()])
+        }
+        AssetKind::CryptoImplementation { product, version } => (
+            "implementation",
+            vec![scope, fold(product)?, version.clone()],
+        ),
+        AssetKind::Authority {
+            certificate_fingerprint,
+        } => ("authority", vec![fold(certificate_fingerprint)?]),
     };
-    for p in &parts { validate_component(p)?; }
-    Ok(AssetIdentity { version: 1, kind: name.into(), components: std::mem::take(&mut parts) })
+    for p in &parts {
+        validate_component(p)?;
+    }
+    Ok(AssetIdentity {
+        version: 1,
+        kind: name.into(),
+        components: std::mem::take(&mut parts),
+    })
 }
 impl AssetId {
     /// Derive a stable ID from type-specific canonical identity components.

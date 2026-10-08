@@ -1,165 +1,306 @@
-use cryptomap::*;
 use cryptomap::validation::utc_seconds;
-use std::collections::{BTreeMap,BTreeSet};
+use cryptomap::*;
+use std::collections::{BTreeMap, BTreeSet};
 
-fn id(s:&str)->AssetId {AssetId::new(s).unwrap()}
-fn asset(k:AssetKind,name:&str)->Asset{Asset{id:id(name),kind:k,extensions:BTreeMap::new()}}
-fn library(name:&str)->Asset{
-    asset(AssetKind::Library{ecosystem:"cargo".into(),name:name.into(),version:"1.0".into()},name)
+fn id(s: &str) -> AssetId {
+    AssetId::new(s).unwrap()
 }
-fn run(idstr:&str,source:&str)->CollectionRun{
-    CollectionRun{
-        id:CollectionRunId::new(idstr).unwrap(),
-        collector:CollectorId::new("collector").unwrap(),
-        collector_version:"1.0".into(),
-        scope:CollectionScopeId::new("org-prod").unwrap(),
-        requested:BTreeSet::from([source.into()]),
-        started_at:"2026-10-08T00:00:00Z".into(),
-        ended_at:"2026-10-08T04:00:00Z".into(),
-        completeness:RunCompleteness::Partial,
+fn asset(k: AssetKind, name: &str) -> Asset {
+    Asset {
+        id: id(name),
+        kind: k,
+        extensions: BTreeMap::new(),
     }
 }
-fn ev(idstr:&str,run_id:&str,time:&str,conf:Confidence)->Evidence{
-    Evidence{
-        id:EvidenceId::new(idstr).unwrap(),
-        collector:CollectorId::new("collector").unwrap(),
-        collector_version:"1.0".into(),
-        run:CollectionRunId::new(run_id).unwrap(),
-        source:"unit-test".into(),
-        observed_at:time.into(),
-        kind:EvidenceKind::Direct,
-        confidence:conf,
-        source_sha256:None,
+fn library(name: &str) -> Asset {
+    asset(
+        AssetKind::Library {
+            ecosystem: "cargo".into(),
+            name: name.into(),
+            version: "1.0".into(),
+        },
+        name,
+    )
+}
+fn run(idstr: &str, source: &str) -> CollectionRun {
+    CollectionRun {
+        id: CollectionRunId::new(idstr).unwrap(),
+        collector: CollectorId::new("collector").unwrap(),
+        collector_version: "1.0".into(),
+        scope: CollectionScopeId::new("org-prod").unwrap(),
+        requested: BTreeSet::from([source.into()]),
+        started_at: "2026-10-08T00:00:00Z".into(),
+        ended_at: "2026-10-08T04:00:00Z".into(),
+        completeness: RunCompleteness::Partial,
     }
 }
-fn obs(idstr:&str,ev_id:&str,value:&str)->Observation{
-    Observation{
-        id:ObservationId::new(idstr).unwrap(),
-        asset:id("app"),
-        evidence:EvidenceId::new(ev_id).unwrap(),
-        property:"protocol:configured".into(),
-        value:value.into(),
+fn ev(idstr: &str, run_id: &str, time: &str, conf: Confidence) -> Evidence {
+    Evidence {
+        id: EvidenceId::new(idstr).unwrap(),
+        collector: CollectorId::new("collector").unwrap(),
+        collector_version: "1.0".into(),
+        run: CollectionRunId::new(run_id).unwrap(),
+        source: "unit-test".into(),
+        observed_at: time.into(),
+        kind: EvidenceKind::Direct,
+        confidence: conf,
+        source_sha256: None,
     }
 }
-fn make(with_second:bool)->InventorySnapshot {
-    let mut b=InventoryBuilder::new();
-    b.add_run(run("r1","app")).unwrap();
+fn obs(idstr: &str, ev_id: &str, value: &str) -> Observation {
+    Observation {
+        id: ObservationId::new(idstr).unwrap(),
+        asset: id("app"),
+        evidence: EvidenceId::new(ev_id).unwrap(),
+        property: "protocol:configured".into(),
+        value: value.into(),
+    }
+}
+fn make(with_second: bool) -> InventorySnapshot {
+    let mut b = InventoryBuilder::new();
+    b.add_run(run("r1", "app")).unwrap();
     b.add_asset(library("app")).unwrap();
-    b.add_evidence(ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
-    b.add_observation(obs("o1","e1","TLS1.2")).unwrap();
-    if with_second{
-        b.add_evidence(ev("e2","r1","2026-10-08T01:10:00Z",Confidence::Confirmed)).unwrap();
-        b.add_observation(obs("o2","e2","TLS1.3")).unwrap();
+    b.add_evidence(ev("e1", "r1", "2026-10-08T01:00:00Z", Confidence::High))
+        .unwrap();
+    b.add_observation(obs("o1", "e1", "TLS1.2")).unwrap();
+    if with_second {
+        b.add_evidence(ev(
+            "e2",
+            "r1",
+            "2026-10-08T01:10:00Z",
+            Confidence::Confirmed,
+        ))
+        .unwrap();
+        b.add_observation(obs("o2", "e2", "TLS1.3")).unwrap();
     }
-    b.set_coverage("app",CoverageState::Partial);
+    b.set_coverage("app", CoverageState::Partial);
     b.finalize(InventoryLimits::default()).unwrap()
 }
 #[test]
-fn type_specific_identity_is_stable_and_scoped(){
-    let a=IdentityContext::new("tenant-a").unwrap();
-    let b=IdentityContext::new("tenant-b").unwrap();
-    let left=AssetKind::Endpoint{transport:"TCP".into(),host:"EXAMPLE.com.".into(),port:443,scope:"prod".into()};
-    let right=AssetKind::Endpoint{transport:"tcp".into(),host:"example.COM".into(),port:443,scope:"prod".into()};
-    assert_eq!(AssetId::from_kind(&left,&a).unwrap(),AssetId::from_kind(&right,&a).unwrap());
-    assert_ne!(AssetId::from_kind(&left,&a).unwrap(),AssetId::from_kind(&right,&b).unwrap());
-    let x=AssetKind::AlgorithmUse{family:"AES".into(),profile:Some("GCM".into()),use_site:"src/a.rs:4".into()};
-    let y=AssetKind::AlgorithmUse{family:"AES".into(),profile:Some("GCM".into()),use_site:"src/b.rs:4".into()};
-    assert_ne!(AssetId::from_kind(&x,&a).unwrap(),AssetId::from_kind(&y,&a).unwrap());
-    let incomplete=AssetKind::Key{provider:Some("kms".into()),fingerprint:None,algorithm:None};
-    assert!(AssetId::from_kind(&incomplete,&a).is_err());
-    let key=AssetKind::Key{provider:Some("kms".into()),fingerprint:Some("abc".into()),algorithm:None};
-    assert_ne!(AssetId::from_kind(&key,&a).unwrap(),AssetId::from_kind(&key,&b).unwrap());
+fn type_specific_identity_is_stable_and_scoped() {
+    let a = IdentityContext::new("tenant-a").unwrap();
+    let b = IdentityContext::new("tenant-b").unwrap();
+    let left = AssetKind::Endpoint {
+        transport: "TCP".into(),
+        host: "EXAMPLE.com.".into(),
+        port: 443,
+        scope: "prod".into(),
+    };
+    let right = AssetKind::Endpoint {
+        transport: "tcp".into(),
+        host: "example.COM".into(),
+        port: 443,
+        scope: "prod".into(),
+    };
+    assert_eq!(
+        AssetId::from_kind(&left, &a).unwrap(),
+        AssetId::from_kind(&right, &a).unwrap()
+    );
+    assert_ne!(
+        AssetId::from_kind(&left, &a).unwrap(),
+        AssetId::from_kind(&right, &b).unwrap()
+    );
+    let x = AssetKind::AlgorithmUse {
+        family: "AES".into(),
+        profile: Some("GCM".into()),
+        use_site: "src/a.rs:4".into(),
+    };
+    let y = AssetKind::AlgorithmUse {
+        family: "AES".into(),
+        profile: Some("GCM".into()),
+        use_site: "src/b.rs:4".into(),
+    };
+    assert_ne!(
+        AssetId::from_kind(&x, &a).unwrap(),
+        AssetId::from_kind(&y, &a).unwrap()
+    );
+    let incomplete = AssetKind::Key {
+        provider: Some("kms".into()),
+        fingerprint: None,
+        algorithm: None,
+    };
+    assert!(AssetId::from_kind(&incomplete, &a).is_err());
+    let key = AssetKind::Key {
+        provider: Some("kms".into()),
+        fingerprint: Some("abc".into()),
+        algorithm: None,
+    };
+    assert_ne!(
+        AssetId::from_kind(&key, &a).unwrap(),
+        AssetId::from_kind(&key, &b).unwrap()
+    );
 }
 #[test]
-fn timestamp_validation_and_timezone(){
-    assert_eq!(utc_seconds("2026-10-08T01:00:00Z").unwrap(),
-               utc_seconds("2026-10-07T21:00:00-04:00").unwrap());
-    for bad in ["2026-02-29T00:00:00Z","2026-13-08T00:00:00Z",
-        "2026-10-08T25:00:00Z","2026-10-08T00:00:60Z",
-        "2026-10-08T01:00:00","2026-10-08T01:00:00+25:00"]{
-        assert!(utc_seconds(bad).is_err(),"{bad}");
+fn timestamp_validation_and_timezone() {
+    assert_eq!(
+        utc_seconds("2026-10-08T01:00:00Z").unwrap(),
+        utc_seconds("2026-10-07T21:00:00-04:00").unwrap()
+    );
+    for bad in [
+        "2026-02-29T00:00:00Z",
+        "2026-13-08T00:00:00Z",
+        "2026-10-08T25:00:00Z",
+        "2026-10-08T00:00:60Z",
+        "2026-10-08T01:00:00",
+        "2026-10-08T01:00:00+25:00",
+    ] {
+        assert!(utc_seconds(bad).is_err(), "{bad}");
     }
     assert!(utc_seconds("2024-02-29T00:00:00Z").is_ok());
 }
 #[test]
-fn contexts_preserve_history_and_detect_actual_conflicts(){
-    let same=make(true);
-    assert_eq!(same.conflicts.len(),1);
-    assert_eq!(same.conflicts.values().next().unwrap().values.len(),2);
-    let mut b=InventoryBuilder::new();
-    b.add_run(run("r1","app")).unwrap();
+fn contexts_preserve_history_and_detect_actual_conflicts() {
+    let same = make(true);
+    assert_eq!(same.conflicts.len(), 1);
+    assert_eq!(same.conflicts.values().next().unwrap().values.len(), 2);
+    let mut b = InventoryBuilder::new();
+    b.add_run(run("r1", "app")).unwrap();
     b.add_asset(library("app")).unwrap();
-    b.add_evidence(ev("e1","r1","2026-10-08T01:00:00Z",Confidence::High)).unwrap();
-    b.add_evidence(ev("e2","r1","2026-10-08T03:00:00Z",Confidence::High)).unwrap();
-    b.add_observation(obs("o1","e1","TLS1.2")).unwrap();
-    b.add_observation(obs("o2","e2","TLS1.3")).unwrap();
-    assert!(b.finalize(InventoryLimits::default()).unwrap().conflicts.is_empty());
+    b.add_evidence(ev("e1", "r1", "2026-10-08T01:00:00Z", Confidence::High))
+        .unwrap();
+    b.add_evidence(ev("e2", "r1", "2026-10-08T03:00:00Z", Confidence::High))
+        .unwrap();
+    b.add_observation(obs("o1", "e1", "TLS1.2")).unwrap();
+    b.add_observation(obs("o2", "e2", "TLS1.3")).unwrap();
+    assert!(
+        b.finalize(InventoryLimits::default())
+            .unwrap()
+            .conflicts
+            .is_empty()
+    );
 }
 #[test]
-fn import_detects_tampering_and_schema_mismatch(){
-    let original=make(false);
-    let mut modified=original.clone();
-    modified.assets.get_mut(&id("app")).unwrap().extensions.insert("source:owner".into(),"infra".into());
-    assert!(matches!(modified.verify(InventoryLimits::default()),Err(InventoryError::DigestMismatch)));
-    let json=serde_json::to_string(&original).unwrap();
-    assert_eq!(InventorySnapshot::from_json_verified(&json,InventoryLimits::default()).unwrap(),original);
-    assert!(InventorySnapshot::from_json_verified(&json,InventoryLimits{snapshot_bytes:10,..InventoryLimits::default()}).is_err());
-    let mut wrong_version=original.clone();
-    wrong_version.schema_version=999;
-    assert!(matches!(wrong_version.verify(InventoryLimits::default()),Err(InventoryError::UnsupportedSchema(999))));
+fn import_detects_tampering_and_schema_mismatch() {
+    let original = make(false);
+    let mut modified = original.clone();
+    modified
+        .assets
+        .get_mut(&id("app"))
+        .unwrap()
+        .extensions
+        .insert("source:owner".into(), "infra".into());
+    assert!(matches!(
+        modified.verify(InventoryLimits::default()),
+        Err(InventoryError::DigestMismatch)
+    ));
+    let json = serde_json::to_string(&original).unwrap();
+    assert_eq!(
+        InventorySnapshot::from_json_verified(&json, InventoryLimits::default()).unwrap(),
+        original
+    );
+    assert!(
+        InventorySnapshot::from_json_verified(
+            &json,
+            InventoryLimits {
+                snapshot_bytes: 10,
+                ..InventoryLimits::default()
+            }
+        )
+        .is_err()
+    );
+    let mut wrong_version = original.clone();
+    wrong_version.schema_version = 999;
+    assert!(matches!(
+        wrong_version.verify(InventoryLimits::default()),
+        Err(InventoryError::UnsupportedSchema(999))
+    ));
 }
 #[test]
-fn changeset_detects_new_evidence_and_confidence(){
-    let first=make(false);
-    let second=make(true);
-    let delta=first.diff(&second);
-    assert!(delta.observations_added.contains(&ObservationId::new("o2").unwrap()));
-    assert!(delta.evidence_added.contains(&EvidenceId::new("e2").unwrap()));
-    assert_eq!(delta.conflicts_introduced.len(),1);
-    let mut altered=first.clone();
-    altered.evidence.get_mut(&EvidenceId::new("e1").unwrap()).unwrap().confidence=Confidence::Confirmed;
-    assert!(first.diff(&altered).confidence_changed.contains(&EvidenceId::new("e1").unwrap()));
+fn changeset_detects_new_evidence_and_confidence() {
+    let first = make(false);
+    let second = make(true);
+    let delta = first.diff(&second);
+    assert!(
+        delta
+            .observations_added
+            .contains(&ObservationId::new("o2").unwrap())
+    );
+    assert!(
+        delta
+            .evidence_added
+            .contains(&EvidenceId::new("e2").unwrap())
+    );
+    assert_eq!(delta.conflicts_introduced.len(), 1);
+    let mut altered = first.clone();
+    altered
+        .evidence
+        .get_mut(&EvidenceId::new("e1").unwrap())
+        .unwrap()
+        .confidence = Confidence::Confirmed;
+    assert!(
+        first
+            .diff(&altered)
+            .confidence_changed
+            .contains(&EvidenceId::new("e1").unwrap())
+    );
 }
 #[test]
-fn typed_query_and_graph_traversal(){
-    let mut b=InventoryBuilder::new();
+fn typed_query_and_graph_traversal() {
+    let mut b = InventoryBuilder::new();
     b.add_asset(library("app")).unwrap();
     b.add_asset(library("lib")).unwrap();
-    b.add_relationship(Relationship{
-        id:RelationshipId::new("dep").unwrap(),
-        from:id("app"),to:id("lib"),kind:RelationshipKind::DependsOn,evidence:BTreeSet::new(),
-    }).unwrap();
-    let snapshot=b.finalize(InventoryLimits::default()).unwrap();
-    assert_eq!(snapshot.query().kind("library").ids(5).unwrap().len(),2);
-    assert_eq!(snapshot.query().package("cargo","app").ids(5).unwrap(),vec![id("app")]);
-    assert!(snapshot.traverse(&id("app"),Some(RelationshipKind::DependsOn),3,10).unwrap().contains(&id("lib")));
-    assert!(snapshot.traverse(&id("app"),None,3,1).is_err());
+    b.add_relationship(Relationship {
+        id: RelationshipId::new("dep").unwrap(),
+        from: id("app"),
+        to: id("lib"),
+        kind: RelationshipKind::DependsOn,
+        evidence: BTreeSet::new(),
+    })
+    .unwrap();
+    let snapshot = b.finalize(InventoryLimits::default()).unwrap();
+    assert_eq!(snapshot.query().kind("library").ids(5).unwrap().len(), 2);
+    assert_eq!(
+        snapshot.query().package("cargo", "app").ids(5).unwrap(),
+        vec![id("app")]
+    );
+    assert!(
+        snapshot
+            .traverse(&id("app"), Some(RelationshipKind::DependsOn), 3, 10)
+            .unwrap()
+            .contains(&id("lib"))
+    );
+    assert!(snapshot.traverse(&id("app"), None, 3, 1).is_err());
 }
 #[test]
-fn secret_payloads_and_invalid_relationships_are_rejected(){
-    let mut a=library("app");
-    a.extensions.insert("auth:private-key".into(),"-----BEGIN PRIVATE KEY-----".into());
-    let mut b=InventoryBuilder::new();
+fn secret_payloads_and_invalid_relationships_are_rejected() {
+    let mut a = library("app");
+    a.extensions.insert(
+        "auth:private-key".into(),
+        "-----BEGIN PRIVATE KEY-----".into(),
+    );
+    let mut b = InventoryBuilder::new();
     b.add_asset(a).unwrap();
-    assert!(matches!(b.finalize(InventoryLimits::default()),Err(InventoryError::ProhibitedMaterial)));
-    let mut c=InventoryBuilder::new();
+    assert!(matches!(
+        b.finalize(InventoryLimits::default()),
+        Err(InventoryError::ProhibitedMaterial)
+    ));
+    let mut c = InventoryBuilder::new();
     c.add_asset(library("app")).unwrap();
     c.add_asset(library("other")).unwrap();
-    c.add_relationship(Relationship{
-        id:RelationshipId::new("r").unwrap(),from:id("app"),to:id("other"),
-        kind:RelationshipKind::UsesKey,evidence:BTreeSet::new()
-    }).unwrap();
-    assert!(matches!(c.finalize(InventoryLimits::default()),Err(InventoryError::InvalidMetadata)));
+    c.add_relationship(Relationship {
+        id: RelationshipId::new("r").unwrap(),
+        from: id("app"),
+        to: id("other"),
+        kind: RelationshipKind::UsesKey,
+        evidence: BTreeSet::new(),
+    })
+    .unwrap();
+    assert!(matches!(
+        c.finalize(InventoryLimits::default()),
+        Err(InventoryError::InvalidMetadata)
+    ));
 }
 #[test]
-fn coverage_cannot_claim_complete_when_sources_failed(){
-    let mut run=run("r1","app");
-    run.completeness=RunCompleteness::Complete;
-    let mut b=InventoryBuilder::new();
+fn coverage_cannot_claim_complete_when_sources_failed() {
+    let mut run = run("r1", "app");
+    run.completeness = RunCompleteness::Complete;
+    let mut b = InventoryBuilder::new();
     b.add_run(run).unwrap();
-    b.add_coverage_record(CoverageRecord{
-        run:CollectionRunId::new("r1").unwrap(),
-        source_item:"app".into(),state:CoverageState::Failed,reason_code:Some("timeout".into()),
+    b.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("r1").unwrap(),
+        source_item: "app".into(),
+        state: CoverageState::Failed,
+        reason_code: Some("timeout".into()),
     });
     assert!(b.finalize(InventoryLimits::default()).is_err());
 }
