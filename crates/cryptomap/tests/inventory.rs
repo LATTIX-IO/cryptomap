@@ -27,7 +27,7 @@ fn test_run() -> CollectionRun {
         requested: BTreeSet::from(["fixture".into()]),
         started_at: "2026-10-08T00:00:00Z".into(),
         ended_at: "2026-10-08T01:00:00Z".into(),
-        completeness: RunCompleteness::Complete,
+        completeness: RunCompleteness::Partial,
     }
 }
 
