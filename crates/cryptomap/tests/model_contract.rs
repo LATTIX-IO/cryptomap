@@ -1,3 +1,5 @@
+// Integration fixtures use unwrap to express required successful preconditions.
+#![allow(clippy::unwrap_used)]
 use cryptomap::validation::utc_seconds;
 use cryptomap::*;
 use std::collections::{BTreeMap, BTreeSet};
