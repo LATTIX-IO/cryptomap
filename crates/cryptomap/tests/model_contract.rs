@@ -691,7 +691,9 @@ fn untrusted_scope_and_asset_metadata_fail_before_snapshot_import() {
     let mut b = InventoryBuilder::new();
     let mut unsafe_asset = library("valid-id");
     unsafe_asset.kind = AssetKind::Library {
-        ecosystem: "cargo".into(), name: "unsafe\0package".into(), version: "1.0".into()
+        ecosystem: "cargo".into(),
+        name: "unsafe\0package".into(),
+        version: "1.0".into(),
     };
     b.add_asset(unsafe_asset).unwrap();
     assert!(matches!(
