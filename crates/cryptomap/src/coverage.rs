@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 /// Identity of one authorized collection scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct CollectionScopeId(String);
 impl CollectionScopeId {
     /// Create a validated scope ID.
@@ -19,6 +20,13 @@ impl CollectionScopeId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+impl TryFrom<String> for CollectionScopeId {
+    type Error = InventoryError;
+    fn try_from(value: String) -> Result<Self, Self::Error> { Self::new(value) }
+}
+impl From<CollectionScopeId> for String {
+    fn from(value: CollectionScopeId) -> Self { value.0 }
 }
 /// Whether all requested collection scope items were inspected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
