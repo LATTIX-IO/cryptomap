@@ -55,13 +55,18 @@ fn rechecked(
     observed: &Evidence,
     new_coverage: &BTreeMap<SourceKey, CoverageState>,
 ) -> bool {
-    let key = (0, String::new(), observed.source.clone());
-    if new_coverage.get(&key).is_some_and(|s| successful(*s)) {
-        return true;
-    }
     let Some(run) = old.runs.get(&observed.run) else {
-        return false;
+        // Legacy, unscoped evidence cannot borrow another tenant's scoped
+        // coverage. Only an explicit legacy source key can establish reinspection.
+        let key = (0, String::new(), observed.source.clone());
+        return new_coverage.get(&key).is_some_and(|s| successful(*s));
     };
+    if !run.requested.contains(&observed.source) {
+        // A source omitted from its claimed run was never proven inspected.
+        return false;
+    }
+    // Typed evidence requires the SAME scope and source, not merely a matching
+    // source label or an unrelated legacy coverage entry.
     let scoped = (1, run.scope.as_str().to_owned(), observed.source.clone());
     new_coverage.get(&scoped).is_some_and(|s| successful(*s))
 }
