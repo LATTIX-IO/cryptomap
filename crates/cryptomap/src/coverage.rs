@@ -23,10 +23,14 @@ impl CollectionScopeId {
 }
 impl TryFrom<String> for CollectionScopeId {
     type Error = InventoryError;
-    fn try_from(value: String) -> Result<Self, Self::Error> { Self::new(value) }
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
 }
 impl From<CollectionScopeId> for String {
-    fn from(value: CollectionScopeId) -> Self { value.0 }
+    fn from(value: CollectionScopeId) -> Self {
+        value.0
+    }
 }
 /// Whether all requested collection scope items were inspected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

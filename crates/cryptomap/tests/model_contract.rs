@@ -685,92 +685,134 @@ fn query_supports_collected_scope_and_snapshot_change_filters() {
 #[test]
 fn untrusted_scope_and_asset_metadata_fail_before_snapshot_import() {
     assert!(serde_json::from_str::<CollectionScopeId>("\"\"").is_err());
-    assert!(serde_json::from_str::<CollectionScopeId>(&format!("\"{}\"", "x".repeat(513))).is_err());
-    let mut b=InventoryBuilder::new();
+    assert!(
+        serde_json::from_str::<CollectionScopeId>(&format!("\"{}\"", "x".repeat(513))).is_err()
+    );
+    let mut b = InventoryBuilder::new();
     b.add_asset(library("unsafe\0package")).unwrap();
-    assert!(matches!(b.finalize(InventoryLimits::default()), Err(InventoryError::InvalidMetadata)));
-    let mut b=InventoryBuilder::new();
-    let mut too_long=library("valid");
-    too_long.kind=AssetKind::Library{
-        ecosystem:"cargo".into(),name:"X".repeat(64),version:"1.0".into()};
+    assert!(matches!(
+        b.finalize(InventoryLimits::default()),
+        Err(InventoryError::InvalidMetadata)
+    ));
+    let mut b = InventoryBuilder::new();
+    let mut too_long = library("valid");
+    too_long.kind = AssetKind::Library {
+        ecosystem: "cargo".into(),
+        name: "X".repeat(64),
+        version: "1.0".into(),
+    };
     b.add_asset(too_long).unwrap();
-    assert!(b.finalize(InventoryLimits{field_bytes:32,..InventoryLimits::default()}).is_err());
+    assert!(
+        b.finalize(InventoryLimits {
+            field_bytes: 32,
+            ..InventoryLimits::default()
+        })
+        .is_err()
+    );
 }
 #[test]
 fn coverage_rejects_unsafe_reason_codes_and_legacy_keys() {
-    let mut b=InventoryBuilder::new();
-    b.add_run(run("r1","app")).unwrap();
+    let mut b = InventoryBuilder::new();
+    b.add_run(run("r1", "app")).unwrap();
     b.add_coverage_record(CoverageRecord {
-        run:CollectionRunId::new("r1").unwrap(),source_item:"app".into(),
-        state:CoverageState::Failed,reason_code:Some("-----BEGIN PRIVATE KEY-----".into()),
+        run: CollectionRunId::new("r1").unwrap(),
+        source_item: "app".into(),
+        state: CoverageState::Failed,
+        reason_code: Some("-----BEGIN PRIVATE KEY-----".into()),
     });
-    assert!(matches!(b.finalize(InventoryLimits::default()),Err(InventoryError::ProhibitedMaterial)));
-    let mut b=InventoryBuilder::new();
-    b.set_coverage("bad\0scope",CoverageState::Failed);
+    assert!(matches!(
+        b.finalize(InventoryLimits::default()),
+        Err(InventoryError::ProhibitedMaterial)
+    ));
+    let mut b = InventoryBuilder::new();
+    b.set_coverage("bad\0scope", CoverageState::Failed);
     assert!(b.finalize(InventoryLimits::default()).is_err());
 }
 #[test]
 fn inferred_evidence_is_excluded_from_direct_confidence_query() {
-    let mut b=InventoryBuilder::new();
-    b.add_run(run("r1","app")).unwrap();
+    let mut b = InventoryBuilder::new();
+    b.add_run(run("r1", "app")).unwrap();
     b.add_asset(library("app")).unwrap();
-    let mut inferred=ev("inferred","r1","2026-10-08T01:00:00Z",Confidence::Confirmed);
-    inferred.kind=EvidenceKind::Inferred;
-    inferred.inference_rule=Some("config-parser-v1".into());
+    let mut inferred = ev(
+        "inferred",
+        "r1",
+        "2026-10-08T01:00:00Z",
+        Confidence::Confirmed,
+    );
+    inferred.kind = EvidenceKind::Inferred;
+    inferred.inference_rule = Some("config-parser-v1".into());
     b.add_evidence(inferred).unwrap();
-    b.add_observation(obs("o1","inferred","TLS1.3")).unwrap();
-    let snapshot=b.finalize(InventoryLimits::default()).unwrap();
-    assert!(snapshot.query().confidence(&snapshot,Confidence::High).ids(10).unwrap().is_empty());
-    assert_eq!(snapshot.observations_by_collector("collector",Confidence::High).len(),1);
+    b.add_observation(obs("o1", "inferred", "TLS1.3")).unwrap();
+    let snapshot = b.finalize(InventoryLimits::default()).unwrap();
+    assert!(
+        snapshot
+            .query()
+            .confidence(&snapshot, Confidence::High)
+            .ids(10)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        snapshot
+            .observations_by_collector("collector", Confidence::High)
+            .len(),
+        1
+    );
 }
 #[test]
 fn incomplete_scan_does_not_resolve_an_unrechecked_conflict() {
-    let mut old=InventoryBuilder::new();
-    let mut old_run=run("old","file-a");
+    let mut old = InventoryBuilder::new();
+    let mut old_run = run("old", "file-a");
     old_run.requested.insert("file-b".into());
     old.add_run(old_run).unwrap();
     old.add_asset(library("app")).unwrap();
-    for (name,source,value) in [("e-a","file-a","TLS1.2"),("e-b","file-b","TLS1.3")] {
-        let mut e=ev(name,"old","2026-10-08T01:00:00Z",Confidence::High);
-        e.source=source.into();
+    for (name, source, value) in [("e-a", "file-a", "TLS1.2"), ("e-b", "file-b", "TLS1.3")] {
+        let mut e = ev(name, "old", "2026-10-08T01:00:00Z", Confidence::High);
+        e.source = source.into();
         old.add_evidence(e).unwrap();
-        old.add_observation(obs(name,name,value)).unwrap();
+        old.add_observation(obs(name, name, value)).unwrap();
     }
-    let old=old.finalize(InventoryLimits::default()).unwrap();
-    assert_eq!(old.conflicts.len(),1);
-    let mut newer=InventoryBuilder::new();
-    let mut latest=run("new","file-a");
-    latest.completeness=RunCompleteness::Complete;
+    let old = old.finalize(InventoryLimits::default()).unwrap();
+    assert_eq!(old.conflicts.len(), 1);
+    let mut newer = InventoryBuilder::new();
+    let mut latest = run("new", "file-a");
+    latest.completeness = RunCompleteness::Complete;
     newer.add_run(latest).unwrap();
-    newer.add_coverage_record(CoverageRecord{
-        run:CollectionRunId::new("new").unwrap(),source_item:"file-a".into(),
-        state:CoverageState::InspectedNoObservation,reason_code:None,
+    newer.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("new").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::InspectedNoObservation,
+        reason_code: None,
     });
     newer.add_asset(library("app")).unwrap();
-    let newer=newer.finalize(InventoryLimits::default()).unwrap();
-    let delta=old.diff(&newer);
+    let newer = newer.finalize(InventoryLimits::default()).unwrap();
+    let delta = old.diff(&newer);
     assert!(delta.conflicts_resolved.is_empty());
-    assert_eq!(delta.conflicts_tentative_resolved.len(),1);
+    assert_eq!(delta.conflicts_tentative_resolved.len(), 1);
     assert!(delta.observations_removed.is_empty());
-    assert_eq!(delta.observations_tentative_removed.len(),2);
+    assert_eq!(delta.observations_tentative_removed.len(), 2);
 }
 #[test]
 fn typed_coverage_changes_are_detected_across_run_ids() {
-    let mut a=InventoryBuilder::new();
-    a.add_run(run("old","file-a")).unwrap();
-    a.add_coverage_record(CoverageRecord{
-        run:CollectionRunId::new("old").unwrap(),source_item:"file-a".into(),
-        state:CoverageState::Failed,reason_code:Some("timeout".into()),
+    let mut a = InventoryBuilder::new();
+    a.add_run(run("old", "file-a")).unwrap();
+    a.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("old").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::Failed,
+        reason_code: Some("timeout".into()),
     });
-    let old=a.finalize(InventoryLimits::default()).unwrap();
-    let mut b=InventoryBuilder::new();
-    let mut completed=run("new","file-a");
-    completed.completeness=RunCompleteness::Complete;
+    let old = a.finalize(InventoryLimits::default()).unwrap();
+    let mut b = InventoryBuilder::new();
+    let mut completed = run("new", "file-a");
+    completed.completeness = RunCompleteness::Complete;
     b.add_run(completed).unwrap();
-    b.add_coverage_record(CoverageRecord{
-        run:CollectionRunId::new("new").unwrap(),source_item:"file-a".into(),
-        state:CoverageState::InspectedNoObservation,reason_code:None,
+    b.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("new").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::InspectedNoObservation,
+        reason_code: None,
     });
-    let changed=old.diff(&b.finalize(InventoryLimits::default()).unwrap());
-    assert_eq!(changed.coverage_changed.len(),1);
+    let changed = old.diff(&b.finalize(InventoryLimits::default()).unwrap());
+    assert_eq!(changed.coverage_changed.len(), 1);
 }

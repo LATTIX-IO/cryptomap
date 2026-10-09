@@ -10,9 +10,9 @@ pub mod metadata;
 pub mod privacy;
 pub mod query;
 pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
+mod diff;
 mod strict_json;
 pub mod validation;
-mod diff;
 pub use coverage::{CollectionRun, CollectionScopeId, CoverageRecord, RunCompleteness};
 pub use identity::{AssetIdentity, IdentityContext};
 pub use metadata::{

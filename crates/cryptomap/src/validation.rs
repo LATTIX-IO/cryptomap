@@ -190,10 +190,12 @@ fn validate_value(value: &serde_json::Value, field_bytes: usize) -> Result<(), I
             Ok(())
         }
         serde_json::Value::Array(items) => {
-            for item in items { validate_value(item, field_bytes)?; }
+            for item in items {
+                validate_value(item, field_bytes)?;
+            }
             Ok(())
         }
-        _ => Ok(())
+        _ => Ok(()),
     }
 }
 impl Asset {
