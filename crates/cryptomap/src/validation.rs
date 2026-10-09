@@ -179,6 +179,23 @@ impl Observation {
         safe_text(&self.value, limits.field_bytes)
     }
 }
+fn validate_value(value: &serde_json::Value, field_bytes: usize) -> Result<(), InventoryError> {
+    match value {
+        serde_json::Value::String(s) => safe_text(s, field_bytes),
+        serde_json::Value::Object(map) => {
+            for (key, val) in map {
+                safe_text(key, field_bytes)?;
+                validate_value(val, field_bytes)?;
+            }
+            Ok(())
+        }
+        serde_json::Value::Array(items) => {
+            for item in items { validate_value(item, field_bytes)?; }
+            Ok(())
+        }
+        _ => Ok(())
+    }
+}
 impl Asset {
     /// Validate asset metadata and extension bounds.
     pub fn validate(&self, limits: &InventoryLimits) -> Result<(), InventoryError> {
@@ -194,8 +211,11 @@ impl Asset {
         if kind.len() > limits.record_bytes {
             return Err(InventoryError::LimitExceeded("asset bytes"));
         }
-        let preview = String::from_utf8_lossy(&kind);
-        safe_text(&preview, limits.record_bytes)?;
+        // Validate actual field values, not JSON-escaped text. Escaping would
+        // hide control characters and make limits apply to the wrong strings.
+        let raw = serde_json::to_value(&self.kind)
+            .map_err(|e| InventoryError::Encoding(e.to_string()))?;
+        validate_value(&raw, limits.field_bytes)?;
         match &self.kind {
             AssetKind::Certificate {
                 fingerprint_sha256, ..
