@@ -1,7 +1,6 @@
 //! Conservative inventory change tracking with per-evidence source confirmation.
 use crate::{
-    AssetId, ChangeSet, CollectionRunId, CoverageState, Evidence, EvidenceId,
-    InventorySnapshot, ObservationId, RelationshipId, ConflictId,
+    ChangeSet, CoverageState, Evidence, EvidenceId, InventorySnapshot,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -105,7 +104,7 @@ impl InventorySnapshot {
                 }));
         let coverage_changed: BTreeSet<String> = old_cov.keys().chain(new_cov.keys())
             .filter(|key|old_cov.get(*key)!=new_cov.get(*key))
-            .map(|key|format!("{key:?}")).collect();
+            .map(|key| if key.0 == 0 { key.2.clone() } else { format!("{key:?}") }).collect();
 
         ChangeSet {
             added: new_assets.difference(&old_assets).cloned().collect(),
