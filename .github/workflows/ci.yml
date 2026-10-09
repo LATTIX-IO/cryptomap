@@ -50,6 +50,9 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --all-features --no-deps --locked
 
+      - name: Verify packaged crate
+        run: cargo package --package cryptomap --locked
+
       - name: Install supply-chain tools
         run: |
           cargo install --locked cargo-audit
