@@ -102,75 +102,61 @@ impl<'a> InventoryQuery<'a> {
     }
     /// Select assets that have at least one observation from a source name.
     pub fn source(self, snapshot: &InventorySnapshot, source: &str) -> Self {
-        self.filter(|a| {
-            snapshot.observations.values().any(|o| {
-                o.asset == a.id
-                    && snapshot
-                        .evidence
-                        .get(&o.evidence)
-                        .is_some_and(|e| e.source == source)
-            })
-        })
+        let matching: BTreeSet<AssetId> = snapshot.observations.values()
+            .filter(|o| snapshot.evidence.get(&o.evidence).is_some_and(|e| e.source == source))
+            .map(|o| o.asset.clone()).collect();
+        self.filter(|a| matching.contains(&a.id))
     }
     /// Select assets with directly observed evidence meeting a confidence floor.
     pub fn confidence(self, snapshot: &InventorySnapshot, min: Confidence) -> Self {
-        self.filter(|a| {
-            snapshot.observations.values().any(|o| {
-                o.asset == a.id
-                    && snapshot
-                        .evidence
-                        .get(&o.evidence)
-                        .is_some_and(|e| e.confidence >= min)
-            })
-        })
+        let matching: BTreeSet<AssetId> = snapshot.observations.values()
+            .filter(|o| snapshot.evidence.get(&o.evidence).is_some_and(|e|
+                e.kind == crate::EvidenceKind::Direct && e.confidence >= min))
+            .map(|o| o.asset.clone()).collect();
+        self.filter(|a| matching.contains(&a.id))
     }
     /// Select assets with observations in the given inclusive UTC time interval.
     pub fn observed_between(self, snapshot: &InventorySnapshot, start: i64, end: i64) -> Self {
-        self.filter(|a| {
-            snapshot.observations.values().any(|o| {
-                o.asset == a.id
-                    && snapshot
-                        .evidence
-                        .get(&o.evidence)
-                        .and_then(|e| crate::validation::utc_seconds(&e.observed_at).ok())
-                        .is_some_and(|t| t >= start && t <= end)
-            })
-        })
+        let matching: BTreeSet<AssetId> = snapshot.observations.values()
+            .filter(|o| snapshot.evidence.get(&o.evidence)
+                .and_then(|e| crate::validation::utc_seconds(&e.observed_at).ok())
+                .is_some_and(|t| t >= start && t <= end))
+            .map(|o| o.asset.clone()).collect();
+        self.filter(|a| matching.contains(&a.id))
     }
     /// Select assets with unresolved conflicts in a snapshot.
     pub fn with_conflict(self, snapshot: &InventorySnapshot) -> Self {
-        self.filter(|a| snapshot.conflicts.values().any(|c| c.asset == a.id))
+        let conflicting: BTreeSet<AssetId> =
+            snapshot.conflicts.values().map(|c| c.asset.clone()).collect();
+        self.filter(|a| conflicting.contains(&a.id))
     }
     /// Select assets related to a given canonical asset.
     pub fn connected_to(
-        self,
-        snapshot: &InventorySnapshot,
-        endpoint: &AssetId,
+        self, snapshot: &InventorySnapshot, endpoint: &AssetId,
         kind: Option<RelationshipKind>,
     ) -> Self {
-        self.filter(|a| {
-            snapshot.relationships.values().any(|r| {
-                (&r.from == endpoint && r.to == a.id || &r.to == endpoint && r.from == a.id)
-                    && kind.as_ref().is_none_or(|k| k == &r.kind)
-            })
-        })
+        let connected: BTreeSet<AssetId> = snapshot.relationships.values()
+            .filter(|r| kind.as_ref().is_none_or(|k| k == &r.kind))
+            .filter_map(|r| {
+                if &r.from == endpoint { Some(r.to.clone()) }
+                else if &r.to == endpoint { Some(r.from.clone()) }
+                else { None }
+            }).collect();
+        self.filter(|a| connected.contains(&a.id))
     }
     /// Select assets with evidence originating in a source with the given
     /// explicit inspection state.
     pub fn coverage(self, snapshot: &InventorySnapshot, wanted: crate::CoverageState) -> Self {
-        self.filter(|a| {
-            snapshot.observations.values().any(|o| {
-                o.asset == a.id
-                    && snapshot.evidence.get(&o.evidence).is_some_and(|e| {
-                        snapshot.coverage.get(&e.source) == Some(&wanted)
-                            || snapshot.coverage_records.iter().any(|r| {
-                                r.source_item == e.source && r.run == e.run && r.state == wanted
-                            })
-                    })
-            })
-        })
+        let typed: BTreeSet<_> = snapshot.coverage_records.iter()
+            .filter(|r| r.state == wanted)
+            .map(|r| (r.run.clone(), r.source_item.clone())).collect();
+        let matching: BTreeSet<AssetId> = snapshot.observations.values()
+            .filter(|o| snapshot.evidence.get(&o.evidence).is_some_and(|e|
+                snapshot.coverage.get(&e.source) == Some(&wanted) ||
+                typed.contains(&(e.run.clone(), e.source.clone()))))
+            .map(|o| o.asset.clone()).collect();
+        self.filter(|a| matching.contains(&a.id))
     }
-
     /// Select current assets that were added or materially changed between
     /// two inventory snapshots, using a previously computed ChangeSet.
     pub fn added_or_changed(self, changes: &crate::ChangeSet) -> Self {
