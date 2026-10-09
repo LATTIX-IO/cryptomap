@@ -53,17 +53,17 @@ impl InventorySnapshot {
             .enumerate()
             .map(|(i, k)| (k.clone(), format!("asset-{:06}", i + 1)))
             .collect();
+        let mut counts: BTreeMap<&crate::AssetId, usize> = BTreeMap::new();
+        for observation in self.observations.values() {
+            *counts.entry(&observation.asset).or_insert(0) += 1;
+        }
         let assets = self
             .assets
             .values()
             .map(|a| RedactedAssetSummary {
                 alias: aliases[&a.id].clone(),
                 kind: a.kind.name().into(),
-                observations: self
-                    .observations
-                    .values()
-                    .filter(|o| o.asset == a.id)
-                    .count(),
+                observations: counts.get(&a.id).copied().unwrap_or(0),
             })
             .collect();
         let relationships = self
