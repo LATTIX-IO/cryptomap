@@ -644,8 +644,18 @@ impl InventoryBuilder {
         for run in self.runs.values() {
             run.validate()?;
         }
+        // Apply the same bounds to both legacy and typed coverage sources.
+        if self.coverage.len() > limits.coverage_records {
+            return Err(InventoryError::LimitExceeded("legacy coverage records"));
+        }
+        for source in self.coverage.keys() {
+            validation::safe_text(source, limits.field_bytes)?;
+        }
         for record in &self.coverage_records {
             validation::safe_text(&record.source_item, limits.field_bytes)?;
+            if let Some(reason) = &record.reason_code {
+                validation::safe_text(reason, 128)?;
+            }
             let run = self
                 .runs
                 .get(&record.run)
