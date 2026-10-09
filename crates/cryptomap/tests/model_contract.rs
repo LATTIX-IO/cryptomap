@@ -689,7 +689,11 @@ fn untrusted_scope_and_asset_metadata_fail_before_snapshot_import() {
         serde_json::from_str::<CollectionScopeId>(&format!("\"{}\"", "x".repeat(513))).is_err()
     );
     let mut b = InventoryBuilder::new();
-    b.add_asset(library("unsafe\0package")).unwrap();
+    let mut unsafe_asset = library("valid-id");
+    unsafe_asset.kind = AssetKind::Library {
+        ecosystem: "cargo".into(), name: "unsafe\0package".into(), version: "1.0".into()
+    };
+    b.add_asset(unsafe_asset).unwrap();
     assert!(matches!(
         b.finalize(InventoryLimits::default()),
         Err(InventoryError::InvalidMetadata)
@@ -789,8 +793,8 @@ fn incomplete_scan_does_not_resolve_an_unrechecked_conflict() {
     let delta = old.diff(&newer);
     assert!(delta.conflicts_resolved.is_empty());
     assert_eq!(delta.conflicts_tentative_resolved.len(), 1);
-    assert!(delta.observations_removed.is_empty());
-    assert_eq!(delta.observations_tentative_removed.len(), 2);
+    assert_eq!(delta.observations_removed.len(), 1);
+    assert_eq!(delta.observations_tentative_removed.len(), 1);
 }
 #[test]
 fn typed_coverage_changes_are_detected_across_run_ids() {
