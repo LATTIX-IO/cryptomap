@@ -868,92 +868,110 @@ fn evidence_removal_requires_same_scope_and_exact_source() {
 
 #[test]
 fn differing_successful_collection_states_remain_successful() {
-    let mut original=InventoryBuilder::new();
-    let mut old_run=run("old-success","file-a");
-    old_run.completeness=RunCompleteness::Complete;
+    let mut original = InventoryBuilder::new();
+    let mut old_run = run("old-success", "file-a");
+    old_run.completeness = RunCompleteness::Complete;
     original.add_run(old_run).unwrap();
     original.add_asset(library("app")).unwrap();
-    let mut evidence=ev("ev-old","old-success","2026-10-08T01:00:00Z",Confidence::High);
-    evidence.source="file-a".into();
+    let mut evidence = ev(
+        "ev-old",
+        "old-success",
+        "2026-10-08T01:00:00Z",
+        Confidence::High,
+    );
+    evidence.source = "file-a".into();
     original.add_evidence(evidence).unwrap();
-    original.add_observation(obs("obs-old","ev-old","TLS1.2")).unwrap();
-    original.add_coverage_record(CoverageRecord{
-        run:CollectionRunId::new("old-success").unwrap(),
-        source_item:"file-a".into(),
-        state:CoverageState::InspectedObserved,reason_code:None,
+    original
+        .add_observation(obs("obs-old", "ev-old", "TLS1.2"))
+        .unwrap();
+    original.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("old-success").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::InspectedObserved,
+        reason_code: None,
     });
-    let old=original.finalize(InventoryLimits::default()).unwrap();
+    let old = original.finalize(InventoryLimits::default()).unwrap();
 
-    let mut latest=InventoryBuilder::new();
-    for (run_id,state) in [
-        ("new-found",CoverageState::InspectedObserved),
-        ("new-empty",CoverageState::InspectedNoObservation)
+    let mut latest = InventoryBuilder::new();
+    for (run_id, state) in [
+        ("new-found", CoverageState::InspectedObserved),
+        ("new-empty", CoverageState::InspectedNoObservation),
     ] {
-        let mut r=run(run_id,"file-a");
-        r.completeness=RunCompleteness::Complete;
+        let mut r = run(run_id, "file-a");
+        r.completeness = RunCompleteness::Complete;
         latest.add_run(r).unwrap();
-        latest.add_coverage_record(CoverageRecord{
-            run:CollectionRunId::new(run_id).unwrap(),
-            source_item:"file-a".into(),state,reason_code:None,
+        latest.add_coverage_record(CoverageRecord {
+            run: CollectionRunId::new(run_id).unwrap(),
+            source_item: "file-a".into(),
+            state,
+            reason_code: None,
         });
     }
-    let diff=old.diff(&latest.finalize(InventoryLimits::default()).unwrap());
-    assert_eq!(diff.evidence_removed.len(),1);
-    assert_eq!(diff.removed.len(),1);
+    let diff = old.diff(&latest.finalize(InventoryLimits::default()).unwrap());
+    assert_eq!(diff.evidence_removed.len(), 1);
+    assert_eq!(diff.removed.len(), 1);
     assert!(diff.coverage_changed.is_empty());
 }
 
 #[test]
 fn a_different_collector_cannot_confirm_removals_in_the_same_scope() {
-    let mut original=InventoryBuilder::new();
-    original.add_run(run("old","file-a")).unwrap();
+    let mut original = InventoryBuilder::new();
+    original.add_run(run("old", "file-a")).unwrap();
     original.add_asset(library("app")).unwrap();
-    let mut evidence=ev("ev-old","old","2026-10-08T01:00:00Z",Confidence::High);
-    evidence.source="file-a".into();
+    let mut evidence = ev("ev-old", "old", "2026-10-08T01:00:00Z", Confidence::High);
+    evidence.source = "file-a".into();
     original.add_evidence(evidence).unwrap();
-    original.add_observation(obs("obs-old","ev-old","TLS1.3")).unwrap();
-    let old=original.finalize(InventoryLimits::default()).unwrap();
+    original
+        .add_observation(obs("obs-old", "ev-old", "TLS1.3"))
+        .unwrap();
+    let old = original.finalize(InventoryLimits::default()).unwrap();
 
-    let mut newer=InventoryBuilder::new();
-    let mut r=run("other-collector","file-a");
-    r.collector=CollectorId::new("different-collector").unwrap();
-    r.completeness=RunCompleteness::Complete;
+    let mut newer = InventoryBuilder::new();
+    let mut r = run("other-collector", "file-a");
+    r.collector = CollectorId::new("different-collector").unwrap();
+    r.completeness = RunCompleteness::Complete;
     newer.add_run(r).unwrap();
     newer.add_coverage_record(CoverageRecord {
-        run:CollectionRunId::new("other-collector").unwrap(),
-        source_item:"file-a".into(),state:CoverageState::InspectedNoObservation,
-        reason_code:None
+        run: CollectionRunId::new("other-collector").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::InspectedNoObservation,
+        reason_code: None,
     });
-    let delta=old.diff(&newer.finalize(InventoryLimits::default()).unwrap());
+    let delta = old.diff(&newer.finalize(InventoryLimits::default()).unwrap());
     assert!(delta.evidence_removed.is_empty());
-    assert_eq!(delta.evidence_tentative_removed.len(),1);
+    assert_eq!(delta.evidence_tentative_removed.len(), 1);
     assert!(delta.removed.is_empty());
-    assert_eq!(delta.tentative_removed.len(),1);
+    assert_eq!(delta.tentative_removed.len(), 1);
 }
 
 #[test]
 fn typed_coverage_changes_use_a_stable_three_part_key() {
-    let mut before=InventoryBuilder::new();
-    before.add_run(run("before","file-a")).unwrap();
+    let mut before = InventoryBuilder::new();
+    before.add_run(run("before", "file-a")).unwrap();
     before.add_coverage_record(CoverageRecord {
-        run:CollectionRunId::new("before").unwrap(),
-        source_item:"file-a".into(),state:CoverageState::Failed,
-        reason_code:Some("timeout".into())
+        run: CollectionRunId::new("before").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::Failed,
+        reason_code: Some("timeout".into()),
     });
-    let before=before.finalize(InventoryLimits::default()).unwrap();
+    let before = before.finalize(InventoryLimits::default()).unwrap();
 
-    let mut after=InventoryBuilder::new();
-    let mut r=run("after","file-a");
-    r.completeness=RunCompleteness::Complete;
+    let mut after = InventoryBuilder::new();
+    let mut r = run("after", "file-a");
+    r.completeness = RunCompleteness::Complete;
     after.add_run(r).unwrap();
     after.add_coverage_record(CoverageRecord {
-        run:CollectionRunId::new("after").unwrap(),
-        source_item:"file-a".into(),state:CoverageState::InspectedObserved,
-        reason_code:None
+        run: CollectionRunId::new("after").unwrap(),
+        source_item: "file-a".into(),
+        state: CoverageState::InspectedObserved,
+        reason_code: None,
     });
-    let delta=before.diff(&after.finalize(InventoryLimits::default()).unwrap());
-    let key=String::from("org-prod") + &String::from(char::from(31)) +
-        "collector" + &String::from(char::from(31)) + "file-a";
+    let delta = before.diff(&after.finalize(InventoryLimits::default()).unwrap());
+    let key = String::from("org-prod")
+        + &String::from(char::from(31))
+        + "collector"
+        + &String::from(char::from(31))
+        + "file-a";
     assert!(delta.coverage_changed.contains(&key));
-    assert_eq!(delta.coverage_changed.len(),1);
+    assert_eq!(delta.coverage_changed.len(), 1);
 }

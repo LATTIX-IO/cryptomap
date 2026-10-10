@@ -19,7 +19,12 @@ fn coverage(snapshot: &InventorySnapshot) -> BTreeMap<SourceKey, CoverageState> 
     }
     for record in &snapshot.coverage_records {
         if let Some(run) = snapshot.runs.get(&record.run) {
-            let key = (1, run.scope.as_str().to_owned(), run.collector.as_str().to_owned(), record.source_item.clone());
+            let key = (
+                1,
+                run.scope.as_str().to_owned(),
+                run.collector.as_str().to_owned(),
+                record.source_item.clone(),
+            );
             states
                 .entry(key)
                 .and_modify(|state| {
@@ -72,7 +77,12 @@ fn rechecked(
     }
     // Typed evidence requires the SAME scope and source, not merely a matching
     // source label or an unrelated legacy coverage entry.
-    let scoped = (1, run.scope.as_str().to_owned(), run.collector.as_str().to_owned(), observed.source.clone());
+    let scoped = (
+        1,
+        run.scope.as_str().to_owned(),
+        run.collector.as_str().to_owned(),
+        observed.source.clone(),
+    );
     new_coverage.get(&scoped).is_some_and(|s| successful(*s))
 }
 fn split_removed<T: Ord + Clone>(
