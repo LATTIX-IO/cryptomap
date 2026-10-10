@@ -2,7 +2,8 @@
 use crate::{ChangeSet, CoverageState, Evidence, EvidenceId, InventorySnapshot};
 use std::collections::{BTreeMap, BTreeSet};
 
-type SourceKey = (u8, String, String);
+// (kind, scope, collector, source): kind 0 is legacy, 1 is scoped collector coverage.
+type SourceKey = (u8, String, String, String);
 
 fn successful(state: CoverageState) -> bool {
     matches!(
@@ -14,17 +15,21 @@ fn successful(state: CoverageState) -> bool {
 fn coverage(snapshot: &InventorySnapshot) -> BTreeMap<SourceKey, CoverageState> {
     let mut states = BTreeMap::new();
     for (source, state) in &snapshot.coverage {
-        states.insert((0, String::new(), source.clone()), *state);
+        states.insert((0, String::new(), String::new(), source.clone()), *state);
     }
     for record in &snapshot.coverage_records {
         if let Some(run) = snapshot.runs.get(&record.run) {
-            let key = (1, run.scope.as_str().to_owned(), record.source_item.clone());
+            let key = (1, run.scope.as_str().to_owned(), run.collector.as_str().to_owned(), record.source_item.clone());
             states
                 .entry(key)
                 .and_modify(|state| {
                     // A failed or partial attempt is not upgraded to confirmed coverage
                     // by another independent attempt without explicit reconciliation.
-                    if *state != record.state {
+                    if successful(*state) && successful(record.state) {
+                        if record.state == CoverageState::InspectedObserved {
+                            *state = CoverageState::InspectedObserved;
+                        }
+                    } else if *state != record.state {
                         *state = CoverageState::Partial;
                     }
                 })
@@ -58,7 +63,7 @@ fn rechecked(
     let Some(run) = old.runs.get(&observed.run) else {
         // Legacy, unscoped evidence cannot borrow another tenant's scoped
         // coverage. Only an explicit legacy source key can establish reinspection.
-        let key = (0, String::new(), observed.source.clone());
+        let key = (0, String::new(), String::new(), observed.source.clone());
         return new_coverage.get(&key).is_some_and(|s| successful(*s));
     };
     if !run.requested.contains(&observed.source) {
@@ -67,7 +72,7 @@ fn rechecked(
     }
     // Typed evidence requires the SAME scope and source, not merely a matching
     // source label or an unrelated legacy coverage entry.
-    let scoped = (1, run.scope.as_str().to_owned(), observed.source.clone());
+    let scoped = (1, run.scope.as_str().to_owned(), run.collector.as_str().to_owned(), observed.source.clone());
     new_coverage.get(&scoped).is_some_and(|s| successful(*s))
 }
 fn split_removed<T: Ord + Clone>(
@@ -170,9 +175,9 @@ impl InventorySnapshot {
             .filter(|key| old_cov.get(*key) != new_cov.get(*key))
             .map(|key| {
                 if key.0 == 0 {
-                    key.2.clone()
+                    key.3.clone()
                 } else {
-                    format!("{key:?}")
+                    format!("{}\\u{1f}{}\\u{1f}{}", key.1, key.2, key.3)
                 }
             })
             .collect();
