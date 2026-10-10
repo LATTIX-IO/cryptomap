@@ -177,7 +177,7 @@ impl InventorySnapshot {
                 if key.0 == 0 {
                     key.3.clone()
                 } else {
-                    format!("{}\\u{1f}{}\\u{1f}{}", key.1, key.2, key.3)
+                    format!("{}\u{1f}{}\u{1f}{}", key.1, key.2, key.3)
                 }
             })
             .collect();
