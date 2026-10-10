@@ -50,6 +50,9 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --all-features --no-deps --locked
 
+      - name: Verify packaged crate
+        run: cargo package --package cryptomap --locked
+
       - name: Install supply-chain tools
         run: |
           cargo install --locked cargo-audit
@@ -64,3 +67,37 @@ jobs:
 
       - name: SemVer compatibility
         run: cargo semver-checks check-release --workspace --all-features
+
+  rust-msrv:
+    name: Rust 1.85 MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: '1.85.0'
+      - name: MSRV check
+        run: cargo check --workspace --all-targets --all-features --locked
+      - name: MSRV integration tests
+        run: cargo test --workspace --all-features --locked
+
+  rust-windows:
+    name: Windows compatibility
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
+      - name: Windows locked compile
+        run: cargo check --workspace --all-targets --all-features --locked
+      - name: Windows integration tests
+        run: cargo test --workspace --all-features --locked
