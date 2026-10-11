@@ -4,7 +4,6 @@
 //! connection fallback to unapproved addresses. The caller provides approved
 //! resolved addresses; the collector can only connect to one of those addresses.
 use crate::scope::ScopeError;
-use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::{IpAddr, SocketAddr, TcpStream},
@@ -12,8 +11,7 @@ use std::{
 };
 
 /// A caller-approved endpoint with an exact hostname/port and pinned IP list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkTarget {
     host: String,
     port: u16,
@@ -115,9 +113,10 @@ impl NetworkScope {
     /// Register one exact target; reject duplicate registrations.
     pub fn grant(&mut self, target: NetworkTarget) -> Result<(), ScopeError> {
         let id = target.id();
-        if self.targets.insert(id, target).is_some() {
+        if self.targets.contains_key(&id) {
             return Err(ScopeError::InvalidInput);
         }
+        self.targets.insert(id, target);
         Ok(())
     }
 
