@@ -387,7 +387,11 @@ fn map_fact(
                 AssetKind::Key {
                     algorithm: None,
                     provider: Some(provider.clone()),
-                    fingerprint: Some(reference.clone()),
+                    // FOSS-2 key identity folds fingerprint strings to ASCII
+                    // lowercase. Hash the *exact* opaque reference first so
+                    // case-sensitive provider IDs cannot silently collide.
+                    // This digest identifies the reference, not key material.
+                    fingerprint: Some(format!("opaque-ref:v1:{}", digest_id(&[reference])?)),
                 },
                 identity,
                 BTreeMap::new(),
