@@ -114,6 +114,8 @@ pub enum RawFactKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawLimits {
+    /// Maximum distinct source items in one request.
+    pub sources: usize,
     /// Maximum accepted observations per collection invocation.
     pub observations: usize,
     /// Maximum bytes of all serialized observations combined.
@@ -129,6 +131,7 @@ pub struct RawLimits {
 impl Default for RawLimits {
     fn default() -> Self {
         Self {
+            sources: 10_000,
             observations: 10_000,
             total_bytes: 8 * 1024 * 1024,
             record_bytes: 16 * 1024,
@@ -141,7 +144,8 @@ impl Default for RawLimits {
 impl RawLimits {
     /// Reject impossible or unconstrained configurations.
     pub fn validate(&self) -> Result<(), InventoryError> {
-        if self.observations == 0
+        if self.sources == 0
+            || self.observations == 0
             || self.total_bytes == 0
             || self.record_bytes == 0
             || self.field_bytes == 0
@@ -224,33 +228,35 @@ impl RawObservation {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
-        let encoded = serde_json::to_vec(self).map_err(|_| InventoryError::InvalidMetadata)?;
-        if encoded.len() > limits.record_bytes {
-            return Err(InventoryError::LimitExceeded("raw observation bytes"));
+        // Bound and screen BORROWED fields before either JSON allocation.
+        // Serializing attacker-controlled payloads first defeats the budgets.
+        for (key, value) in &self.attributes {
+            validation::safe_text(key, limits.field_bytes)?;
+            validation::safe_text(value, limits.field_bytes)?;
         }
-        // Serialize to a value to inspect UNESCAPED string values; JSON
-        // escaping must not conceal prohibited control characters or secrets.
-        let value = serde_json::to_value(self).map_err(|_| InventoryError::InvalidMetadata)?;
-        fn bounded(value: &serde_json::Value, max: usize) -> Result<(), InventoryError> {
-            match value {
-                serde_json::Value::String(s) => validation::safe_text(s, max),
-                serde_json::Value::Array(items) => {
-                    for item in items {
-                        bounded(item, max)?;
-                    }
-                    Ok(())
-                }
-                serde_json::Value::Object(map) => {
-                    for (key, value) in map {
-                        validation::safe_text(key, max)?;
-                        bounded(value, max)?;
-                    }
-                    Ok(())
-                }
-                _ => Ok(()),
+        match &self.fact {
+            RawFactKind::AlgorithmUse { identifier, profile, operation } => {
+                validation::safe_text(identifier, limits.field_bytes)?;
+                if let Some(profile) = profile { validation::safe_text(profile, limits.field_bytes)?; }
+                if let Some(operation) = operation { validation::safe_text(operation, limits.field_bytes)?; }
+            }
+            RawFactKind::Dependency { ecosystem, name, version } => {
+                for item in [ecosystem, name, version] { validation::safe_text(item, limits.field_bytes)?; }
+            }
+            RawFactKind::Certificate { fingerprint_sha256 } => validation::safe_text(fingerprint_sha256, limits.field_bytes)?,
+            RawFactKind::Protocol { family, version, .. } => {
+                validation::safe_text(family, limits.field_bytes)?;
+                if let Some(version) = version { validation::safe_text(version, limits.field_bytes)?; }
+            }
+            RawFactKind::KeyReference { provider, reference } => {
+                validation::safe_text(provider, limits.field_bytes)?;
+                validation::safe_text(reference, limits.field_bytes)?;
+            }
+            RawFactKind::Configuration { property, value } => {
+                validation::safe_text(property, limits.field_bytes)?;
+                validation::safe_text(value, limits.field_bytes)?;
             }
         }
-        bounded(&value, limits.field_bytes)?;
         match &self.fact {
             RawFactKind::Certificate { fingerprint_sha256 } => {
                 if fingerprint_sha256.len() != 64
@@ -291,6 +297,10 @@ impl RawObservation {
                     return Err(InventoryError::InvalidMetadata);
                 }
             }
+        }
+        let encoded = serde_json::to_vec(self).map_err(|_| InventoryError::InvalidMetadata)?;
+        if encoded.len() > limits.record_bytes {
+            return Err(InventoryError::LimitExceeded("raw observation bytes"));
         }
         Ok(encoded.len())
     }
