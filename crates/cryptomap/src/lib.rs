@@ -12,6 +12,7 @@ pub mod filesystem_scope;
 pub mod identity;
 pub mod metadata;
 pub mod network_scope;
+pub mod orchestration;
 pub mod pipeline;
 pub mod privacy;
 pub mod query;
