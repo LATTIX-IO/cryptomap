@@ -2,9 +2,7 @@
 #![allow(clippy::unwrap_used)]
 use cryptomap::{
     CollectionRunId, CoverageState,
-    collector::{
-        CancellationToken, CollectionRequest, CollectionStatus, RequestedSource,
-    },
+    collector::{CancellationToken, CollectionRequest, CollectionStatus, RequestedSource},
     collectors::dependency::manifest_collector::CargoManifestCollector,
     coverage::CollectionScopeId,
     raw::{RawFactKind, RawLimits, RawSourceKind},
