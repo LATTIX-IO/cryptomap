@@ -78,12 +78,12 @@ impl FileRoot {
             if !anchor.is_absolute() {
                 return Err(ScopeError::InvalidInput);
             }
-            let dir = Dir::open_ambient_dir(&anchor, ambient_authority())
-                .map_err(|_| ScopeError::Io)?;
+            let dir =
+                Dir::open_ambient_dir(&anchor, ambient_authority()).map_err(|_| ScopeError::Io)?;
             (dir, anchor)
         } else {
-            let dir = Dir::open_ambient_dir(".", ambient_authority())
-                .map_err(|_| ScopeError::Io)?;
+            let dir =
+                Dir::open_ambient_dir(".", ambient_authority()).map_err(|_| ScopeError::Io)?;
             // A relative display path is intentionally NOT a reconstructed
             // absolute path, and must never be used as an authority token.
             (dir, PathBuf::from("."))
@@ -318,12 +318,8 @@ mod relative_root_tests {
         // The security property does not depend on winning a scheduling race:
         // the directory name is replaced AFTER acquiring its handle but BEFORE
         // descending into "inside". Path-based descent would read "substituted".
-        let root = FileRoot::descend(
-            cwd_handle,
-            ".".into(),
-            vec![OsString::from("inside")],
-        )
-        .unwrap();
+        let root =
+            FileRoot::descend(cwd_handle, ".".into(), vec![OsString::from("inside")]).unwrap();
         assert_eq!(
             root.authorize("proof.txt", 64)
                 .unwrap()
