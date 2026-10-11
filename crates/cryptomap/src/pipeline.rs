@@ -4,8 +4,8 @@
 //! source list. This first increment maps algorithm-use and dependency facts;
 //! unsupported raw categories fail closed rather than disappearing.
 use crate::{
-    AssetId, AssetKind, CoverageState, Evidence, EvidenceId, IdentityContext, InventoryBuilder, InventoryError, InventoryLimits,
-    InventorySnapshot, Observation, ObservationId,
+    AssetId, AssetKind, CoverageState, Evidence, EvidenceId, IdentityContext, InventoryBuilder,
+    InventoryError, InventoryLimits, InventorySnapshot, Observation, ObservationId,
     collector::{CollectionOutcome, CollectionRequest, CollectionStatus, RequestedSource},
     coverage::{CollectionRun, CoverageRecord, RunCompleteness},
     raw::{RawFactKind, RawLimits, RawObservation},
@@ -140,7 +140,12 @@ fn observe(
 ) -> Result<(), InventoryError> {
     let id = ObservationId::new(format!(
         "observation:v1:{}",
-        digest_id(&[raw.run.as_str(), raw.collector.as_str(), &raw.event_id, property])?
+        digest_id(&[
+            raw.run.as_str(),
+            raw.collector.as_str(),
+            &raw.event_id,
+            property
+        ])?
     ))?;
     builder.add_observation(Observation {
         id,
@@ -217,15 +222,57 @@ fn map_fact(
                 identity,
                 BTreeMap::new(),
             )?;
-            observe(builder, raw, &asset, evidence, "algorithm:raw-identifier", identifier.clone())?;
-            observe(builder, raw, &asset, evidence, "algorithm:normalized", normalized)?;
-            observe(builder, raw, &asset, evidence, "algorithm:normalization-rule", rule)?;
-            observe(builder, raw, &asset, evidence, "algorithm:registry-source", authority)?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "algorithm:raw-identifier",
+                identifier.clone(),
+            )?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "algorithm:normalized",
+                normalized,
+            )?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "algorithm:normalization-rule",
+                rule,
+            )?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "algorithm:registry-source",
+                authority,
+            )?;
             if let Some(op) = operation {
-                observe(builder, raw, &asset, evidence, "algorithm:source-operation", op.clone())?;
+                observe(
+                    builder,
+                    raw,
+                    &asset,
+                    evidence,
+                    "algorithm:source-operation",
+                    op.clone(),
+                )?;
             }
             if let Some(parameters) = profile {
-                observe(builder, raw, &asset, evidence, "algorithm:source-parameters", parameters.clone())?;
+                observe(
+                    builder,
+                    raw,
+                    &asset,
+                    evidence,
+                    "algorithm:source-parameters",
+                    parameters.clone(),
+                )?;
             }
         }
         RawFactKind::Dependency {
@@ -243,7 +290,14 @@ fn map_fact(
                 identity,
                 BTreeMap::new(),
             )?;
-            observe(builder, raw, &asset, evidence, "dependency:presence", "declared".into())?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "dependency:presence",
+                "declared".into(),
+            )?;
         }
         _ => return Err(PipelineError::UnsupportedFact),
     }
@@ -271,15 +325,14 @@ pub fn normalize(
     };
     request.validate(&outcome.descriptor)?;
     input.scope.validate_request(&request)?;
-    let requested: BTreeSet<String> = request
-        .sources
-        .iter()
-        .map(|s| s.item.clone())
-        .collect();
+    let requested: BTreeSet<String> = request.sources.iter().map(|s| s.item.clone()).collect();
     if outcome.coverage.keys().cloned().collect::<BTreeSet<_>>() != requested
         || outcome.observations.len() > input.raw_limits.observations
         || outcome.diagnostics.len()
-            > input.raw_limits.observations.saturating_add(requested.len())
+            > input
+                .raw_limits
+                .observations
+                .saturating_add(requested.len())
     {
         return Err(PipelineError::InvalidOutcome);
     }
@@ -312,7 +365,9 @@ pub fn normalize(
         }
         match records.insert(raw.event_id.clone(), raw.clone()) {
             Some(existing) if existing != raw => {
-                return Err(PipelineError::Inventory(InventoryError::DuplicateObservation(raw.event_id)));
+                return Err(PipelineError::Inventory(
+                    InventoryError::DuplicateObservation(raw.event_id),
+                ));
             }
             _ => {}
         }
@@ -330,9 +385,16 @@ pub fn normalize(
             return Err(PipelineError::InvalidOutcome);
         }
     }
-    let succeeded = outcome.coverage.values().filter(|v| {
-        matches!(v, CoverageState::InspectedObserved | CoverageState::InspectedNoObservation)
-    }).count();
+    let succeeded = outcome
+        .coverage
+        .values()
+        .filter(|v| {
+            matches!(
+                v,
+                CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
+            )
+        })
+        .count();
     let actual_status = if succeeded == requested.len() {
         CollectionStatus::Complete
     } else if succeeded > 0 {
@@ -376,7 +438,13 @@ pub fn normalize(
     }
     for raw in records.values() {
         let evidence = evidence_for(raw)?;
-        map_fact(&mut builder, raw, input.identity, input.registry, &evidence.id)?;
+        map_fact(
+            &mut builder,
+            raw,
+            input.identity,
+            input.registry,
+            &evidence.id,
+        )?;
         builder.add_evidence(evidence)?;
     }
     Ok(builder.finalize(input.inventory_limits)?)
