@@ -65,8 +65,8 @@ pub struct CollectionRun {
 impl CollectionRun {
     /// Check time ordering and required string fields.
     pub fn validate(&self) -> Result<(), InventoryError> {
-        let start = crate::validation::utc_seconds(&self.started_at)?;
-        let end = crate::validation::utc_seconds(&self.ended_at)?;
+        let start = crate::validation::utc_instant(&self.started_at)?;
+        let end = crate::validation::utc_instant(&self.ended_at)?;
         if start > end || self.collector_version.is_empty() || self.requested.len() > 100_000 {
             return Err(InventoryError::InvalidMetadata);
         }

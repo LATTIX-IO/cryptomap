@@ -126,6 +126,46 @@ pub fn utc_seconds(s: &str) -> Result<i64, InventoryError> {
     let days = era * 146097 + doe - 719468;
     Ok(days * 86400 + hh * 3600 + mm * 60 + ss - offset)
 }
+/// Exact UTC instant for RFC3339 provenance comparisons.
+///
+/// The parser accepts up to 20 fractional digits due to its bounded wire
+/// length. Preserve every accepted digit rather than silently truncating to
+/// whole seconds or nanoseconds. Fractional digits are zero-padded, so tuple
+/// ordering compares the complete instant irrespective of timezone offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UtcInstant {
+    seconds: i64,
+    fractional: [u8; 20],
+}
+
+/// Parse a complete UTC instant while preserving fractional precision.
+///
+/// `utc_seconds` remains available for whole-hour analytics; NEVER use it
+/// when checking whether evidence is inside a host-pinned run interval.
+pub fn utc_instant(s: &str) -> Result<UtcInstant, InventoryError> {
+    let seconds = utc_seconds(s)?;
+    let tz_at = if s.ends_with('Z') {
+        s.len() - 1
+    } else {
+        s.get(19..)
+            .and_then(|suffix| suffix.rfind(['+', '-']))
+            .map(|index| index + 19)
+            .ok_or(InventoryError::InvalidTimestamp)?
+    };
+    let mut fractional = [0u8; 20];
+    if s.as_bytes().get(19) == Some(&b'.') {
+        for (index, digit) in s.as_bytes()[20..tz_at].iter().enumerate() {
+            let entry = fractional
+                .get_mut(index)
+                .ok_or(InventoryError::InvalidTimestamp)?;
+            *entry = *digit - b'0';
+        }
+    }
+    Ok(UtcInstant {
+        seconds,
+        fractional,
+    })
+}
 /// A bounded validated observation property key.
 pub fn property_key(value: &str) -> Result<(), InventoryError> {
     safe_text(value, 256)?;

@@ -285,3 +285,49 @@ fn late_third_party_emission_cannot_be_canonicalized() {
     ));
     assert_eq!(plugin.calls.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn live_pipeline_rejects_fractional_timestamp_outside_host_window() {
+    let fixture = Fixture::new("run-a");
+    for rejected in [
+        "2026-10-11T12:00:00.249999999999Z",
+        "2026-10-11T12:00:00.750000000001Z",
+    ] {
+        assert!(matches!(
+            normalize(
+                fixture.input("2026-10-11T12:00:00.250Z", "2026-10-11T12:00:00.750Z"),
+                outcome("run-a", vec![observation("event", "run-a", rejected)]),
+            ),
+            Err(PipelineError::Inventory(InventoryError::InvalidTimestamp))
+        ));
+    }
+}
+
+#[test]
+fn live_pipeline_accepts_fractional_timestamp_exact_boundaries() {
+    let fixture = Fixture::new("run-a");
+    for allowed in [
+        "2026-10-11T12:00:00.25Z",
+        "2026-10-11T12:00:00.750000000000Z",
+        "2026-10-11T08:00:00.500-04:00",
+    ] {
+        let snap = normalize(
+            fixture.input("2026-10-11T12:00:00.250Z", "2026-10-11T12:00:00.750Z"),
+            outcome("run-a", vec![observation("event", "run-a", allowed)]),
+        )
+        .unwrap();
+        snap.verify(InventoryLimits::default()).unwrap();
+    }
+}
+
+#[test]
+fn live_pipeline_rejects_inverted_fractional_host_window_without_events() {
+    let fixture = Fixture::new("run-a");
+    assert!(matches!(
+        normalize(
+            fixture.input("2026-10-11T12:00:00.9Z", "2026-10-11T12:00:00.1Z"),
+            outcome("run-a", vec![]),
+        ),
+        Err(PipelineError::Inventory(InventoryError::InvalidTimestamp))
+    ));
+}
