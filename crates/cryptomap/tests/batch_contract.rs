@@ -480,22 +480,27 @@ fn independently_asserted_edges_union_evidence_across_runs_only_for_same_identit
     let a = Fixture::new("tenant-a", "run-A", "tls-collector", &sources);
     let b = Fixture::new("tenant-a", "run-B", "tls-collector", &sources);
     let build = |fixture: &Fixture| {
-        let mut asserted = fixture.observation("protocol", "stream:tls",
+        let mut asserted = fixture.observation(
+            "protocol",
+            "stream:tls",
             RawFactKind::Protocol {
                 family: "TLS".into(),
                 version: Some("1.3".into()),
                 state: ProtocolState::Negotiated,
-            });
-        asserted.attributes.insert(
-            "cryptomap:relation-kind".into(),
-            "uses_certificate".into(),
+            },
         );
+        asserted
+            .attributes
+            .insert("cryptomap:relation-kind".into(), "uses_certificate".into());
         asserted.attributes.insert(
             "cryptomap:relation-target-event".into(),
             "certificate".into(),
         );
         fixture.outcome(
-            vec![asserted, fixture.observation("certificate", "store:cert", cert())],
+            vec![
+                asserted,
+                fixture.observation("certificate", "store:cert", cert()),
+            ],
             BTreeMap::from([
                 ("stream:tls".into(), CoverageState::InspectedObserved),
                 ("store:cert".into(), CoverageState::InspectedObserved),
@@ -507,7 +512,8 @@ fn independently_asserted_edges_union_evidence_across_runs_only_for_same_identit
     let merged = normalize_batch(
         vec![b.input(out_b.clone()), a.input(out_a.clone())],
         BatchLimits::default(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(merged.assets.len(), 2);
     assert_eq!(merged.evidence.len(), 4);
     assert_eq!(merged.relationships.len(), 1);
@@ -533,7 +539,10 @@ fn independently_asserted_edges_union_evidence_across_runs_only_for_same_identit
 #[test]
 fn matching_profile_and_certificate_without_explicit_assertion_create_no_edge() {
     use cryptomap::ProtocolState;
-    let fixture = Fixture::new("tenant-a", "run-unlinked", "tls-collector",
+    let fixture = Fixture::new(
+        "tenant-a",
+        "run-unlinked",
+        "tls-collector",
         &[
             (RawSourceKind::Telemetry, "stream:tls"),
             (RawSourceKind::Certificate, "store:cert"),
@@ -541,11 +550,15 @@ fn matching_profile_and_certificate_without_explicit_assertion_create_no_edge() 
     );
     let outcome = fixture.outcome(
         vec![
-            fixture.observation("protocol", "stream:tls", RawFactKind::Protocol {
-                family: "TLS".into(),
-                version: Some("1.3".into()),
-                state: ProtocolState::Negotiated,
-            }),
+            fixture.observation(
+                "protocol",
+                "stream:tls",
+                RawFactKind::Protocol {
+                    family: "TLS".into(),
+                    version: Some("1.3".into()),
+                    state: ProtocolState::Negotiated,
+                },
+            ),
             fixture.observation("certificate", "store:cert", cert()),
         ],
         BTreeMap::from([
@@ -553,8 +566,7 @@ fn matching_profile_and_certificate_without_explicit_assertion_create_no_edge() 
             ("store:cert".into(), CoverageState::InspectedObserved),
         ]),
     );
-    let snapshot = normalize_batch(vec![fixture.input(outcome)],
-        BatchLimits::default()).unwrap();
+    let snapshot = normalize_batch(vec![fixture.input(outcome)], BatchLimits::default()).unwrap();
     assert!(snapshot.relationships.is_empty());
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
