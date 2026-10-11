@@ -314,7 +314,8 @@ fn live_pipeline_accepts_fractional_timestamp_exact_boundaries() {
         let snap = normalize(
             fixture.input("2026-10-11T12:00:00.250Z", "2026-10-11T12:00:00.750Z"),
             outcome("run-a", vec![observation("event", "run-a", allowed)]),
-        ).unwrap();
+        )
+        .unwrap();
         snap.verify(InventoryLimits::default()).unwrap();
     }
 }
