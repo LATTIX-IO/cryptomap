@@ -326,9 +326,9 @@ mod tests {
             total_bytes: 4,
             ..RawLimits::default()
         };
-        assert_eq!(
+        assert!(matches!(
             parse_manifest(MANIFEST, tiny),
             Err(CargoReconciliationError::ResourceLimit)
-        );
+        ));
     }
 }
