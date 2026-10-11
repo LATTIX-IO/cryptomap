@@ -324,17 +324,20 @@ pub fn normalize(
     input: PipelineInput<'_>,
     outcome: CollectionOutcome,
 ) -> Result<InventorySnapshot, PipelineError> {
-    if input.identity.scope != input.scope.id().as_str() {
+    if input.identity.scope != input.scope.id().as_str()
+        || outcome.run != *input.expected_run
+        || outcome.descriptor != *input.expected_descriptor
+    {
         return Err(PipelineError::InvalidOutcome);
     }
     input.raw_limits.validate()?;
     let request = CollectionRequest {
-        run: outcome.run.clone(),
+        run: input.expected_run.clone(),
         sources: input.sources.to_vec(),
         limits: input.raw_limits,
         options: BTreeMap::new(),
     };
-    request.validate(&outcome.descriptor)?;
+    request.validate(input.expected_descriptor)?;
     input.scope.validate_request(&request)?;
     let requested: BTreeSet<String> = request.sources.iter().map(|s| s.item.clone()).collect();
     if outcome.coverage.keys().cloned().collect::<BTreeSet<_>>() != requested
