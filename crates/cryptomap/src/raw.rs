@@ -235,20 +235,43 @@ impl RawObservation {
             validation::safe_text(value, limits.field_bytes)?;
         }
         match &self.fact {
-            RawFactKind::AlgorithmUse { identifier, profile, operation } => {
+            RawFactKind::AlgorithmUse {
+                identifier,
+                profile,
+                operation,
+            } => {
                 validation::safe_text(identifier, limits.field_bytes)?;
-                if let Some(profile) = profile { validation::safe_text(profile, limits.field_bytes)?; }
-                if let Some(operation) = operation { validation::safe_text(operation, limits.field_bytes)?; }
+                if let Some(profile) = profile {
+                    validation::safe_text(profile, limits.field_bytes)?;
+                }
+                if let Some(operation) = operation {
+                    validation::safe_text(operation, limits.field_bytes)?;
+                }
             }
-            RawFactKind::Dependency { ecosystem, name, version } => {
-                for item in [ecosystem, name, version] { validation::safe_text(item, limits.field_bytes)?; }
+            RawFactKind::Dependency {
+                ecosystem,
+                name,
+                version,
+            } => {
+                for item in [ecosystem, name, version] {
+                    validation::safe_text(item, limits.field_bytes)?;
+                }
             }
-            RawFactKind::Certificate { fingerprint_sha256 } => validation::safe_text(fingerprint_sha256, limits.field_bytes)?,
-            RawFactKind::Protocol { family, version, .. } => {
+            RawFactKind::Certificate { fingerprint_sha256 } => {
+                validation::safe_text(fingerprint_sha256, limits.field_bytes)?
+            }
+            RawFactKind::Protocol {
+                family, version, ..
+            } => {
                 validation::safe_text(family, limits.field_bytes)?;
-                if let Some(version) = version { validation::safe_text(version, limits.field_bytes)?; }
+                if let Some(version) = version {
+                    validation::safe_text(version, limits.field_bytes)?;
+                }
             }
-            RawFactKind::KeyReference { provider, reference } => {
+            RawFactKind::KeyReference {
+                provider,
+                reference,
+            } => {
                 validation::safe_text(provider, limits.field_bytes)?;
                 validation::safe_text(reference, limits.field_bytes)?;
             }

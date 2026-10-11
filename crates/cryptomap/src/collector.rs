@@ -289,7 +289,12 @@ impl CollectionSink {
             }
         }
         if self.diagnostics.len()
-            >= self.request.limits.observations.saturating_add(self.request.limits.sources) {
+            >= self
+                .request
+                .limits
+                .observations
+                .saturating_add(self.request.limits.sources)
+        {
             return Err(InventoryError::LimitExceeded("raw diagnostics"));
         }
         self.diagnostics.push(diagnostic);
@@ -306,7 +311,10 @@ impl CollectionSink {
         // Success coverage must match the evidence that was actually emitted.
         // Downgrade contradictory states rather than claiming complete inspection.
         for requested in &self.request.sources {
-            let observed = self.observations.values().any(|item| item.source.item == requested.item);
+            let observed = self
+                .observations
+                .values()
+                .any(|item| item.source.item == requested.item);
             if let Some(state) = self.coverage.get_mut(&requested.item) {
                 let consistent = match state {
                     CoverageState::InspectedObserved => observed,
