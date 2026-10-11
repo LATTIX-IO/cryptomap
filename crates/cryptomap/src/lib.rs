@@ -689,6 +689,21 @@ impl InventoryBuilder {
                 return Err(InventoryError::LimitExceeded(label));
             }
         }
+        // One canonical snapshot represents one administrative collection scope.
+        // Live batch orchestration already enforces this. Enforce it again when
+        // finalizing/importing snapshots: a caller must not bypass that boundary
+        // by constructing a builder or rehashing mixed-tenant JSON directly.
+        // A run-less legacy snapshot remains valid for schema compatibility.
+        let mut administrative_scope: Option<&CollectionScopeId> = None;
+        for run in self.runs.values() {
+            match administrative_scope {
+                Some(expected) if expected != &run.scope => {
+                    return Err(InventoryError::InvalidMetadata);
+                }
+                None => administrative_scope = Some(&run.scope),
+                _ => {}
+            }
+        }
         for asset in self.assets.values() {
             asset.validate(&limits)?;
         }
