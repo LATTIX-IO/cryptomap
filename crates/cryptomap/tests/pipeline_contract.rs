@@ -386,9 +386,6 @@ fn absent_location_and_explicit_zero_remain_distinct_assets() {
     let a = raw("no-offset", "0x1301");
     let mut b = raw("zero-offset", "0x1301");
     b.source.offset = Some(0);
-    let snap = normalize_fixture(
-        &scope, &identity, &registry,
-        outcome(vec![a, b]),
-    ).unwrap();
+    let snap = normalize_fixture(&scope, &identity, &registry, outcome(vec![a, b])).unwrap();
     assert_eq!(snap.assets.len(), 2);
 }
