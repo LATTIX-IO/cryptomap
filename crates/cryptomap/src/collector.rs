@@ -246,6 +246,12 @@ impl CollectionSink {
         {
             return Err(InventoryError::InvalidMetadata);
         }
+        // A source-level terminal coverage assertion seals that source.
+        // A later event (including an exact replay) must not silently extend
+        // an inspection that the collector already declared complete.
+        if self.coverage.contains_key(&observation.source.item) {
+            return Err(InventoryError::InvalidMetadata);
+        }
         if let Some(existing) = self.observations.get(&observation.event_id) {
             return if existing == &observation {
                 Ok(())
