@@ -1,4 +1,6 @@
 //! Public collector contract acceptance tests, without network or disk access.
+// Static test preconditions are deliberately unwrapped in fixtures.
+#![allow(clippy::unwrap_used)]
 use cryptomap::{
     CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind, InventoryError,
     collector::{
