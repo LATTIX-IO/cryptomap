@@ -536,6 +536,40 @@ fn validate_observation_window(
     Ok(())
 }
 
+/// Resolve a v1 pipeline evidence source to the exact host-requested item.
+///
+/// Pipeline evidence encodes a reviewed RawSourceKind prefix followed by ':' and
+/// the *complete* requested source identifier. Never match suffixes or perform
+/// fuzzy inference: sources themselves may contain colons or kind-like words.
+///
+/// Unprefixed legacy Evidence.source records predate this encoding and retain
+/// the prior compatibility contract; their provenance cannot be strengthened
+/// without a separate snapshot schema migration.
+fn typed_evidence_item<'a>(
+    run: &'a CollectionRun,
+    evidence_source: &str,
+) -> Result<Option<&'a str>, InventoryError> {
+    for kind in [
+        "Dependency",
+        "Certificate",
+        "TlsEndpoint",
+        "Source",
+        "Telemetry",
+    ] {
+        if let Some(item) = evidence_source
+            .strip_prefix(kind)
+            .and_then(|value| value.strip_prefix(':'))
+        {
+            return run
+                .requested
+                .get(item)
+                .map(|requested| Some(requested.as_str()))
+                .ok_or(InventoryError::InvalidMetadata);
+        }
+    }
+    Ok(None)
+}
+
 /// Mutable accumulator; finalize validates and computes canonical snapshot identity.
 #[derive(Debug, Default)]
 pub struct InventoryBuilder {
@@ -715,6 +749,27 @@ impl InventoryBuilder {
             if let Some(existing) = observed_coverage.insert(key, record.state) {
                 if existing != record.state {
                     return Err(InventoryError::InvalidMetadata);
+                }
+            }
+        }
+        // A typed source assertion must identify a source the host actually
+        // requested AND for which the same run reported positive/partial
+        // evidence-bearing coverage. A forged or uninspected source cannot
+        // acquire authority by recomputing the snapshot digest.
+        for evidence in self.evidence.values() {
+            let run = self
+                .runs
+                .get(&evidence.run)
+                .ok_or(InventoryError::InvalidMetadata)?;
+            if let Some(item) = typed_evidence_item(run, &evidence.source)? {
+                // A Failed run may still retain legitimate partially
+                // inspected source evidence. It cannot claim a fully
+                // inspected source (which contradicts Failed completeness).
+                match observed_coverage.get(&(run.id.clone(), item.to_owned())) {
+                    Some(CoverageState::Partial) => {}
+                    Some(CoverageState::InspectedObserved)
+                        if !matches!(run.completeness, RunCompleteness::Failed) => {}
+                    _ => return Err(InventoryError::InvalidMetadata),
                 }
             }
         }
@@ -1068,5 +1123,55 @@ mod provenance_window_unit_tests {
         let mut inverted = run();
         inverted.started_at = "2026-10-11T12:02:00Z".into();
         assert!(validate_observation_window(&inverted, "2026-10-11T12:01:00Z").is_err());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod source_attestation_unit_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn run() -> CollectionRun {
+        CollectionRun {
+            id: CollectionRunId::new("unit-run").unwrap(),
+            collector: CollectorId::new("unit-collector").unwrap(),
+            collector_version: "1.0".into(),
+            scope: CollectionScopeId::new("unit-tenant").unwrap(),
+            requested: BTreeSet::from(["source:with:colons".into()]),
+            started_at: "2026-10-11T11:59:00Z".into(),
+            ended_at: "2026-10-11T12:01:00Z".into(),
+            completeness: RunCompleteness::Partial,
+        }
+    }
+
+    #[test]
+    fn precise_kind_prefix_retains_complete_source_name() {
+        let r = run();
+        assert_eq!(
+            typed_evidence_item(&r, "Telemetry:source:with:colons").unwrap(),
+            Some("source:with:colons")
+        );
+    }
+
+    #[test]
+    fn typed_unknown_source_never_borrows_a_suffix_or_prefix() {
+        let r = run();
+        assert!(matches!(
+            typed_evidence_item(&r, "Telemetry:with:colons"),
+            Err(InventoryError::InvalidMetadata)
+        ));
+        assert!(matches!(
+            typed_evidence_item(&r, "Telemetry:source:with:colons:extra"),
+            Err(InventoryError::InvalidMetadata)
+        ));
+    }
+
+    #[test]
+    fn legacy_unprefixed_source_uses_version_two_compatibility() {
+        assert_eq!(
+            typed_evidence_item(&run(), "old-opaque-evidence-label").unwrap(),
+            None
+        );
     }
 }
