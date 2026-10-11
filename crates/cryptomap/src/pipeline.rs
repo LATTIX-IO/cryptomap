@@ -513,16 +513,23 @@ fn map_fact(
 
 // Two distinct source timestamps may describe the same instant with
 // different RFC3339 timezone offsets; verify numeric time, never string order.
-fn host_window(start: &str, end: &str) -> Result<(i64, i64), InventoryError> {
-    let start = crate::validation::utc_seconds(start)?;
-    let end = crate::validation::utc_seconds(end)?;
+fn host_window(
+    start: &str,
+    end: &str,
+) -> Result<(crate::validation::UtcInstant, crate::validation::UtcInstant), InventoryError> {
+    let start = crate::validation::utc_instant(start)?;
+    let end = crate::validation::utc_instant(end)?;
     if start > end {
         return Err(InventoryError::InvalidTimestamp);
     }
     Ok((start, end))
 }
-fn checked_observation_time(time: &str, start: i64, end: i64) -> Result<(), InventoryError> {
-    let observed = crate::validation::utc_seconds(time)?;
+fn checked_observation_time(
+    time: &str,
+    start: crate::validation::UtcInstant,
+    end: crate::validation::UtcInstant,
+) -> Result<(), InventoryError> {
+    let observed = crate::validation::utc_instant(time)?;
     if observed < start || observed > end {
         return Err(InventoryError::InvalidTimestamp);
     }
@@ -713,8 +720,8 @@ mod temporal_unit_tests {
     fn observed_time_uses_utc_instant_and_inclusive_boundaries() {
         // Verified second values for 11:59-12:01 UTC without trusting
         // lexical timestamp ordering or host-local timezone.
-        let start = crate::validation::utc_seconds("2026-10-11T11:59:00Z");
-        let end = crate::validation::utc_seconds("2026-10-11T12:01:00Z");
+        let start = crate::validation::utc_instant("2026-10-11T11:59:00Z");
+        let end = crate::validation::utc_instant("2026-10-11T12:01:00Z");
         let (Ok(start), Ok(end)) = (start, end) else {
             panic!("unit fixture timestamps must be valid");
         };
