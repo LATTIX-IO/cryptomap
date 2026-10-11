@@ -4,8 +4,7 @@
 //! source list. This first increment maps algorithm-use and dependency facts;
 //! unsupported raw categories fail closed rather than disappearing.
 use crate::{
-    AssetId, AssetKind, CollectionRunId, Confidence, CoverageState, Evidence, EvidenceId,
-    EvidenceKind, IdentityContext, InventoryBuilder, InventoryError, InventoryLimits,
+    AssetId, AssetKind, CoverageState, Evidence, EvidenceId, IdentityContext, InventoryBuilder, InventoryError, InventoryLimits,
     InventorySnapshot, Observation, ObservationId,
     collector::{CollectionOutcome, CollectionRequest, CollectionStatus, RequestedSource},
     coverage::{CollectionRun, CoverageRecord, RunCompleteness},
