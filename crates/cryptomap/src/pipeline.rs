@@ -4,9 +4,9 @@
 //! source list. This first increment maps algorithm-use and dependency facts;
 //! unsupported raw categories fail closed rather than disappearing.
 use crate::{
-    AssetId, AssetKind, CoverageState, Evidence, EvidenceId, IdentityContext, InventoryBuilder,
+    AssetId, AssetKind, CollectionRunId, CoverageState, Evidence, EvidenceId, IdentityContext, InventoryBuilder,
     InventoryError, InventoryLimits, InventorySnapshot, Observation, ObservationId,
-    collector::{CollectionOutcome, CollectionRequest, CollectionStatus, RequestedSource},
+    collector::{CollectionOutcome, CollectionRequest, CollectionStatus, CollectorDescriptor, RequestedSource},
     coverage::{CollectionRun, CoverageRecord, RunCompleteness},
     raw::{RawFactKind, RawLimits, RawObservation},
     registry::{Kind, Namespace, Registry, RegistryError, Resolution},
@@ -69,6 +69,10 @@ pub struct PipelineInput<'a> {
     pub identity: &'a IdentityContext,
     /// Versioned exact-alias registry.
     pub registry: &'a Registry,
+    /// Trusted, host-pinned descriptor of the collector permitted for this run.
+    pub expected_descriptor: &'a CollectorDescriptor,
+    /// Trusted invocation ID; never inferred from the imported outcome.
+    pub expected_run: &'a CollectionRunId,
     /// Exact requested sources, not a set inferred from emitted observations.
     pub sources: &'a [RequestedSource],
     /// Same raw limits used to collect the original data.
@@ -207,14 +211,19 @@ fn map_fact(
                 Some(value) => format!("{normalized};source-parameters={value}"),
                 None => normalized.clone(),
             };
-            let use_site = format!(
-                "{}:{}:{}:{}:{}",
-                raw.collector,
-                raw.source.item,
-                raw.source.offset.unwrap_or(0),
-                raw.source.line.unwrap_or(0),
-                raw.source.column.unwrap_or(0)
-            );
+            // Serialize a typed tuple so source colons and absent versus zero
+            // offsets cannot collapse distinct use sites into one asset.
+            let location = serde_json::to_vec(&(
+                "cryptomap:use-site:v1",
+                &raw.collector,
+                &raw.source.kind,
+                &raw.source.item,
+                raw.source.offset,
+                raw.source.line,
+                raw.source.column,
+            ))
+            .map_err(|_| InventoryError::InvalidMetadata)?;
+            let use_site = format!("use-site:v1:{:x}", Sha256::digest(location));
             let asset = builder.ingest_candidate(
                 AssetKind::AlgorithmUse {
                     family,
