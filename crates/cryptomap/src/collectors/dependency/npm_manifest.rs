@@ -24,6 +24,8 @@ pub enum NpmReconciliationError {
     UnsupportedProfile,
     /// Manifest pin does not uniquely resolve at the root lock path.
     UnresolvedDependency,
+    /// Persisted dual-source proof or canonical tenant/run provenance is missing.
+    UnboundEvidence,
 }
 impl fmt::Display for NpmReconciliationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -56,13 +58,13 @@ pub struct NpmDirectReconciliation {
 }
 
 #[derive(Debug, Clone)]
-struct Manifest {
-    name: String,
-    version: String,
-    deps: BTreeMap<String, String>,
+pub(super) struct Manifest {
+    pub(super) name: String,
+    pub(super) version: String,
+    pub(super) deps: BTreeMap<String, String>,
 }
 
-fn numeric_version(version: &str) -> bool {
+pub(super) fn numeric_version(version: &str) -> bool {
     let mut parts = version.split('.');
     (0..3).all(|_| {
         parts.next().is_some_and(|part| {
@@ -74,7 +76,7 @@ fn numeric_version(version: &str) -> bool {
     }) && parts.next().is_none()
 }
 
-fn package_name(name: &str) -> bool {
+pub(super) fn package_name(name: &str) -> bool {
     // npm's complete package name is bounded even if raw field_bytes permits
     // longer metadata; root and dependency paths must use valid names.
     if name.len() > 214 {
@@ -118,7 +120,7 @@ fn parse_json(bytes: &[u8]) -> Result<Value, NpmReconciliationError> {
         serde_json::from_slice(bytes).map_err(|_| NpmReconciliationError::InvalidSource)?;
     Ok(document.0)
 }
-fn parse_manifest(bytes: &[u8], limits: RawLimits) -> Result<Manifest, NpmReconciliationError> {
+pub(super) fn parse_manifest(bytes: &[u8], limits: RawLimits) -> Result<Manifest, NpmReconciliationError> {
     use NpmReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if bytes.len() > limits.total_bytes {
         return Err(ResourceLimit);
