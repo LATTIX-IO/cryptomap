@@ -239,3 +239,29 @@ fn failed_run_cannot_launder_typed_evidence_with_positive_item_coverage() {
         Err(InventoryError::InvalidMetadata)
     ));
 }
+
+#[test]
+fn failed_overall_run_retains_valid_partial_source_evidence() {
+    let mut r = run("run-partial", &["authorized-source", "uninspected"]);
+    r.completeness = RunCompleteness::Failed;
+    let mut builder = InventoryBuilder::new();
+    builder.add_run(r).unwrap();
+    builder.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("run-partial").unwrap(),
+        source_item: "authorized-source".into(),
+        state: CoverageState::Partial,
+        reason_code: None,
+    });
+    builder.add_coverage_record(CoverageRecord {
+        run: CollectionRunId::new("run-partial").unwrap(),
+        source_item: "uninspected".into(),
+        state: CoverageState::NotInspected,
+        reason_code: None,
+    });
+    builder
+        .add_evidence(evidence("run-partial", "Telemetry:authorized-source"))
+        .unwrap();
+    let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+    assert_eq!(snapshot.evidence.len(), 1);
+    snapshot.verify(InventoryLimits::default()).unwrap();
+}
