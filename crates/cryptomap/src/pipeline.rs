@@ -5,9 +5,8 @@
 //! unsupported raw categories fail closed rather than disappearing.
 use crate::{
     AssetId, AssetKind, CollectionRunId, CoverageState, Evidence, EvidenceId, IdentityContext,
-    ProtocolState,
     InventoryBuilder, InventoryError, InventoryLimits, InventorySnapshot, Observation,
-    ObservationId,
+    ObservationId, ProtocolState,
     collector::{
         CollectionOutcome, CollectionRequest, CollectionStatus, CollectorDescriptor,
         RequestedSource,
@@ -145,13 +144,24 @@ fn source_site(raw: &RawObservation) -> Result<String, InventoryError> {
 /// replaces) upstream source redaction and RawObservation validation.
 fn nonsecret_configuration(property: &str) -> Result<(), InventoryError> {
     let label = property.to_ascii_lowercase().replace('-', "_");
-    if label.split(|c: char| !c.is_ascii_alphanumeric()).any(|part| {
-        matches!(
-            part,
-            "password" | "passwd" | "secret" | "token" | "credential" | "credentials"
-                | "private" | "passphrase" | "apikey" | "api_key"
-        )
-    }) {
+    if label
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|part| {
+            matches!(
+                part,
+                "password"
+                    | "passwd"
+                    | "secret"
+                    | "token"
+                    | "credential"
+                    | "credentials"
+                    | "private"
+                    | "passphrase"
+                    | "apikey"
+                    | "api_key"
+            )
+        })
+    {
         return Err(InventoryError::ProhibitedMaterial);
     }
     Ok(())
@@ -473,14 +483,7 @@ fn map_fact(
                 identity,
                 BTreeMap::new(),
             )?;
-            observe(
-                builder,
-                raw,
-                &asset,
-                evidence,
-                property,
-                value.clone(),
-            )?;
+            observe(builder, raw, &asset, evidence, property, value.clone())?;
         }
     }
     Ok(())
