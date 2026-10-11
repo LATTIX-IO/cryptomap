@@ -158,7 +158,7 @@ pub fn utc_instant(s: &str) -> Result<UtcInstant, InventoryError> {
             let entry = fractional
                 .get_mut(index)
                 .ok_or(InventoryError::InvalidTimestamp)?;
-            *entry = digit - b'0';
+            *entry = *digit - b'0';
         }
     }
     Ok(UtcInstant {
