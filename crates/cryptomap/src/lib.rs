@@ -6,6 +6,7 @@
 
 pub mod batch;
 pub mod collector;
+pub mod collectors;
 mod correlation;
 pub mod coverage;
 pub mod filesystem_scope;
