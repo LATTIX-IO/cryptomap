@@ -31,7 +31,9 @@ fn authorized_scope_accepts_deterministic_multiple_runs() {
     let json = serde_json::to_string(&snap).unwrap();
     assert_eq!(
         InventorySnapshot::from_json_verified_for_scope(
-            &json, &expected, InventoryLimits::default()
+            &json,
+            &expected,
+            InventoryLimits::default()
         )
         .unwrap(),
         snap
@@ -49,7 +51,9 @@ fn internally_valid_foreign_tenant_is_rejected_by_trusted_scope_gate() {
     ));
     let json = serde_json::to_string(&snap).unwrap();
     let error = InventorySnapshot::from_json_verified_for_scope(
-        &json, &expected, InventoryLimits::default()
+        &json,
+        &expected,
+        InventoryLimits::default(),
     )
     .unwrap_err();
     assert!(matches!(error, InventoryError::InvalidMetadata));
@@ -97,8 +101,12 @@ fn strict_json_and_byte_limits_precede_authorized_import() {
         1,
     );
     assert_ne!(duplicate, json);
-    assert!(InventorySnapshot::from_json_verified_for_scope(
-        &duplicate, &expected, InventoryLimits::default()
-    )
-    .is_err());
+    assert!(
+        InventorySnapshot::from_json_verified_for_scope(
+            &duplicate,
+            &expected,
+            InventoryLimits::default()
+        )
+        .is_err()
+    );
 }
