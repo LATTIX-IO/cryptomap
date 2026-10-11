@@ -4,11 +4,13 @@
 use cryptomap::{
     CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind, InventoryError,
     collector::{
-        self, CancellationToken, CollectionMode, CollectionRequest, CollectionSink,
-        Collector, CollectorCapabilities, CollectorDescriptor, RequestedSource,
-        COLLECTOR_CONTRACT_VERSION,
+        self, COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode, CollectionRequest,
+        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor, RequestedSource,
     },
-    raw::{RawFactKind, RawLimits, RawObservation, RawSourceKind, RawSourceLocator, RAW_CONTRACT_VERSION},
+    raw::{
+        RAW_CONTRACT_VERSION, RawFactKind, RawLimits, RawObservation, RawSourceKind,
+        RawSourceLocator,
+    },
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -27,9 +29,12 @@ impl Collector for ExampleCollector {
             },
         }
     }
-    fn collect(&self, req: &CollectionRequest, sink: &mut CollectionSink, _: &CancellationToken)
-        -> Result<(), InventoryError>
-    {
+    fn collect(
+        &self,
+        req: &CollectionRequest,
+        sink: &mut CollectionSink,
+        _: &CancellationToken,
+    ) -> Result<(), InventoryError> {
         // No actual filesystem read occurs in this mock. A real collector must
         // obtain authorization from its host BEFORE attempting any I/O.
         for source in &req.sources {
@@ -40,12 +45,17 @@ impl Collector for ExampleCollector {
                 collector_version: "1.0".into(),
                 run: req.run.clone(),
                 source: RawSourceLocator {
-                    kind: source.kind.clone(), item: source.item.clone(),
-                    offset: None, line: None, column: None,
+                    kind: source.kind.clone(),
+                    item: source.item.clone(),
+                    offset: None,
+                    line: None,
+                    column: None,
                 },
                 observed_at: "2026-10-10T00:00:00Z".into(),
                 fact: RawFactKind::Dependency {
-                    ecosystem: "cargo".into(), name: "openssl".into(), version: "0.10".into(),
+                    ecosystem: "cargo".into(),
+                    name: "openssl".into(),
+                    version: "0.10".into(),
                 },
                 evidence_kind: EvidenceKind::Inferred,
                 confidence: Confidence::Low,
@@ -70,6 +80,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         options: BTreeMap::new(),
     };
     let output = collector::collect(&ExampleCollector, request, &CancellationToken::default())?;
-    println!("{} raw observations, status {:?}", output.observations.len(), output.status);
+    println!(
+        "{} raw observations, status {:?}",
+        output.observations.len(),
+        output.status
+    );
     Ok(())
 }

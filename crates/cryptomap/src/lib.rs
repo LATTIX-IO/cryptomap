@@ -5,12 +5,12 @@
 #![warn(missing_docs)]
 
 pub mod collector;
-pub mod raw;
 pub mod coverage;
 pub mod identity;
 pub mod metadata;
 pub mod privacy;
 pub mod query;
+pub mod raw;
 pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
 mod diff;
 mod strict_json;

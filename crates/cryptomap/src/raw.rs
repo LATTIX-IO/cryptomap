@@ -224,15 +224,13 @@ impl RawObservation {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
-        let encoded = serde_json::to_vec(self)
-            .map_err(|_| InventoryError::InvalidMetadata)?;
+        let encoded = serde_json::to_vec(self).map_err(|_| InventoryError::InvalidMetadata)?;
         if encoded.len() > limits.record_bytes {
             return Err(InventoryError::LimitExceeded("raw observation bytes"));
         }
         // Serialize to a value to inspect UNESCAPED string values; JSON
         // escaping must not conceal prohibited control characters or secrets.
-        let value = serde_json::to_value(self)
-            .map_err(|_| InventoryError::InvalidMetadata)?;
+        let value = serde_json::to_value(self).map_err(|_| InventoryError::InvalidMetadata)?;
         fn bounded(value: &serde_json::Value, max: usize) -> Result<(), InventoryError> {
             match value {
                 serde_json::Value::String(s) => validation::safe_text(s, max),
@@ -261,7 +259,10 @@ impl RawObservation {
                     return Err(InventoryError::InvalidMetadata);
                 }
             }
-            RawFactKind::KeyReference { provider, reference } => {
+            RawFactKind::KeyReference {
+                provider,
+                reference,
+            } => {
                 if provider.is_empty() || reference.is_empty() {
                     return Err(InventoryError::InvalidMetadata);
                 }

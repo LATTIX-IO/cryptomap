@@ -4,14 +4,16 @@
 //! verifies submitted evidence identity and resource budgets, but FOSS-319 will
 //! provide operating-system-enforced filesystem/network authorization.
 use crate::{
-    CollectionRunId, CollectorId, CoverageState, InventoryError, raw::{
-        RAW_CONTRACT_VERSION, RawLimits, RawObservation, RawSourceKind,
-    },
+    CollectionRunId, CollectorId, CoverageState, InventoryError,
+    raw::{RAW_CONTRACT_VERSION, RawLimits, RawObservation, RawSourceKind},
 };
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Current public collector descriptor contract version.
@@ -105,7 +107,8 @@ impl CollectionRequest {
         }
         let mut unique = BTreeSet::new();
         for src in &self.sources {
-            if src.item.is_empty() || src.item.trim() != src.item
+            if src.item.is_empty()
+                || src.item.trim() != src.item
                 || !descriptor.capabilities.sources.contains(&src.kind)
             {
                 return Err(InventoryError::InvalidMetadata);
@@ -191,9 +194,13 @@ pub struct CancellationToken(Arc<AtomicBool>);
 
 impl CancellationToken {
     /// Request cancellation from another thread or host runtime.
-    pub fn cancel(&self) { self.0.store(true, Ordering::Release); }
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
     /// Check the current cancellation flag.
-    pub fn is_cancelled(&self) -> bool { self.0.load(Ordering::Acquire) }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
 }
 
 /// A bounded accumulator owned by the caller; never a grant to inspect sources.
@@ -209,9 +216,19 @@ pub struct CollectionSink {
 
 impl CollectionSink {
     /// Create a sink that enforces collector declarations and exact scope IDs.
-    pub fn new(descriptor: CollectorDescriptor, request: CollectionRequest) -> Result<Self, InventoryError> {
+    pub fn new(
+        descriptor: CollectorDescriptor,
+        request: CollectionRequest,
+    ) -> Result<Self, InventoryError> {
         request.validate(&descriptor)?;
-        Ok(Self { descriptor, request, observations: BTreeMap::new(), coverage: BTreeMap::new(), diagnostics: Vec::new(), total_bytes: 0 })
+        Ok(Self {
+            descriptor,
+            request,
+            observations: BTreeMap::new(),
+            coverage: BTreeMap::new(),
+            diagnostics: Vec::new(),
+            total_bytes: 0,
+        })
     }
 
     /// Accept one independently checked raw observation.
@@ -220,29 +237,40 @@ impl CollectionSink {
         if observation.run != self.request.run
             || observation.collector != self.descriptor.id
             || observation.collector_version != self.descriptor.version
-            || !self.request.sources.iter().any(|s|s.kind == observation.source.kind && s.item == observation.source.item)
+            || !self
+                .request
+                .sources
+                .iter()
+                .any(|s| s.kind == observation.source.kind && s.item == observation.source.item)
         {
             return Err(InventoryError::InvalidMetadata);
         }
         if let Some(existing) = self.observations.get(&observation.event_id) {
-            return if existing == &observation { Ok(()) } else { Err(InventoryError::DuplicateObservation(observation.event_id)) };
+            return if existing == &observation {
+                Ok(())
+            } else {
+                Err(InventoryError::DuplicateObservation(observation.event_id))
+            };
         }
         if self.observations.len() >= self.request.limits.observations {
             return Err(InventoryError::LimitExceeded("raw observations"));
         }
-        self.total_bytes = self.total_bytes.checked_add(size)
+        self.total_bytes = self
+            .total_bytes
+            .checked_add(size)
             .ok_or(InventoryError::LimitExceeded("raw bytes overflow"))?;
         if self.total_bytes > self.request.limits.total_bytes {
             self.total_bytes -= size;
             return Err(InventoryError::LimitExceeded("raw total bytes"));
         }
-        self.observations.insert(observation.event_id.clone(), observation);
+        self.observations
+            .insert(observation.event_id.clone(), observation);
         Ok(())
     }
 
     /// Record an exact source outcome, checking request membership.
     pub fn cover(&mut self, source: &str, state: CoverageState) -> Result<(), InventoryError> {
-        if !self.request.sources.iter().any(|s|s.item == source) {
+        if !self.request.sources.iter().any(|s| s.item == source) {
             return Err(InventoryError::InvalidMetadata);
         }
         if self.coverage.contains_key(source) {
@@ -255,7 +283,7 @@ impl CollectionSink {
     /// Record a bounded diagnostic code for a requested source.
     pub fn diagnose(&mut self, diagnostic: CollectorDiagnostic) -> Result<(), InventoryError> {
         if let Some(source) = &diagnostic.source_item {
-            if !self.request.sources.iter().any(|s|&s.item == source) {
+            if !self.request.sources.iter().any(|s| &s.item == source) {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
@@ -269,9 +297,20 @@ impl CollectionSink {
     /// Finalize preserving coverage for all requested sources, including unattempted.
     pub fn finish(mut self) -> CollectionOutcome {
         for requested in &self.request.sources {
-            self.coverage.entry(requested.item.clone()).or_insert(CoverageState::NotInspected);
+            self.coverage
+                .entry(requested.item.clone())
+                .or_insert(CoverageState::NotInspected);
         }
-        let completed = self.coverage.values().filter(|state|matches!(state, CoverageState::InspectedObserved | CoverageState::InspectedNoObservation)).count();
+        let completed = self
+            .coverage
+            .values()
+            .filter(|state| {
+                matches!(
+                    state,
+                    CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
+                )
+            })
+            .count();
         let status = if completed == self.coverage.len() {
             CollectionStatus::Complete
         } else if completed > 0 {
@@ -298,18 +337,28 @@ pub trait Collector: Send + Sync {
     /// The identity, version and declared capabilities of this implementation.
     fn descriptor(&self) -> CollectorDescriptor;
     /// Collect into a bounded sink, honoring cancellation and exact source IDs.
-    fn collect(&self, request: &CollectionRequest, sink: &mut CollectionSink, cancel: &CancellationToken)
-        -> Result<(), InventoryError>;
+    fn collect(
+        &self,
+        request: &CollectionRequest,
+        sink: &mut CollectionSink,
+        cancel: &CancellationToken,
+    ) -> Result<(), InventoryError>;
 }
 
 /// Drive any collector through independent sink checks and terminal aggregation.
-pub fn collect<C: Collector + ?Sized>(collector: &C, request: CollectionRequest, cancel: &CancellationToken)
-    -> Result<CollectionOutcome, InventoryError> {
+pub fn collect<C: Collector + ?Sized>(
+    collector: &C,
+    request: CollectionRequest,
+    cancel: &CancellationToken,
+) -> Result<CollectionOutcome, InventoryError> {
     let descriptor = collector.descriptor();
     let mut sink = CollectionSink::new(descriptor, request.clone())?;
     if cancel.is_cancelled() {
         for source in &request.sources {
-            sink.diagnose(CollectorDiagnostic { code: CollectorDiagnosticCode::Cancelled, source_item: Some(source.item.clone()) })?;
+            sink.diagnose(CollectorDiagnostic {
+                code: CollectorDiagnosticCode::Cancelled,
+                source_item: Some(source.item.clone()),
+            })?;
         }
         return Ok(sink.finish());
     }
