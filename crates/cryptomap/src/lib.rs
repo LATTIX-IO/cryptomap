@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod collector;
+pub mod raw;
 pub mod coverage;
 pub mod identity;
 pub mod metadata;
