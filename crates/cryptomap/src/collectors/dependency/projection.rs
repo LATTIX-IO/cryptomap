@@ -86,13 +86,6 @@ pub fn project_cargo_direct_edges(
         .verify_for_scope(scope.id(), inventory_limits)
         .map_err(|_| UnboundEvidence)?;
     let proven = reconcile_cargo_direct(scope, manifest_item, lock_item, raw_limits)?;
-    if proven.direct.len()
-        > inventory_limits
-            .relationships
-            .saturating_sub(snapshot.relationships.len())
-    {
-        return Err(CargoReconciliationError::ResourceLimit);
-    }
     let context = IdentityContext::new(scope.id().as_str()).map_err(|_| UnboundEvidence)?;
     let id_for = |name: &str, version: &str| {
         let kind = AssetKind::Library {
@@ -146,6 +139,17 @@ pub fn project_cargo_direct_edges(
             kind: RelationshipKind::DependsOn,
             evidence: supporting,
         });
+    }
+
+    // Existing edges merge evidence without consuming another relationship
+    // slot. Count only novel identities to preserve idempotent replay at the
+    // exact configured relationship limit.
+    let new_edges = additions
+        .iter()
+        .filter(|edge| !snapshot.relationships.contains_key(&edge.id))
+        .count();
+    if new_edges > inventory_limits.relationships.saturating_sub(snapshot.relationships.len()) {
+        return Err(CargoReconciliationError::ResourceLimit);
     }
 
     let mut builder = InventoryBuilder::new();
