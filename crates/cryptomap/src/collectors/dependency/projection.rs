@@ -106,12 +106,20 @@ pub fn project_cargo_direct_edges(
     let root = id_for(&proven.root_name, &proven.root_version)?;
     let source = format!("Dependency:{lock_item}");
     let root_by_run = bound_evidence(
-        snapshot, &root, &source, &proven.lock_sha256, lock_item,
+        snapshot,
+        &root,
+        &source,
+        &proven.lock_sha256,
+        lock_item,
         "cryptomap:cargo-lockfile",
     );
     let manifest_source = format!("Dependency:{manifest_item}");
     let manifest_root_by_run = bound_evidence(
-        snapshot, &root, &manifest_source, &proven.manifest_sha256, manifest_item,
+        snapshot,
+        &root,
+        &manifest_source,
+        &proven.manifest_sha256,
+        manifest_item,
         "cryptomap:cargo-manifest",
     );
     if root_by_run.is_empty() || manifest_root_by_run.is_empty() {
@@ -127,11 +135,19 @@ pub fn project_cargo_direct_edges(
             return Err(UnresolvedDependency);
         }
         let target_by_run = bound_evidence(
-            snapshot, &target, &source, &proven.lock_sha256, lock_item,
+            snapshot,
+            &target,
+            &source,
+            &proven.lock_sha256,
+            lock_item,
             "cryptomap:cargo-lockfile",
         );
         let manifest_target_by_run = bound_evidence(
-            snapshot, &target, &manifest_source, &proven.manifest_sha256, manifest_item,
+            snapshot,
+            &target,
+            &manifest_source,
+            &proven.manifest_sha256,
+            manifest_item,
             "cryptomap:cargo-manifest",
         );
         let mut supporting = BTreeSet::new();
