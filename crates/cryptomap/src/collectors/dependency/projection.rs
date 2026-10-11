@@ -7,9 +7,7 @@ use super::manifest::{CargoReconciliationError, reconcile_cargo_direct};
 use crate::{
     AssetId, AssetKind, CollectionRunId, Confidence, CoverageState, EvidenceId, EvidenceKind,
     IdentityContext, InventoryBuilder, InventoryLimits, InventorySnapshot, Relationship,
-    RelationshipId, RelationshipKind,
-    raw::RawLimits,
-    scope::CollectionScope,
+    RelationshipId, RelationshipKind, raw::RawLimits, scope::CollectionScope,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -88,7 +86,11 @@ pub fn project_cargo_direct_edges(
         .verify_for_scope(scope.id(), inventory_limits)
         .map_err(|_| UnboundEvidence)?;
     let proven = reconcile_cargo_direct(scope, manifest_item, lock_item, raw_limits)?;
-    if proven.direct.len() > inventory_limits.relationships.saturating_sub(snapshot.relationships.len()) {
+    if proven.direct.len()
+        > inventory_limits
+            .relationships
+            .saturating_sub(snapshot.relationships.len())
+    {
         return Err(CargoReconciliationError::ResourceLimit);
     }
     let context = IdentityContext::new(scope.id().as_str()).map_err(|_| UnboundEvidence)?;
@@ -99,7 +101,11 @@ pub fn project_cargo_direct_edges(
             version: version.into(),
         };
         let id = AssetId::from_kind(&kind, &context).map_err(|_| UnboundEvidence)?;
-        if snapshot.assets.get(&id).is_none_or(|asset| asset.kind != kind) {
+        if snapshot
+            .assets
+            .get(&id)
+            .is_none_or(|asset| asset.kind != kind)
+        {
             return Err(UnboundEvidence);
         }
         Ok(id)
@@ -119,7 +125,8 @@ pub fn project_cargo_direct_edges(
         if target == root {
             return Err(UnresolvedDependency);
         }
-        let target_by_run = bound_evidence(snapshot, &target, &source, &proven.lock_sha256, lock_item);
+        let target_by_run =
+            bound_evidence(snapshot, &target, &source, &proven.lock_sha256, lock_item);
         let mut supporting = BTreeSet::new();
         for (run, root_evidence) in &root_by_run {
             if let Some(target_evidence) = target_by_run.get(run) {
@@ -146,19 +153,29 @@ pub fn project_cargo_direct_edges(
         builder.add_run(run.clone()).map_err(|_| UnboundEvidence)?;
     }
     for asset in snapshot.assets.values() {
-        builder.add_asset(asset.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_asset(asset.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for evidence in snapshot.evidence.values() {
-        builder.add_evidence(evidence.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_evidence(evidence.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for observation in snapshot.observations.values() {
-        builder.add_observation(observation.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_observation(observation.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for relation in snapshot.relationships.values() {
-        builder.add_relationship(relation.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_relationship(relation.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for relation in additions {
-        builder.add_relationship(relation).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_relationship(relation)
+            .map_err(|_| UnboundEvidence)?;
     }
     for (item, state) in &snapshot.coverage {
         builder.set_coverage(item.clone(), *state);
@@ -166,7 +183,11 @@ pub fn project_cargo_direct_edges(
     for record in &snapshot.coverage_records {
         builder.add_coverage_record(record.clone());
     }
-    let projected = builder.finalize(inventory_limits).map_err(|_| UnboundEvidence)?;
-    projected.verify_for_scope(scope.id(), inventory_limits).map_err(|_| UnboundEvidence)?;
+    let projected = builder
+        .finalize(inventory_limits)
+        .map_err(|_| UnboundEvidence)?;
+    projected
+        .verify_for_scope(scope.id(), inventory_limits)
+        .map_err(|_| UnboundEvidence)?;
     Ok(projected)
 }
