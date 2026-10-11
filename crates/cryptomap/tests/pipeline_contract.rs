@@ -204,7 +204,7 @@ fn unauthorized_source_and_inconsistent_coverage_fail_closed() {
 }
 
 #[test]
-fn conflicting_replay_and_unsupported_facts_are_not_silently_ignored() {
+fn conflicting_replay_and_malformed_configuration_are_rejected() {
     let (scope, identity, registry) = setup();
     let conflicting = outcome(vec![raw("duplicate", "0x1301"), raw("duplicate", "0x1302")]);
     assert!(matches!(
@@ -213,14 +213,14 @@ fn conflicting_replay_and_unsupported_facts_are_not_silently_ignored() {
             InventoryError::DuplicateObservation(_)
         ))
     ));
-    let mut unsupported = raw("event-config", "0x1301");
-    unsupported.fact = RawFactKind::Configuration {
-        property: "test:key".into(),
+    let mut malformed = raw("event-config", "0x1301");
+    malformed.fact = RawFactKind::Configuration {
+        property: "unnamespaced".into(),
         value: "nonsecret".into(),
     };
     assert!(matches!(
-        normalize_fixture(&scope, &identity, &registry, outcome(vec![unsupported])),
-        Err(PipelineError::UnsupportedFact)
+        normalize_fixture(&scope, &identity, &registry, outcome(vec![malformed])),
+        Err(PipelineError::Inventory(InventoryError::InvalidMetadata))
     ));
 }
 
@@ -485,4 +485,290 @@ fn conflicting_location_encoding_does_not_collapse_sources() {
     .unwrap();
     assert_eq!(result.assets.len(), 2);
     drop(scope);
+}
+
+#[test]
+fn certificate_fingerprint_is_validated_and_canonicalized_without_certificate_body() {
+    use cryptomap::AssetKind;
+    let (scope, identity, registry) = setup();
+    let mut uppercase = raw("cert-upper", "unused");
+    uppercase.fact = RawFactKind::Certificate {
+        fingerprint_sha256: "AB".repeat(32),
+    };
+    uppercase.attributes.clear();
+    let mut lowercase = uppercase.clone();
+    lowercase.event_id = "cert-lower".into();
+    lowercase.fact = RawFactKind::Certificate {
+        fingerprint_sha256: "ab".repeat(32),
+    };
+    let snap = normalize_fixture(
+        &scope,
+        &identity,
+        &registry,
+        outcome(vec![uppercase, lowercase]),
+    )
+    .unwrap();
+    assert_eq!(snap.assets.len(), 1);
+    assert_eq!(snap.evidence.len(), 2);
+    assert!(snap.assets.values().all(|asset| matches!(
+        &asset.kind,
+        AssetKind::Certificate {
+            fingerprint_sha256,
+            public_key_profile: None,
+            signature_profile: None
+        } if fingerprint_sha256 == &"ab".repeat(32)
+    )));
+    assert!(snap.observations.values().all(
+        |obs| obs.property == "certificate:fingerprint-sha256" && obs.value == "ab".repeat(32)
+    ));
+    snap.verify(InventoryLimits::default()).unwrap();
+}
+
+#[test]
+fn malformed_certificate_fingerprint_fails_before_snapshot() {
+    let (scope, identity, registry) = setup();
+    for bad in ["abcd", &"z".repeat(64)] {
+        let mut item = raw("bad-certificate", "unused");
+        item.attributes.clear();
+        item.fact = RawFactKind::Certificate {
+            fingerprint_sha256: bad.into(),
+        };
+        assert!(matches!(
+            normalize_fixture(&scope, &identity, &registry, outcome(vec![item])),
+            Err(PipelineError::Inventory(InventoryError::InvalidMetadata))
+        ));
+    }
+}
+
+#[test]
+fn key_reference_requires_provider_instance_and_never_sets_algorithm() {
+    use cryptomap::AssetKind;
+    let (scope, identity, registry) = setup();
+    let mut item = raw("key-1", "unused");
+    item.attributes.clear();
+    item.fact = RawFactKind::KeyReference {
+        provider: "external-kms".into(),
+        reference: "opaque-key-id-001".into(),
+    };
+    assert!(matches!(
+        normalize_fixture(&scope, &identity, &registry, outcome(vec![item.clone()])),
+        Err(PipelineError::Inventory(
+            InventoryError::InsufficientIdentity
+        ))
+    ));
+    let pinned = identity
+        .clone()
+        .with_provider_instance("kms-instance-1")
+        .unwrap();
+    let snap = normalize_fixture(&scope, &pinned, &registry, outcome(vec![item.clone()])).unwrap();
+    assert!(snap.assets.values().all(|asset| matches!(
+        &asset.kind,
+        AssetKind::Key {
+            algorithm: None,
+            provider: Some(_),
+            fingerprint: Some(_)
+        }
+    )));
+    assert!(
+        snap.observations
+            .values()
+            .all(|o| o.property == "key:provider-reference")
+    );
+    let other_instance = identity.with_provider_instance("kms-instance-2").unwrap();
+    let other = normalize_fixture(&scope, &other_instance, &registry, outcome(vec![item])).unwrap();
+    assert_ne!(snap.assets.keys().next(), other.assets.keys().next());
+}
+
+#[test]
+fn protocol_state_and_unknown_version_remain_distinct_without_inference() {
+    use cryptomap::{AssetKind, ProtocolState};
+    let (scope, identity, registry) = setup();
+    let mut configured = raw("configured", "unused");
+    configured.attributes.clear();
+    configured.fact = RawFactKind::Protocol {
+        family: "TLS".into(),
+        version: Some("1.3".into()),
+        state: ProtocolState::Configured,
+    };
+    let mut negotiated = configured.clone();
+    negotiated.event_id = "negotiated".into();
+    negotiated.fact = RawFactKind::Protocol {
+        family: "TLS".into(),
+        version: Some("1.3".into()),
+        state: ProtocolState::Negotiated,
+    };
+    let mut unknown = configured.clone();
+    unknown.event_id = "version-unknown".into();
+    unknown.fact = RawFactKind::Protocol {
+        family: "TLS".into(),
+        version: None,
+        state: ProtocolState::Configured,
+    };
+    let snap = normalize_fixture(
+        &scope,
+        &identity,
+        &registry,
+        outcome(vec![configured, negotiated, unknown]),
+    )
+    .unwrap();
+    assert_eq!(snap.assets.len(), 3);
+    assert!(snap.assets.values().any(|a| matches!(
+        a.kind,
+        AssetKind::Protocol {
+            state: ProtocolState::Negotiated,
+            ..
+        }
+    )));
+    assert!(snap.assets.values().any(|a| matches!(
+        a.kind,
+        AssetKind::Protocol {
+            state: ProtocolState::Configured,
+            ..
+        }
+    )));
+    assert!(snap.assets.values().any(|a| matches!(
+        &a.kind,
+        AssetKind::DetailedProtocol { metadata } if
+            matches!(metadata.version, cryptomap::metadata::Observed::Unknown)
+    )));
+    assert!(
+        snap.observations
+            .values()
+            .any(|o| o.property == "protocol:version-availability" && o.value == "unknown")
+    );
+}
+
+#[test]
+fn configuration_remains_source_use_and_rejects_sensitive_property() {
+    use cryptomap::AssetKind;
+    let (scope, identity, registry) = setup();
+    let mut configured = raw("config-1", "unused");
+    configured.attributes.clear();
+    configured.fact = RawFactKind::Configuration {
+        property: "app:tls_min_version".into(),
+        value: "TLSv1.3".into(),
+    };
+    let snap = normalize_fixture(
+        &scope,
+        &identity,
+        &registry,
+        outcome(vec![configured.clone()]),
+    )
+    .unwrap();
+    assert!(
+        snap.assets
+            .values()
+            .all(|asset| matches!(asset.kind, AssetKind::SourceUse { .. }))
+    );
+    assert!(
+        snap.observations
+            .values()
+            .all(|o| o.property == "app:tls_min_version" && o.value == "TLSv1.3")
+    );
+    configured.fact = RawFactKind::Configuration {
+        property: "app:password".into(),
+        value: "unredacted-example".into(),
+    };
+    assert!(matches!(
+        normalize_fixture(&scope, &identity, &registry, outcome(vec![configured])),
+        Err(PipelineError::Inventory(InventoryError::ProhibitedMaterial))
+    ));
+}
+
+#[test]
+fn api_key_properties_cannot_be_persisted_as_config_observations() {
+    let (scope, identity, registry) = setup();
+    for property in [
+        "app:api_key",
+        "app:api-key",
+        "app:api.key",
+        "app:access_key",
+        "app:private_key",
+        "app:secret_key",
+    ] {
+        let mut fact = raw("credential-config", "unused");
+        fact.attributes.clear();
+        fact.fact = RawFactKind::Configuration {
+            property: property.into(),
+            value: "opaque-credential-bytes".into(),
+        };
+        assert!(matches!(
+            normalize_fixture(&scope, &identity, &registry, outcome(vec![fact])),
+            Err(PipelineError::Inventory(InventoryError::ProhibitedMaterial))
+        ));
+    }
+}
+
+#[test]
+fn mixed_fact_types_permute_to_identical_canonical_snapshot() {
+    use cryptomap::ProtocolState;
+    let (scope, identity, registry) = setup();
+    let identity = identity.with_provider_instance("kms-a").unwrap();
+    let mut facts = vec![
+        RawFactKind::AlgorithmUse {
+            identifier: "0x1301".into(),
+            profile: None,
+            operation: Some("encrypt".into()),
+        },
+        RawFactKind::Dependency {
+            ecosystem: "cargo".into(),
+            name: "rustls".into(),
+            version: "0.23.0".into(),
+        },
+        RawFactKind::Certificate {
+            fingerprint_sha256: "ad".repeat(32),
+        },
+        RawFactKind::KeyReference {
+            provider: "kms".into(),
+            reference: "key-42".into(),
+        },
+        RawFactKind::Protocol {
+            family: "TLS".into(),
+            version: Some("1.3".into()),
+            state: ProtocolState::Negotiated,
+        },
+        RawFactKind::Configuration {
+            property: "app:crypto_preference".into(),
+            value: "TLSv1.3".into(),
+        },
+    ];
+    let mut records = Vec::new();
+    for (index, fact) in facts.drain(..).enumerate() {
+        let mut r = raw(&format!("mixed-{index}"), "0x1301");
+        r.fact = fact;
+        r.source.offset = Some(index as u64);
+        records.push(r);
+    }
+    let mut reverse = records.clone();
+    reverse.reverse();
+    let a = normalize_fixture(&scope, &identity, &registry, outcome(records)).unwrap();
+    let b = normalize_fixture(&scope, &identity, &registry, outcome(reverse)).unwrap();
+    assert_eq!(a, b);
+    assert_eq!(a.assets.len(), 6);
+    assert_eq!(a.evidence.len(), 6);
+    a.verify(InventoryLimits::default()).unwrap();
+}
+
+#[test]
+fn opaque_key_references_preserve_case_sensitive_identity() {
+    let (scope, identity, registry) = setup();
+    let identity = identity.with_provider_instance("kms-scope-a").unwrap();
+    let mut first = raw("key-uppercase", "unused");
+    first.attributes.clear();
+    first.fact = RawFactKind::KeyReference {
+        provider: "kms".into(),
+        reference: "Key-ABC".into(),
+    };
+    let mut second = first.clone();
+    second.event_id = "key-lowercase".into();
+    second.fact = RawFactKind::KeyReference {
+        provider: "kms".into(),
+        reference: "key-abc".into(),
+    };
+    let snapshot =
+        normalize_fixture(&scope, &identity, &registry, outcome(vec![first, second])).unwrap();
+    assert_eq!(snapshot.assets.len(), 2);
+    assert!(snapshot.observations.values().any(|o| o.value == "Key-ABC"));
+    assert!(snapshot.observations.values().any(|o| o.value == "key-abc"));
+    snapshot.verify(InventoryLimits::default()).unwrap();
 }

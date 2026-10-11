@@ -6,12 +6,13 @@
 use crate::{
     AssetId, AssetKind, CollectionRunId, CoverageState, Evidence, EvidenceId, IdentityContext,
     InventoryBuilder, InventoryError, InventoryLimits, InventorySnapshot, Observation,
-    ObservationId,
+    ObservationId, ProtocolState,
     collector::{
         CollectionOutcome, CollectionRequest, CollectionStatus, CollectorDescriptor,
         RequestedSource,
     },
     coverage::{CollectionRun, CoverageRecord, RunCompleteness},
+    metadata::{Observed, ProtocolMetadata, ProtocolObservation},
     raw::{RawFactKind, RawLimits, RawObservation},
     registry::{Kind, Namespace, Registry, RegistryError, Resolution},
     scope::{CollectionScope, ScopeError},
@@ -119,6 +120,59 @@ fn digest_id(parts: &[&str]) -> Result<String, InventoryError> {
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
+/// Unambiguous, source-bound identity for independently observed locations.
+///
+/// This deliberately excludes the event ID so independently emitted facts
+/// from the same source position can be correlated without merging distinct
+/// sources. The optional offsets keep absent and zero values distinct.
+fn source_site(raw: &RawObservation) -> Result<String, InventoryError> {
+    let location = serde_json::to_vec(&(
+        "cryptomap:use-site:v1",
+        &raw.collector,
+        &raw.source.kind,
+        &raw.source.item,
+        raw.source.offset,
+        raw.source.line,
+        raw.source.column,
+    ))
+    .map_err(|_| InventoryError::InvalidMetadata)?;
+    Ok(format!("use-site:v1:{:x}", Sha256::digest(location)))
+}
+
+/// Reject non-reference key material and sensitive configuration names before
+/// representing source text as a canonical fact. This complements (not
+/// replaces) upstream source redaction and RawObservation validation.
+fn nonsecret_configuration(property: &str) -> Result<(), InventoryError> {
+    let label = property.to_ascii_lowercase().replace('-', "_");
+    let parts: Vec<&str> = label
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .collect();
+    let credential_pair = parts
+        .windows(2)
+        .any(|pair| matches!(pair, ["api" | "access" | "secret" | "private", "key"]));
+    if credential_pair
+        || parts.iter().copied().any(|part| {
+            matches!(
+                part,
+                "password"
+                    | "passwd"
+                    | "secret"
+                    | "token"
+                    | "credential"
+                    | "credentials"
+                    | "private"
+                    | "passphrase"
+                    | "apikey"
+                    | "api_key"
+            )
+        })
+    {
+        return Err(InventoryError::ProhibitedMaterial);
+    }
+    Ok(())
+}
+
 fn evidence_for(raw: &RawObservation) -> Result<Evidence, InventoryError> {
     let id = EvidenceId::new(format!(
         "evidence:v1:{}",
@@ -215,19 +269,7 @@ fn map_fact(
                 Some(value) => format!("{normalized};source-parameters={value}"),
                 None => normalized.clone(),
             };
-            // Serialize a typed tuple so source colons and absent versus zero
-            // offsets cannot collapse distinct use sites into one asset.
-            let location = serde_json::to_vec(&(
-                "cryptomap:use-site:v1",
-                &raw.collector,
-                &raw.source.kind,
-                &raw.source.item,
-                raw.source.offset,
-                raw.source.line,
-                raw.source.column,
-            ))
-            .map_err(|_| InventoryError::InvalidMetadata)?;
-            let use_site = format!("use-site:v1:{:x}", Sha256::digest(location));
+            let use_site = source_site(raw)?;
             let asset = builder.ingest_candidate(
                 AssetKind::AlgorithmUse {
                     family,
@@ -314,7 +356,145 @@ fn map_fact(
                 "declared".into(),
             )?;
         }
-        _ => return Err(PipelineError::UnsupportedFact),
+        RawFactKind::Certificate { fingerprint_sha256 } => {
+            // RawObservation validates the exact 64-character SHA-256 hex
+            // fingerprint. Canonical lowercase avoids duplicate assets.
+            let digest = fingerprint_sha256.to_ascii_lowercase();
+            let asset = builder.ingest_candidate(
+                AssetKind::Certificate {
+                    fingerprint_sha256: digest.clone(),
+                    public_key_profile: None,
+                    signature_profile: None,
+                },
+                identity,
+                BTreeMap::new(),
+            )?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "certificate:fingerprint-sha256",
+                digest,
+            )?;
+        }
+        RawFactKind::KeyReference {
+            provider,
+            reference,
+        } => {
+            // The host must explicitly pin the provider instance; a source's
+            // declared provider name is not authority to merge key identities.
+            if identity.provider_instance.is_none() {
+                return Err(PipelineError::Inventory(
+                    InventoryError::InsufficientIdentity,
+                ));
+            }
+            let asset = builder.ingest_candidate(
+                AssetKind::Key {
+                    algorithm: None,
+                    provider: Some(provider.clone()),
+                    // FOSS-2 key identity folds fingerprint strings to ASCII
+                    // lowercase. Hash the *exact* opaque reference first so
+                    // case-sensitive provider IDs cannot silently collide.
+                    // This digest identifies the reference, not key material.
+                    fingerprint: Some(format!("opaque-ref:v1:{}", digest_id(&[reference])?)),
+                },
+                identity,
+                BTreeMap::new(),
+            )?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "key:provider-reference",
+                reference.clone(),
+            )?;
+        }
+        RawFactKind::Protocol {
+            family,
+            version,
+            state,
+        } => {
+            let site = source_site(raw)?;
+            // IdentityContext::use_site must be specific to the observed
+            // position rather than inherited from a different raw record.
+            let context = identity.clone().with_use_site(site)?;
+            let asset_kind = if version.is_some() {
+                AssetKind::Protocol {
+                    family: family.clone(),
+                    version: version.clone(),
+                    state: *state,
+                }
+            } else {
+                // FOSS-2's basic Protocol identity requires an exact version.
+                // Its detailed equivalent has an explicit Unknown version,
+                // without inventing a sentinel or altering prior ID semantics.
+                AssetKind::DetailedProtocol {
+                    metadata: ProtocolMetadata {
+                        family: family.clone(),
+                        version: Observed::Unknown,
+                        state: match state {
+                            ProtocolState::Configured => ProtocolObservation::Configured,
+                            ProtocolState::Negotiated => ProtocolObservation::Negotiated,
+                        },
+                        role: Observed::Unknown,
+                        cryptographic_profile: Observed::Unknown,
+                    },
+                }
+            };
+            let asset = builder.ingest_candidate(asset_kind, &context, BTreeMap::new())?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "protocol:observed-state",
+                format!("{state:?}"),
+            )?;
+            observe(
+                builder,
+                raw,
+                &asset,
+                evidence,
+                "protocol:family",
+                family.clone(),
+            )?;
+            if let Some(version) = version {
+                observe(
+                    builder,
+                    raw,
+                    &asset,
+                    evidence,
+                    "protocol:version",
+                    version.clone(),
+                )?;
+            } else {
+                observe(
+                    builder,
+                    raw,
+                    &asset,
+                    evidence,
+                    "protocol:version-availability",
+                    "unknown".into(),
+                )?;
+            }
+        }
+        RawFactKind::Configuration { property, value } => {
+            // Never convert a declared configuration value into algorithm
+            // execution. Reject sensitive properties rather than persisting
+            // secret-bearing configuration via the observation model.
+            nonsecret_configuration(property)?;
+            let asset = builder.ingest_candidate(
+                AssetKind::SourceUse {
+                    source: format!("{:?}:{}", raw.source.kind, raw.source.item),
+                    location: source_site(raw)?,
+                },
+                identity,
+                BTreeMap::new(),
+            )?;
+            observe(builder, raw, &asset, evidence, property, value.clone())?;
+        }
     }
     Ok(())
 }
