@@ -71,17 +71,26 @@ fn rechecked(
         let key = (0, String::new(), String::new(), observed.source.clone());
         return new_coverage.get(&key).is_some_and(|s| successful(*s));
     };
-    if !run.requested.contains(&observed.source) {
-        // A source omitted from its claimed run was never proven inspected.
+    // Source evidence from RawObservation is prefixed with the typed
+    // RawSourceKind (for example "Telemetry:stream:item"); CollectionRun
+    // requests retain the raw source item only. Reconcile strictly against
+    // the exact requested item and known source-kind prefix spellings.
+    // Never confirm an item by suffix alone: that could borrow an unrelated
+    // source's authorization and make missing observations disappear.
+    let source = run.requested.iter().find(|source| {
+        observed.source == source.as_str()
+            || ["Dependency", "Certificate", "TlsEndpoint", "Source", "Telemetry"]
+                .iter()
+                .any(|kind| observed.source == format!("{kind}:{source}"))
+    });
+    let Some(source) = source else {
         return false;
-    }
-    // Typed evidence requires the SAME scope and source, not merely a matching
-    // source label or an unrelated legacy coverage entry.
+    };
     let scoped = (
         1,
         run.scope.as_str().to_owned(),
         run.collector.as_str().to_owned(),
-        observed.source.clone(),
+        source.clone(),
     );
     new_coverage.get(&scoped).is_some_and(|s| successful(*s))
 }
