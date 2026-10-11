@@ -527,9 +527,9 @@ fn validate_observation_window(
     run: &CollectionRun,
     observed_at: &str,
 ) -> Result<(), InventoryError> {
-    let began = validation::utc_seconds(&run.started_at)?;
-    let ended = validation::utc_seconds(&run.ended_at)?;
-    let observed = validation::utc_seconds(observed_at)?;
+    let began = validation::utc_instant(&run.started_at)?;
+    let ended = validation::utc_instant(&run.ended_at)?;
+    let observed = validation::utc_instant(observed_at)?;
     if began > ended || observed < began || observed > ended {
         return Err(InventoryError::InvalidTimestamp);
     }
