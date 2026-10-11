@@ -536,6 +536,34 @@ fn validate_observation_window(
     Ok(())
 }
 
+/// Resolve a v1 pipeline evidence source to the exact host-requested item.
+///
+/// Pipeline evidence encodes a reviewed RawSourceKind prefix followed by ':' and
+/// the *complete* requested source identifier. Never match suffixes or perform
+/// fuzzy inference: sources themselves may contain colons or kind-like words.
+///
+/// Unprefixed legacy Evidence.source records predate this encoding and retain
+/// the prior compatibility contract; their provenance cannot be strengthened
+/// without a separate snapshot schema migration.
+fn typed_evidence_item<'a>(
+    run: &'a CollectionRun,
+    evidence_source: &str,
+) -> Result<Option<&'a str>, InventoryError> {
+    for kind in ["Dependency", "Certificate", "TlsEndpoint", "Source", "Telemetry"] {
+        if let Some(item) = evidence_source
+            .strip_prefix(kind)
+            .and_then(|value| value.strip_prefix(':'))
+        {
+            return run
+                .requested
+                .get(item)
+                .map(|requested| Some(requested.as_str()))
+                .ok_or(InventoryError::InvalidMetadata);
+        }
+    }
+    Ok(None)
+}
+
 /// Mutable accumulator; finalize validates and computes canonical snapshot identity.
 #[derive(Debug, Default)]
 pub struct InventoryBuilder {
@@ -715,6 +743,22 @@ impl InventoryBuilder {
             if let Some(existing) = observed_coverage.insert(key, record.state) {
                 if existing != record.state {
                     return Err(InventoryError::InvalidMetadata);
+                }
+            }
+        }
+        // A typed source assertion must identify a source the host actually
+        // requested AND for which the same run reported positive/partial
+        // evidence-bearing coverage. A forged or uninspected source cannot
+        // acquire authority by recomputing the snapshot digest.
+        for evidence in self.evidence.values() {
+            let run = self
+                .runs
+                .get(&evidence.run)
+                .ok_or(InventoryError::InvalidMetadata)?;
+            if let Some(item) = typed_evidence_item(run, &evidence.source)? {
+                match observed_coverage.get(&(run.id.clone(), item.to_owned())) {
+                    Some(CoverageState::InspectedObserved | CoverageState::Partial) => {}
+                    _ => return Err(InventoryError::InvalidMetadata),
                 }
             }
         }
