@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 
 pub mod collector;
+mod correlation;
 pub mod coverage;
 pub mod filesystem_scope;
 pub mod identity;
