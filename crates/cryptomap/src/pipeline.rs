@@ -152,7 +152,9 @@ fn observe(
         asset: asset.clone(),
         evidence: evidence.clone(),
         property: property.to_owned(),
-        context: None,
+        // Independent source events are not contradictory scalar claims merely
+        // because they use different aliases for the same canonical profile.
+        context: Some(raw.event_id.clone()),
         value,
     })?;
     Ok(())
