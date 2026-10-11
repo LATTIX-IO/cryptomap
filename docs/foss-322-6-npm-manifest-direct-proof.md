@@ -8,6 +8,7 @@ A successful `NpmDirectReconciliation` returns the root name and version, lexica
 
 ## Strict supported profile
 
+- npm names must be no more than 214 bytes and may not begin with a dot or underscore (including scoped name segments). Direct lock records cannot be marked dev-only, optional, peer-only, bundled or linked; malformed classification flags reject the proof.
 - package.json is a JSON object with **only** `name`, `version` and `dependencies`. Root version and dependency pins use strict `MAJOR.MINOR.PATCH` unsigned numeric versions without prerelease, build metadata, leading-zero segments, ranges, aliases or workspace syntax. Scoped package names are allowed.
 - package-lock.json has lockfileVersion 2 or 3, optional top-level root name/version that must match the manifest when present, a `packages[""]` root record with matching name, version and exact `dependencies` map, and each direct package at exactly `node_modules/<name>` with the same version. A direct package's own name field must match the declared path name when present, preventing ambiguous alias metadata. Nested transitive packages are not projected into direct edges.
 - The existing strict npm lockfile parser is reused for duplicate-key, path and package validation. Linked/workspace packages, partial lockfile coverage, malformed entries, unrecognized root or manifest semantics, missing root declarations and mismatched versions **fail closed**.
