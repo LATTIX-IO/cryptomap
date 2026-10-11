@@ -112,10 +112,7 @@ fn parse_json(bytes: &[u8]) -> Result<Value, NpmReconciliationError> {
         serde_json::from_slice(bytes).map_err(|_| NpmReconciliationError::InvalidSource)?;
     Ok(document.0)
 }
-fn parse_manifest(
-    bytes: &[u8],
-    limits: RawLimits,
-) -> Result<Manifest, NpmReconciliationError> {
+fn parse_manifest(bytes: &[u8], limits: RawLimits) -> Result<Manifest, NpmReconciliationError> {
     use NpmReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if bytes.len() > limits.total_bytes {
         return Err(ResourceLimit);
@@ -170,7 +167,10 @@ fn prove(
     };
     let json = parse_json(bytes)?;
     let obj = json.as_object().ok_or(InvalidSource)?;
-    if !matches!(obj.get("lockfileVersion").and_then(Value::as_u64), Some(2 | 3)) {
+    if !matches!(
+        obj.get("lockfileVersion").and_then(Value::as_u64),
+        Some(2 | 3)
+    ) {
         return Err(UnsupportedProfile);
     }
     let root = obj
@@ -215,7 +215,10 @@ fn prove(
     let mut direct = Vec::with_capacity(manifest.deps.len());
     for (name, version) in &manifest.deps {
         let path = format!("node_modules/{name}");
-        let matches: Vec<_> = installed.iter().filter(|package| package.path == path).collect();
+        let matches: Vec<_> = installed
+            .iter()
+            .filter(|package| package.path == path)
+            .collect();
         if matches.len() != 1 || matches[0].name != *name || matches[0].version != *version {
             return Err(UnresolvedDependency);
         }
@@ -332,6 +335,9 @@ mod tests {
             observations: 1,
             ..RawLimits::default()
         };
-        assert_eq!(parse_manifest(MANIFEST, cap).err(), Some(NpmReconciliationError::ResourceLimit));
+        assert_eq!(
+            parse_manifest(MANIFEST, cap).err(),
+            Some(NpmReconciliationError::ResourceLimit)
+        );
     }
 }
