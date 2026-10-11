@@ -153,7 +153,7 @@ impl Collector for NpmLockfileCollector<'_> {
         CollectorDescriptor {
             contract_version: COLLECTOR_CONTRACT_VERSION,
             id: crate::CollectorId::new(COLLECTOR_ID)
-                .expect("static collector ID must be valid"),
+                .unwrap_or_else(|_| unreachable!("static collector ID is valid")),
             version: COLLECTOR_VERSION.into(),
             capabilities: CollectorCapabilities {
                 sources: BTreeSet::from([RawSourceKind::Dependency]),
@@ -277,6 +277,7 @@ impl Collector for NpmLockfileCollector<'_> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     fn limits() -> RawLimits {
