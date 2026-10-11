@@ -199,15 +199,19 @@ fn cancellation_and_file_budget_fail_closed() {
     assert_eq!(outcome.coverage["npm:lock"], CoverageState::NotInspected);
 
     let mut denied = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
-    assert!(
-        denied
-            .grant_file(
-                RawSourceKind::Dependency,
-                "npm:lock",
-                &fixture.root,
-                "package-lock.json",
-                8,
-            )
-            .is_err()
-    );
+    denied
+        .grant_file(
+            RawSourceKind::Dependency,
+            "npm:lock",
+            &fixture.root,
+            "package-lock.json",
+            8,
+        )
+        .unwrap();
+    // Granting a handle records its budget; a read of the oversized file
+    // must fail without exposing file contents.
+    assert!(denied
+        .open_file(RawSourceKind::Dependency, "npm:lock")
+        .and_then(|file| file.read_bounded())
+        .is_err());
 }
