@@ -89,7 +89,9 @@ fn collect_both(scope: &CollectionScope, lock_item: &str) -> InventorySnapshot {
 }
 
 fn collect_both_with_root(
-    scope: &CollectionScope, lock_item: &str, retain_real_root: bool,
+    scope: &CollectionScope,
+    lock_item: &str,
+    retain_real_root: bool,
 ) -> InventorySnapshot {
     let lock = NpmLockfileCollector::new(scope, "2026-10-11T12:00:00Z");
     let manifest = NpmManifestCollector::new(scope, "2026-10-11T12:00:00Z");
@@ -108,7 +110,10 @@ fn collect_both_with_root(
         // Simulate legacy/tampered collector output: a matching installed app
         // record must not substitute for the true package-lock root event.
         lock_outcome.observations.retain(|observation| {
-            observation.attributes.get("npm:lockfile-path").map(String::as_str)
+            observation
+                .attributes
+                .get("npm:lockfile-path")
+                .map(String::as_str)
                 != Some("npm:root")
         });
     }
