@@ -148,9 +148,9 @@ fn nonsecret_configuration(property: &str) -> Result<(), InventoryError> {
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|part| !part.is_empty())
         .collect();
-    let credential_pair = parts.windows(2).any(|pair| {
-        matches!(pair, ["api" | "access" | "secret" | "private", "key"])
-    });
+    let credential_pair = parts
+        .windows(2)
+        .any(|pair| matches!(pair, ["api" | "access" | "secret" | "private", "key"]));
     if credential_pair
         || parts.iter().copied().any(|part| {
             matches!(
