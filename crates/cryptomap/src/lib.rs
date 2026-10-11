@@ -11,6 +11,7 @@ pub mod identity;
 pub mod metadata;
 pub mod network_scope;
 pub mod privacy;
+pub mod pipeline;
 pub mod query;
 pub mod raw;
 pub mod registry;
