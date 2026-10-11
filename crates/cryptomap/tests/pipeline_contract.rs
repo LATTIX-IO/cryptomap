@@ -676,6 +676,30 @@ fn configuration_remains_source_use_and_rejects_sensitive_property() {
 }
 
 #[test]
+fn api_key_properties_cannot_be_persisted_as_config_observations() {
+    let (scope, identity, registry) = setup();
+    for property in [
+        "app:api_key",
+        "app:api-key",
+        "app:api.key",
+        "app:access_key",
+        "app:private_key",
+        "app:secret_key",
+    ] {
+        let mut fact = raw("credential-config", "unused");
+        fact.attributes.clear();
+        fact.fact = RawFactKind::Configuration {
+            property: property.into(),
+            value: "opaque-credential-bytes".into(),
+        };
+        assert!(matches!(
+            normalize_fixture(&scope, &identity, &registry, outcome(vec![fact])),
+            Err(PipelineError::Inventory(InventoryError::ProhibitedMaterial))
+        ));
+    }
+}
+
+#[test]
 fn mixed_fact_types_permute_to_identical_canonical_snapshot() {
     use cryptomap::ProtocolState;
     let (scope, identity, registry) = setup();
