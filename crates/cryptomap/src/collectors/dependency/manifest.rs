@@ -87,7 +87,10 @@ fn name_ok(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
-pub(super) fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReconciliationError> {
+pub(super) fn parse_manifest(
+    input: &[u8],
+    limits: RawLimits,
+) -> Result<Manifest, CargoReconciliationError> {
     use CargoReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if input.len() > limits.total_bytes {
         return Err(ResourceLimit);
