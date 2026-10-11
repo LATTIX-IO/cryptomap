@@ -61,6 +61,8 @@ pub enum RegistryError {
     Collision,
     /// Canonical identifier is malformed or missing.
     InvalidCanonical,
+    /// Registry serialization could not be encoded.
+    EncodingFailure,
 }
 
 /// Exact normalized resolution, with immutable raw provenance.
@@ -189,12 +191,12 @@ impl Registry {
     /// Stable SHA-256 digest over semantic version and sorted mapping records.
     ///
     /// The input JSON uses a tuple array rather than iteration order from a HashMap.
-    pub fn digest(&self) -> String {
+    pub fn digest(&self) -> Result<String, RegistryError> {
         let data =
             serde_json::to_vec(&(REGISTRY_VERSION, self.entries.values().collect::<Vec<_>>()))
-                .expect("serializing validated registry records is infallible");
+                .map_err(|_| RegistryError::EncodingFailure)?;
         let digest = Sha256::digest(data);
-        format!("{digest:x}")
+        Ok(format!("{digest:x}"))
     }
 
     /// Exact built-in mappings from IANA and relevant RFCs.
@@ -207,7 +209,7 @@ impl Registry {
                        family: &str,
                        rule: &str,
                        source: &str| {
-            out.register(Mapping {
+            assert!(out.register(Mapping {
                 namespace,
                 kind,
                 alias: alias.into(),
@@ -216,7 +218,7 @@ impl Registry {
                 rule: rule.into(),
                 source: source.into(),
             })
-            .expect("static built-in mapping contains no collisions");
+            .is_ok(), "static built-in mapping contains no collisions");
         };
         for alias in ["0x1301", "TLS_AES_128_GCM_SHA256"] {
             add(
