@@ -3,7 +3,7 @@
 use cryptomap::{
     CollectionRunId, CoverageState,
     collector::{
-        CancellationToken, CollectionRequest, CollectionStatus, Collector, RequestedSource,
+        CancellationToken, CollectionRequest, CollectionStatus, RequestedSource,
     },
     collectors::dependency::manifest_collector::CargoManifestCollector,
     coverage::CollectionScopeId,
