@@ -29,7 +29,8 @@ fn relation_kind(value: &str) -> Option<RelationshipKind> {
 /// Gate edges by both independently observed raw fact categories and protocol
 /// state. A configuration must never be promoted to runtime algorithm use.
 fn compatible(kind: RelationshipKind, source: &RawFactKind, target: &RawFactKind) -> bool {
-    match (kind, source, target) {
+    matches!(
+        (kind, source, target),
         (
             RelationshipKind::UsesCertificate,
             RawFactKind::Protocol {
@@ -37,38 +38,33 @@ fn compatible(kind: RelationshipKind, source: &RawFactKind, target: &RawFactKind
                 ..
             },
             RawFactKind::Certificate { .. },
-        ) => true,
-        (
+        ) | (
             RelationshipKind::UsesKey,
             RawFactKind::Protocol {
                 state: ProtocolState::Negotiated,
                 ..
             },
             RawFactKind::KeyReference { .. },
-        ) => true,
-        (
+        ) | (
             RelationshipKind::UsesAlgorithm,
             RawFactKind::Protocol {
                 state: ProtocolState::Negotiated,
                 ..
             },
             RawFactKind::AlgorithmUse { .. },
-        ) => true,
-        (
+        ) | (
             RelationshipKind::DependsOn,
             RawFactKind::Configuration { .. },
             RawFactKind::Dependency { .. },
-        ) => true,
-        (
+        ) | (
             RelationshipKind::ConfiguredFor,
             RawFactKind::Protocol {
                 state: ProtocolState::Configured,
                 ..
             },
             RawFactKind::Configuration { .. },
-        ) => true,
-        _ => false,
-    }
+        )
+    )
 }
 
 /// Build supported edges from exact source-event references.
