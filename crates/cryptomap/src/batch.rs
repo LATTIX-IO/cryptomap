@@ -3,11 +3,10 @@
 //! Every collector is first normalized through the existing host-pinned pipeline;
 //! this module cannot inspect a source or synthesize cross-run relationships.
 use crate::{
-    CollectionRunId, InventoryBuilder, InventoryError, InventoryLimits, InventorySnapshot,
+    InventoryBuilder, InventoryError, InventoryLimits, InventorySnapshot,
     collector::{CollectionOutcome, CollectionRequest},
     pipeline::{PipelineError, PipelineInput, normalize},
 };
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 /// One already-collected result and its independent, trusted host authority.
@@ -74,17 +73,6 @@ fn charge(
         return Err(InventoryError::LimitExceeded(label).into());
     }
     Ok(())
-}
-
-/// Stable legacy coverage key for the tuple (run, source).
-///
-/// The authoritative human-readable record is always `CoverageRecord`.
-/// Hashing the JSON tuple prevents separators in user-supplied source labels
-/// from conflating distinct run/source pairs.
-fn coverage_key(run: &CollectionRunId, source: &str) -> Result<String, InventoryError> {
-    let data = serde_json::to_vec(&("cryptomap:batch-coverage:v1", run, source))
-        .map_err(|_| InventoryError::InvalidMetadata)?;
-    Ok(format!("batch-source:v1:{:x}", Sha256::digest(data)))
 }
 
 /// Normalize independently trusted collector outcomes and reconcile the resulting
@@ -164,13 +152,12 @@ pub fn normalize_batch(
         for relationship in snapshot.relationships.into_values() {
             builder.add_relationship(relationship)?;
         }
-        // A source label may be reused by different collectors. Only the
-        // authoritative (run, source) coverage record identifies its outcome.
+        // Batch snapshots use only typed coverage. Writing synthetic legacy
+        // entries keyed by ephemeral run IDs would make otherwise identical
+        // reinspection batches appear to change coverage in snapshot diffs.
+        // Typed records retain exact (run, source) provenance while the diff
+        // projects stable (scope, collector, source) identities.
         for record in snapshot.coverage_records {
-            builder.set_coverage(
-                coverage_key(&record.run, &record.source_item)?,
-                record.state,
-            );
             builder.add_coverage_record(record);
         }
     }
