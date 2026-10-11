@@ -175,6 +175,32 @@ fn unsupported_one_source_retains_successful_sibling_without_fabricated_absence(
 }
 
 #[test]
+fn duplicate_package_in_one_file_isolated_from_successful_sibling() {
+    let duplicate = "version = 4\n[[package]]\nname = \"same\"\nversion = \"1\"\n[[package]]\nname = \"same\"\nversion = \"1\"\n";
+    let fixture = Fixture::new(&[("Cargo.lock", VALID), ("duplicate.lock", duplicate)]);
+    let scope = fixture.scope(
+        &[("cargo:valid", "Cargo.lock"), ("cargo:duplicate", "duplicate.lock")],
+        "tenant-a",
+    );
+    let collector = CargoLockfileCollector::new(&scope, "2026-10-11T12:00:00Z");
+    let result = collect_scoped(
+        &scope,
+        &collector,
+        request("run-dup", &["cargo:duplicate", "cargo:valid"]),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(result.status, CollectionStatus::Partial);
+    assert_eq!(result.observations.len(), 2);
+    assert_eq!(result.coverage["cargo:duplicate"], CoverageState::Failed);
+    assert_eq!(
+        result.coverage["cargo:valid"],
+        CoverageState::InspectedObserved
+    );
+    assert_eq!(result.diagnostics.len(), 1);
+}
+
+#[test]
 fn unauthorized_file_and_size_limit_cannot_establish_success_coverage() {
     let fixture = Fixture::new(&[("Cargo.lock", VALID)]);
     let scope = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
