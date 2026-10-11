@@ -32,3 +32,16 @@ Integration fixtures cover approved algorithm records, exact canonical profiles 
 ## Follow-on increments
 
 Next: typed normalization of certificate, key reference, protocol and configuration observations; parameter parsing and richer identity correlation; evidence/conflict semantics and explicit partial-source diagnostics; limits across multi-collector orchestration; cancellation and streaming/backpressure. Host-enforced operating-system isolation remains necessary for hostile third-party collector code. Neither registry matching nor the resulting snapshot makes cryptographic strength or compliance judgments.
+
+## Increment 2: remaining built-in raw fact mapping (FOSS-320.2)
+
+The original `normalize(PipelineInput, CollectionOutcome)` entry point now maps all six initial `RawFactKind` variants without a parallel ingestion path. Every fact still passes host-pinned scope, collector/run, per-record and cumulative quotas, provenance and coverage validation *before* canonical insertion.
+
+- **Certificate:** `RawFactKind::Certificate` requires a valid public SHA-256 DER fingerprint (64 hex digits), canonicalizes its case, and derives `AssetKind::Certificate` with unknown algorithm metadata represented as `None`. The certificate and private-key bytes are never stored.
+- **KeyReference:** Maps an opaque nonsecret provider reference to `AssetKind::Key` with unknown algorithm metadata. `IdentityContext.provider_instance` must be host-pinned; missing instance fails `InsufficientIdentity`. Neither source provider label nor a key reference proves algorithm, usage or private-key availability.
+- **Protocol:** Maps known versions to `AssetKind::Protocol`, retaining exact `ProtocolState::Configured` versus `Negotiated`. When the source omits the version, the corresponding existing `AssetKind::DetailedProtocol` representation uses `Observed::Unknown`; it does **not** invent a version, change existing FOSS-2 identity rules or treat configured as negotiated. Per-record source-site hashes bind protocol identities to their observations.
+- **Configuration:** Maps source location to `AssetKind::SourceUse` and a property/value `Observation`. It is *configuration evidence only*, never evidence of runtime algorithm use. Sensitive property-name markers (password, token, private, secret, credential, passphrase) are rejected; upstream collectors remain responsible for broader DLP and removing secret bytes.
+
+**Scope and test gates:** Existing canonical evidence/linkage and provenance APIs are reused; cross-tenant/provider isolation, malformed identifiers, no inference, missing version and mixed-type input ordering are covered by integration fixtures. Full Linux strict checks/tests, Windows compatibility and Rust 1.85 are merge gates.
+
+**Deliberately deferred:** Cross-source correlation and typed relationship edges; parameter/OID parsing beyond the exact existing registry; key metadata enrichment; streaming backpressure/cancellation; checkpoint/restart; evidence conflict coalescing and comprehensive FOSS-328 diagnostic policies. Avoid upgrading the parent FOSS-320 story to Done on this increment alone.
