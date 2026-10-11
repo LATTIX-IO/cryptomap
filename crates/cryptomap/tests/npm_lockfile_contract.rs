@@ -28,10 +28,8 @@ struct Fixture {
 impl Fixture {
     fn new(content: &str) -> Self {
         let unique = NEXT.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "cryptomap-npm-{}-{unique}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("cryptomap-npm-{}-{unique}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("package-lock.json"), content).unwrap();
         Self { root }
@@ -118,10 +116,12 @@ fn scoped_lockfile_collects_deterministic_evidence_and_normalizes_without_use_in
     assert_eq!(snapshot.assets.len(), 2);
     assert_eq!(snapshot.evidence.len(), 2);
     assert_eq!(snapshot.observations.len(), 2);
-    assert!(snapshot
-        .assets
-        .values()
-        .all(|asset| matches!(asset.kind, AssetKind::Library { .. })));
+    assert!(
+        snapshot
+            .assets
+            .values()
+            .all(|asset| matches!(asset.kind, AssetKind::Library { .. }))
+    );
     snapshot
         .verify_for_scope(scope.id(), InventoryLimits::default())
         .unwrap();
@@ -134,8 +134,13 @@ fn workspace_entries_cannot_silently_upgrade_partial_coverage() {
     );
     let scope = fixture.scope("tenant-a");
     let collector = NpmLockfileCollector::new(&scope, "2026-10-11T12:00:00Z");
-    let outcome =
-        collect_scoped(&scope, &collector, request("run-2"), &CancellationToken::default()).unwrap();
+    let outcome = collect_scoped(
+        &scope,
+        &collector,
+        request("run-2"),
+        &CancellationToken::default(),
+    )
+    .unwrap();
     assert_eq!(outcome.observations.len(), 1);
     assert_eq!(outcome.coverage["npm:lock"], CoverageState::Partial);
     assert_eq!(outcome.status, CollectionStatus::Failed);
@@ -146,13 +151,15 @@ fn workspace_entries_cannot_silently_upgrade_partial_coverage() {
 fn ungranted_file_fails_before_any_collector_execution() {
     let scope = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
     let collector = NpmLockfileCollector::new(&scope, "2026-10-11T12:00:00Z");
-    assert!(collect_scoped(
-        &scope,
-        &collector,
-        request("run-3"),
-        &CancellationToken::default()
-    )
-    .is_err());
+    assert!(
+        collect_scoped(
+            &scope,
+            &collector,
+            request("run-3"),
+            &CancellationToken::default()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -192,13 +199,15 @@ fn cancellation_and_file_budget_fail_closed() {
     assert_eq!(outcome.coverage["npm:lock"], CoverageState::NotInspected);
 
     let mut denied = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
-    assert!(denied
-        .grant_file(
-            RawSourceKind::Dependency,
-            "npm:lock",
-            &fixture.root,
-            "package-lock.json",
-            8,
-        )
-        .is_err());
+    assert!(
+        denied
+            .grant_file(
+                RawSourceKind::Dependency,
+                "npm:lock",
+                &fixture.root,
+                "package-lock.json",
+                8,
+            )
+            .is_err()
+    );
 }
