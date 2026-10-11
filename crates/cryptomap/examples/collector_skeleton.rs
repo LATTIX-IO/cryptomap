@@ -1,6 +1,8 @@
 //! Example of a third-party collector implementation.
 //!
 //! Run with: cargo run --example collector_skeleton
+// Static fixture collector identifiers are guaranteed valid.
+#![allow(clippy::expect_used)]
 use cryptomap::{
     CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind, InventoryError,
     collector::{
