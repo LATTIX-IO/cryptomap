@@ -41,7 +41,6 @@ impl WindowLimits {
 }
 
 /// Safe intake failures; no untrusted raw contents are printed.
-#[derive(Debug)]
 pub enum StreamError {
     /// Pending capacity reached: drain and retry the *same* borrowed record.
     Backpressure,
@@ -49,6 +48,8 @@ pub enum StreamError {
     Cancelled,
     /// A preceding flush irrecoverably violated the collector contract.
     Poisoned,
+    /// An event ID was reused for different source facts (ID is never returned).
+    ReplayConflict,
     /// Caller-granted source authorization failed.
     Scope(ScopeError),
     /// Raw schema, replay or bound was violated.
@@ -60,9 +61,17 @@ impl fmt::Display for StreamError {
             Self::Backpressure => f.write_str("stream window full"),
             Self::Cancelled => f.write_str("collection cancelled"),
             Self::Poisoned => f.write_str("stream cannot be finalized after validation failure"),
+            Self::ReplayConflict => f.write_str("stream replay conflict"),
             Self::Scope(_) => f.write_str("stream source authorization failed"),
             Self::Inventory(_) => f.write_str("stream contract validation failed"),
         }
+    }
+}
+// Prevent debug/error logs from printing arbitrary raw/source identifiers
+// embedded in lower-level InventoryError or ScopeError variants.
+impl fmt::Debug for StreamError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 impl Error for StreamError {}
@@ -157,11 +166,13 @@ impl StreamIntake {
             return Err(InventoryError::InvalidMetadata.into());
         }
         if let Some(existing) = self.pending.get(&raw.event_id) {
-            return if existing == raw {
-                Ok(())
-            } else {
-                Err(InventoryError::DuplicateObservation(raw.event_id.clone()).into())
-            };
+            if existing == raw {
+                return Ok(());
+            }
+            // An inconsistent pending replay invalidates the whole intake.
+            // The caller cannot discard the error and materialize an outcome.
+            self.poisoned = true;
+            return Err(StreamError::ReplayConflict);
         }
         if bytes > self.limits.bytes {
             return Err(InventoryError::LimitExceeded("stream single record").into());
@@ -190,7 +201,10 @@ impl StreamIntake {
         for raw in self.pending.values() {
             if let Err(err) = self.sink.emit(raw.clone()) {
                 self.poisoned = true;
-                return Err(err.into());
+                return match err {
+                    InventoryError::DuplicateObservation(_) => Err(StreamError::ReplayConflict),
+                    other => Err(other.into()),
+                };
             }
             self.observed.insert(raw.source.item.clone());
         }
