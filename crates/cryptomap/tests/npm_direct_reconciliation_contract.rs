@@ -106,7 +106,10 @@ fn missing_file_grants_and_reused_grant_identifier_fail_closed() {
 #[test]
 fn malicious_lock_and_manifest_disagreements_never_infer_graph() {
     for lock in [
-        LOCK.replace("\"dependencies\":{\"@scope/ring\":\"1.2.3\"}", "\"dependencies\":{\"@scope/ring\":\"2.0.0\"}"),
+        LOCK.replace(
+            "\"dependencies\":{\"@scope/ring\":\"1.2.3\"}",
+            "\"dependencies\":{\"@scope/ring\":\"2.0.0\"}",
+        ),
         LOCK.replace("node_modules/@scope/ring", "packages/ring"),
         LOCK.replace(
             "\"version\":\"1.2.3\",\"resolved\"",
