@@ -107,8 +107,7 @@ fn parse_lock(
             return Err(ResourceLimit);
         }
         crate::validation::safe_text(name, limits.field_bytes).map_err(|_| MalformedSource)?;
-        crate::validation::safe_text(resolved, limits.field_bytes)
-            .map_err(|_| MalformedSource)?;
+        crate::validation::safe_text(resolved, limits.field_bytes).map_err(|_| MalformedSource)?;
         found.push(LockedPackage {
             path: path.clone(),
             name: name.to_owned(),
@@ -297,17 +296,30 @@ mod tests {
     #[test]
     fn rejects_duplicate_keys_and_unsupported_versions() {
         let duplicate = br#"{"lockfileVersion":3,"packages":{"node_modules/a":{"version":"1"},"node_modules/a":{"version":"2"}}}"#;
-        assert_eq!(parse_lock(duplicate, limits()), Err(CollectorDiagnosticCode::MalformedSource));
+        assert_eq!(
+            parse_lock(duplicate, limits()),
+            Err(CollectorDiagnosticCode::MalformedSource)
+        );
         let old = br#"{"lockfileVersion":1,"dependencies":{}}"#;
-        assert_eq!(parse_lock(old, limits()), Err(CollectorDiagnosticCode::UnsupportedSource));
+        assert_eq!(
+            parse_lock(old, limits()),
+            Err(CollectorDiagnosticCode::UnsupportedSource)
+        );
     }
 
     #[test]
     fn rejects_traversal_and_missing_versions() {
-        let traversal = br#"{"lockfileVersion":3,"packages":{"node_modules/../secret":{"version":"1"}}}"#;
-        assert_eq!(parse_lock(traversal, limits()), Err(CollectorDiagnosticCode::MalformedSource));
+        let traversal =
+            br#"{"lockfileVersion":3,"packages":{"node_modules/../secret":{"version":"1"}}}"#;
+        assert_eq!(
+            parse_lock(traversal, limits()),
+            Err(CollectorDiagnosticCode::MalformedSource)
+        );
         let missing = br#"{"lockfileVersion":3,"packages":{"node_modules/a":{}}}"#;
-        assert_eq!(parse_lock(missing, limits()), Err(CollectorDiagnosticCode::MalformedSource));
+        assert_eq!(
+            parse_lock(missing, limits()),
+            Err(CollectorDiagnosticCode::MalformedSource)
+        );
     }
 
     #[test]
@@ -325,6 +337,9 @@ mod tests {
             observations: 1,
             ..RawLimits::default()
         };
-        assert_eq!(parse_lock(data, caps), Err(CollectorDiagnosticCode::ResourceLimit));
+        assert_eq!(
+            parse_lock(data, caps),
+            Err(CollectorDiagnosticCode::ResourceLimit)
+        );
     }
 }
