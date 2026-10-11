@@ -231,7 +231,9 @@ fn failed_run_cannot_launder_typed_evidence_with_positive_item_coverage() {
         state: CoverageState::InspectedObserved,
         reason_code: None,
     });
-    builder.add_evidence(evidence("run-failed", "Telemetry:authorized-source")).unwrap();
+    builder
+        .add_evidence(evidence("run-failed", "Telemetry:authorized-source"))
+        .unwrap();
     assert!(matches!(
         builder.finalize(InventoryLimits::default()),
         Err(InventoryError::InvalidMetadata)
