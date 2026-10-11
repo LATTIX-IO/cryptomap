@@ -549,7 +549,13 @@ fn typed_evidence_item<'a>(
     run: &'a CollectionRun,
     evidence_source: &str,
 ) -> Result<Option<&'a str>, InventoryError> {
-    for kind in ["Dependency", "Certificate", "TlsEndpoint", "Source", "Telemetry"] {
+    for kind in [
+        "Dependency",
+        "Certificate",
+        "TlsEndpoint",
+        "Source",
+        "Telemetry",
+    ] {
         if let Some(item) = evidence_source
             .strip_prefix(kind)
             .and_then(|value| value.strip_prefix(':'))
