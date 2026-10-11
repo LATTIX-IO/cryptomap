@@ -61,8 +61,14 @@ impl BatchLimits {
     }
 }
 
-fn charge(total: &mut usize, count: usize, maximum: usize, label: &'static str) -> Result<(), PipelineError> {
-    *total = total.checked_add(count)
+fn charge(
+    total: &mut usize,
+    count: usize,
+    maximum: usize,
+    label: &'static str,
+) -> Result<(), PipelineError> {
+    *total = total
+        .checked_add(count)
         .ok_or(InventoryError::LimitExceeded(label))?;
     if *total > maximum {
         return Err(InventoryError::LimitExceeded(label).into());
@@ -120,7 +126,12 @@ pub fn normalize_batch(
         };
         request.validate(input.expected_descriptor)?;
         input.scope.validate_request(&request)?;
-        charge(&mut total_sources, input.sources.len(), limits.sources, "batch sources")?;
+        charge(
+            &mut total_sources,
+            input.sources.len(),
+            limits.sources,
+            "batch sources",
+        )?;
         charge(
             &mut total_records,
             run.outcome.observations.len(),
@@ -156,7 +167,10 @@ pub fn normalize_batch(
         // A source label may be reused by different collectors. Only the
         // authoritative (run, source) coverage record identifies its outcome.
         for record in snapshot.coverage_records {
-            builder.set_coverage(coverage_key(&record.run, &record.source_item)?, record.state);
+            builder.set_coverage(
+                coverage_key(&record.run, &record.source_item)?,
+                record.state,
+            );
             builder.add_coverage_record(record);
         }
     }
