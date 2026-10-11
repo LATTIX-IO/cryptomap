@@ -35,13 +35,15 @@ impl Fixture {
     fn scope(&self, grant: bool, max_bytes: usize) -> CollectionScope {
         let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
         if grant {
-            scope.grant_file(
-                RawSourceKind::Dependency,
-                "cargo:manifest",
-                &self.0,
-                "Cargo.toml",
-                max_bytes,
-            ).unwrap();
+            scope
+                .grant_file(
+                    RawSourceKind::Dependency,
+                    "cargo:manifest",
+                    &self.0,
+                    "Cargo.toml",
+                    max_bytes,
+                )
+                .unwrap();
         }
         scope
     }
@@ -68,20 +70,38 @@ fn root_and_exact_direct_pin_have_independent_hashed_manifest_evidence() {
     let fixture = Fixture::new(VALID);
     let scope = fixture.scope(true, 4096);
     let collector = CargoManifestCollector::new(&scope, "2026-10-11T12:00:00Z");
-    let one = collect_scoped(&scope, &collector, request(RawLimits::default()),
-        &CancellationToken::default()).unwrap();
-    let two = collect_scoped(&scope, &collector, request(RawLimits::default()),
-        &CancellationToken::default()).unwrap();
+    let one = collect_scoped(
+        &scope,
+        &collector,
+        request(RawLimits::default()),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    let two = collect_scoped(
+        &scope,
+        &collector,
+        request(RawLimits::default()),
+        &CancellationToken::default(),
+    )
+    .unwrap();
     assert_eq!(one, two);
     assert_eq!(one.status, CollectionStatus::Complete);
-    assert_eq!(one.coverage["cargo:manifest"], CoverageState::InspectedObserved);
+    assert_eq!(
+        one.coverage["cargo:manifest"],
+        CoverageState::InspectedObserved
+    );
     assert_eq!(one.observations.len(), 2);
     for record in &one.observations {
         assert_eq!(record.source.item, "cargo:manifest");
         assert_eq!(record.source_sha256.as_ref().map(String::len), Some(64));
         assert!(matches!(record.fact, RawFactKind::Dependency { .. }));
-        assert!(matches!(record.attributes.get("cargo:manifest-role").map(String::as_str),
-            Some("root" | "direct")));
+        assert!(matches!(
+            record
+                .attributes
+                .get("cargo:manifest-role")
+                .map(String::as_str),
+            Some("root" | "direct")
+        ));
     }
     assert_ne!(one.observations[0].event_id, one.observations[1].event_id);
 }
@@ -97,8 +117,13 @@ fn invalid_and_unsupported_manifests_fail_without_false_absence() {
         let fixture = Fixture::new(bad);
         let scope = fixture.scope(true, 4096);
         let collector = CargoManifestCollector::new(&scope, "2026-10-11T12:00:00Z");
-        let result = collect_scoped(&scope, &collector, request(RawLimits::default()),
-            &CancellationToken::default()).unwrap();
+        let result = collect_scoped(
+            &scope,
+            &collector,
+            request(RawLimits::default()),
+            &CancellationToken::default(),
+        )
+        .unwrap();
         assert_eq!(result.status, CollectionStatus::Failed);
         assert_eq!(result.coverage["cargo:manifest"], CoverageState::Failed);
         assert!(result.observations.is_empty());
@@ -111,13 +136,25 @@ fn exact_file_authority_and_read_budget_fail_closed() {
     let fixture = Fixture::new(VALID);
     let no_grant = fixture.scope(false, 4096);
     let collector = CargoManifestCollector::new(&no_grant, "2026-10-11T12:00:00Z");
-    assert!(collect_scoped(&no_grant, &collector, request(RawLimits::default()),
-        &CancellationToken::default()).is_err());
+    assert!(
+        collect_scoped(
+            &no_grant,
+            &collector,
+            request(RawLimits::default()),
+            &CancellationToken::default()
+        )
+        .is_err()
+    );
 
     let small = fixture.scope(true, 8);
     let collector = CargoManifestCollector::new(&small, "2026-10-11T12:00:00Z");
-    let outcome = collect_scoped(&small, &collector, request(RawLimits::default()),
-        &CancellationToken::default()).unwrap();
+    let outcome = collect_scoped(
+        &small,
+        &collector,
+        request(RawLimits::default()),
+        &CancellationToken::default(),
+    )
+    .unwrap();
     assert_eq!(outcome.coverage["cargo:manifest"], CoverageState::Failed);
     assert!(outcome.observations.is_empty());
 }
@@ -131,8 +168,13 @@ fn total_observation_limit_accounts_for_root_and_dependency() {
         observations: 1,
         ..RawLimits::default()
     };
-    let outcome = collect_scoped(&scope, &collector, request(limits),
-        &CancellationToken::default()).unwrap();
+    let outcome = collect_scoped(
+        &scope,
+        &collector,
+        request(limits),
+        &CancellationToken::default(),
+    )
+    .unwrap();
     assert_eq!(outcome.coverage["cargo:manifest"], CoverageState::Failed);
     assert!(outcome.observations.is_empty());
 }
@@ -144,7 +186,11 @@ fn pre_cancelled_run_proves_no_manifest_inspection() {
     let collector = CargoManifestCollector::new(&scope, "2026-10-11T12:00:00Z");
     let cancel = CancellationToken::default();
     cancel.cancel();
-    let result = collect_scoped(&scope, &collector, request(RawLimits::default()), &cancel).unwrap();
+    let result =
+        collect_scoped(&scope, &collector, request(RawLimits::default()), &cancel).unwrap();
     assert!(result.observations.is_empty());
-    assert_eq!(result.coverage["cargo:manifest"], CoverageState::NotInspected);
+    assert_eq!(
+        result.coverage["cargo:manifest"],
+        CoverageState::NotInspected
+    );
 }
