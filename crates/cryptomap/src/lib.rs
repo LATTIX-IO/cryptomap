@@ -652,6 +652,17 @@ impl InventoryBuilder {
             {
                 return Err(InventoryError::InvalidMetadata);
             }
+            // FOSS-320.7 bounds live observations to the independently
+            // host-pinned run window. Apply the same contract to imported or
+            // reconstructed canonical snapshots: recomputing a digest must
+            // never launder out-of-window evidence into a verified snapshot.
+            // Compare UTC instants, not timezone-formatted strings.
+            let began = validation::utc_seconds(&run.started_at)?;
+            let ended = validation::utc_seconds(&run.ended_at)?;
+            let observed = validation::utc_seconds(&evidence.observed_at)?;
+            if began > ended || observed < began || observed > ended {
+                return Err(InventoryError::InvalidTimestamp);
+            }
         }
         for run in self.runs.values() {
             run.validate()?;
