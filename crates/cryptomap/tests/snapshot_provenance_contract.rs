@@ -54,10 +54,7 @@ fn exact_boundaries_and_equivalent_utc_offsets_survive_verified_round_trip() {
         snap.verify(InventoryLimits::default()).unwrap();
         let json = serde_json::to_string(&snap).unwrap();
         assert_eq!(
-            InventorySnapshot::from_json_verified(
-                &json,
-                InventoryLimits::default(),
-            ).unwrap(),
+            InventorySnapshot::from_json_verified(&json, InventoryLimits::default(),).unwrap(),
             snap
         );
     }
@@ -82,18 +79,14 @@ fn future_past_and_malformed_evidence_cannot_finalize_canonical_snapshot() {
 fn a_valid_snapshot_cannot_be_rehashed_to_launder_temporally_forged_evidence() {
     let original = assemble(&[("run-a", "2026-10-11T12:00:00Z")]).unwrap();
     let mut forged = original.clone();
-    forged.evidence.values_mut().next().unwrap().observed_at =
-        "2026-10-11T12:05:00Z".into();
+    forged.evidence.values_mut().next().unwrap().observed_at = "2026-10-11T12:05:00Z".into();
     assert!(matches!(
         forged.verify(InventoryLimits::default()),
         Err(InventoryError::InvalidTimestamp)
     ));
     let wire = serde_json::to_string(&forged).unwrap();
     assert!(matches!(
-        InventorySnapshot::from_json_verified(
-            &wire,
-            InventoryLimits::default(),
-        ),
+        InventorySnapshot::from_json_verified(&wire, InventoryLimits::default(),),
         Err(InventoryError::InvalidTimestamp)
     ));
     original.verify(InventoryLimits::default()).unwrap();
@@ -103,28 +96,20 @@ fn a_valid_snapshot_cannot_be_rehashed_to_launder_temporally_forged_evidence() {
 fn changing_the_host_run_window_also_invalidates_its_evidence() {
     let original = assemble(&[("run-a", "2026-10-11T12:00:00Z")]).unwrap();
     let mut forged = original.clone();
-    forged.runs.values_mut().next().unwrap().started_at =
-        "2026-10-11T12:00:01Z".into();
+    forged.runs.values_mut().next().unwrap().started_at = "2026-10-11T12:00:01Z".into();
     assert!(matches!(
         forged.verify(InventoryLimits::default()),
         Err(InventoryError::InvalidTimestamp)
     ));
     let mut malformed = original.clone();
-    malformed.runs.values_mut().next().unwrap().ended_at =
-        "source-supplied-invalid-date".into();
+    malformed.runs.values_mut().next().unwrap().ended_at = "source-supplied-invalid-date".into();
     assert!(malformed.verify(InventoryLimits::default()).is_err());
 }
 
 #[test]
 fn one_forged_run_rejects_multi_run_snapshot_atomically() {
-    for invalid in [
-        "2026-10-11T11:58:59Z",
-        "2026-10-11T12:01:01Z",
-    ] {
-        let err = assemble(&[
-            ("run-a", "2026-10-11T12:00:00Z"),
-            ("run-b", invalid),
-        ]).unwrap_err();
+    for invalid in ["2026-10-11T11:58:59Z", "2026-10-11T12:01:01Z"] {
+        let err = assemble(&[("run-a", "2026-10-11T12:00:00Z"), ("run-b", invalid)]).unwrap_err();
         assert!(matches!(err, InventoryError::InvalidTimestamp));
     }
 }
@@ -135,12 +120,14 @@ fn independent_run_order_preserves_canonical_digest_and_verified_provenance() {
         ("run-a", "2026-10-11T11:59:00Z"),
         ("run-b", "2026-10-11T12:00:00Z"),
         ("run-c", "2026-10-11T12:01:00Z"),
-    ]).unwrap();
+    ])
+    .unwrap();
     let reverse = assemble(&[
         ("run-c", "2026-10-11T12:01:00Z"),
         ("run-b", "2026-10-11T12:00:00Z"),
         ("run-a", "2026-10-11T11:59:00Z"),
-    ]).unwrap();
+    ])
+    .unwrap();
     assert_eq!(forward.id, reverse.id);
     assert_eq!(forward, reverse);
     reverse.verify(InventoryLimits::default()).unwrap();
@@ -157,7 +144,9 @@ fn boundary_check_does_not_convert_failed_or_partial_coverage_to_absence() {
         state: CoverageState::Partial,
         reason_code: Some("collection:partial".into()),
     });
-    builder.add_evidence(evidence("run-partial", "2026-10-11T12:00:00Z")).unwrap();
+    builder
+        .add_evidence(evidence("run-partial", "2026-10-11T12:00:00Z"))
+        .unwrap();
     let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
     assert_eq!(snapshot.coverage_records[0].state, CoverageState::Partial);
     assert_eq!(snapshot.evidence.len(), 1);
