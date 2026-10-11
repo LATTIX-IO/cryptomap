@@ -2,12 +2,11 @@
 //! All sources are in-memory logical streams: these tests perform no I/O.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
-    CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind,
-    IdentityContext, InventoryError, InventoryLimits,
+    CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind, IdentityContext,
+    InventoryError, InventoryLimits,
     collector::{
-        COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode,
-        CollectionRequest, CollectionStatus, CollectorCapabilities,
-        CollectorDescriptor, RequestedSource,
+        COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode, CollectionRequest,
+        CollectionStatus, CollectorCapabilities, CollectorDescriptor, RequestedSource,
     },
     coverage::CollectionScopeId,
     pipeline::{PipelineInput, normalize},
@@ -44,18 +43,32 @@ impl Fixture {
         let request = CollectionRequest {
             run: CollectionRunId::new("stream-run").unwrap(),
             sources: vec![
-                RequestedSource { kind: RawSourceKind::Telemetry, item: "logical:a".into() },
-                RequestedSource { kind: RawSourceKind::Telemetry, item: "logical:b".into() },
+                RequestedSource {
+                    kind: RawSourceKind::Telemetry,
+                    item: "logical:a".into(),
+                },
+                RequestedSource {
+                    kind: RawSourceKind::Telemetry,
+                    item: "logical:b".into(),
+                },
             ],
             limits: RawLimits::default(),
             options: BTreeMap::new(),
         };
-        Self { scope, desc, request, cancellation: CancellationToken::default() }
+        Self {
+            scope,
+            desc,
+            request,
+            cancellation: CancellationToken::default(),
+        }
     }
     fn intake(&self, limits: WindowLimits) -> Result<StreamIntake, StreamError> {
         StreamIntake::new(
-            &self.scope, self.desc.clone(), self.request.clone(),
-            self.cancellation.clone(), limits
+            &self.scope,
+            self.desc.clone(),
+            self.request.clone(),
+            self.cancellation.clone(),
+            limits,
         )
     }
     fn observation(&self, id: &str, source: &str) -> RawObservation {
@@ -68,7 +81,9 @@ impl Fixture {
             source: RawSourceLocator {
                 kind: RawSourceKind::Telemetry,
                 item: source.into(),
-                offset: None, line: None, column: None,
+                offset: None,
+                line: None,
+                column: None,
             },
             observed_at: "2026-10-11T12:00:00Z".into(),
             fact: RawFactKind::Certificate {
@@ -82,11 +97,15 @@ impl Fixture {
         }
     }
     fn window() -> WindowLimits {
-        WindowLimits { records: 2, bytes: 8192 }
+        WindowLimits {
+            records: 2,
+            bytes: 8192,
+        }
     }
-    fn normalize(&self, outcome: cryptomap::collector::CollectionOutcome)
-        -> cryptomap::InventorySnapshot
-    {
+    fn normalize(
+        &self,
+        outcome: cryptomap::collector::CollectionOutcome,
+    ) -> cryptomap::InventorySnapshot {
         let identity = IdentityContext::new(self.scope.id().as_str()).unwrap();
         normalize(
             PipelineInput {
@@ -101,26 +120,37 @@ impl Fixture {
                 started_at: "2026-10-11T11:59:00Z",
                 ended_at: "2026-10-11T12:01:00Z",
             },
-            outcome
-        ).unwrap()
+            outcome,
+        )
+        .unwrap()
     }
 }
 #[test]
 fn backpressure_has_no_side_effects_and_rejected_borrowed_record_can_be_retried() {
     let f = Fixture::new();
-    let mut intake = f.intake(WindowLimits { records: 1, bytes: 8192 }).unwrap();
+    let mut intake = f
+        .intake(WindowLimits {
+            records: 1,
+            bytes: 8192,
+        })
+        .unwrap();
     let a = f.observation("one", "logical:a");
     let b = f.observation("two", "logical:a");
     intake.try_push(&a).unwrap();
     assert_eq!(intake.pending_records(), 1);
     let before = intake.pending_bytes();
-    assert!(matches!(intake.try_push(&b), Err(StreamError::Backpressure)));
+    assert!(matches!(
+        intake.try_push(&b),
+        Err(StreamError::Backpressure)
+    ));
     assert_eq!(intake.pending_records(), 1);
     assert_eq!(intake.pending_bytes(), before);
     assert_eq!(intake.drain().unwrap(), 1);
     intake.try_push(&b).unwrap();
     assert_eq!(intake.drain().unwrap(), 1);
-    intake.cover("logical:a", CoverageState::InspectedObserved).unwrap();
+    intake
+        .cover("logical:a", CoverageState::InspectedObserved)
+        .unwrap();
     let outcome = intake.finish().unwrap();
     assert_eq!(outcome.observations.len(), 2);
     assert_eq!(outcome.coverage["logical:b"], CoverageState::NotInspected);
@@ -135,14 +165,24 @@ fn byte_backpressure_and_too_large_record_fail_without_admission() {
     let bytes = one.validate(&f.request.limits).unwrap();
     let mut intake = f.intake(WindowLimits { records: 2, bytes }).unwrap();
     intake.try_push(&one).unwrap();
-    assert!(matches!(intake.try_push(&two), Err(StreamError::Backpressure)));
+    assert!(matches!(
+        intake.try_push(&two),
+        Err(StreamError::Backpressure)
+    ));
     assert_eq!(intake.pending_bytes(), bytes);
     intake.drain().unwrap();
     intake.try_push(&two).unwrap();
     assert_eq!(intake.pending_records(), 1);
-    let mut small = f.intake(WindowLimits { records: 2, bytes: bytes - 1 }).unwrap();
-    assert!(matches!(small.try_push(&one),
-        Err(StreamError::Inventory(InventoryError::LimitExceeded(_)))));
+    let mut small = f
+        .intake(WindowLimits {
+            records: 2,
+            bytes: bytes - 1,
+        })
+        .unwrap();
+    assert!(matches!(
+        small.try_push(&one),
+        Err(StreamError::Inventory(InventoryError::LimitExceeded(_)))
+    ));
     assert_eq!(small.pending_records(), 0);
 }
 #[test]
@@ -156,7 +196,9 @@ fn duplicate_replay_is_idempotent_both_within_and_across_windows() {
     intake.drain().unwrap();
     intake.try_push(&one).unwrap();
     intake.drain().unwrap();
-    intake.cover("logical:a", CoverageState::InspectedObserved).unwrap();
+    intake
+        .cover("logical:a", CoverageState::InspectedObserved)
+        .unwrap();
     let result = intake.finish().unwrap();
     assert_eq!(result.observations.len(), 1);
     assert!(result.diagnostics.is_empty());
@@ -171,13 +213,21 @@ fn contradictory_same_event_is_rejected_and_cross_window_conflict_poisoned() {
     };
     let mut intake = f.intake(Fixture::window()).unwrap();
     intake.try_push(&one).unwrap();
-    assert!(matches!(intake.try_push(&other),
-        Err(StreamError::Inventory(InventoryError::DuplicateObservation(_)))));
+    assert!(matches!(
+        intake.try_push(&other),
+        Err(StreamError::Inventory(
+            InventoryError::DuplicateObservation(_)
+        ))
+    ));
     assert_eq!(intake.pending_records(), 1);
     intake.drain().unwrap();
     intake.try_push(&other).unwrap();
-    assert!(matches!(intake.drain(),
-        Err(StreamError::Inventory(InventoryError::DuplicateObservation(_)))));
+    assert!(matches!(
+        intake.drain(),
+        Err(StreamError::Inventory(
+            InventoryError::DuplicateObservation(_)
+        ))
+    ));
     assert!(matches!(intake.drain(), Err(StreamError::Poisoned)));
     assert!(matches!(intake.finish(), Err(StreamError::Poisoned)));
 }
@@ -186,15 +236,24 @@ fn cancellation_before_intake_accepts_no_records_or_false_absence() {
     let f = Fixture::new();
     f.cancellation.cancel();
     let mut intake = f.intake(Fixture::window()).unwrap();
-    assert!(matches!(intake.try_push(&f.observation("a", "logical:a")),
-        Err(StreamError::Cancelled)));
-    assert!(matches!(intake.cover("logical:a", CoverageState::InspectedNoObservation),
-        Err(StreamError::Cancelled)));
+    assert!(matches!(
+        intake.try_push(&f.observation("a", "logical:a")),
+        Err(StreamError::Cancelled)
+    ));
+    assert!(matches!(
+        intake.cover("logical:a", CoverageState::InspectedNoObservation),
+        Err(StreamError::Cancelled)
+    ));
     let outcome = intake.finish().unwrap();
     assert_eq!(outcome.status, CollectionStatus::Failed);
     assert!(outcome.observations.is_empty());
     assert_eq!(outcome.diagnostics.len(), 2);
-    assert!(outcome.coverage.values().all(|s| *s == CoverageState::NotInspected));
+    assert!(
+        outcome
+            .coverage
+            .values()
+            .all(|s| *s == CoverageState::NotInspected)
+    );
     let snap = f.normalize(outcome);
     assert!(snap.assets.is_empty());
     snap.verify(InventoryLimits::default()).unwrap();
@@ -203,12 +262,18 @@ fn cancellation_before_intake_accepts_no_records_or_false_absence() {
 fn cancellation_after_admission_preserves_buffered_evidence_and_partial_coverage() {
     let f = Fixture::new();
     let mut intake = f.intake(Fixture::window()).unwrap();
-    intake.try_push(&f.observation("buffered", "logical:a")).unwrap();
+    intake
+        .try_push(&f.observation("buffered", "logical:a"))
+        .unwrap();
     f.cancellation.cancel();
-    assert!(matches!(intake.try_push(&f.observation("late", "logical:a")),
-        Err(StreamError::Cancelled)));
-    assert!(matches!(intake.cover("logical:a", CoverageState::InspectedObserved),
-        Err(StreamError::Cancelled)));
+    assert!(matches!(
+        intake.try_push(&f.observation("late", "logical:a")),
+        Err(StreamError::Cancelled)
+    ));
+    assert!(matches!(
+        intake.cover("logical:a", CoverageState::InspectedObserved),
+        Err(StreamError::Cancelled)
+    ));
     let outcome = intake.finish().unwrap();
     assert_eq!(outcome.observations.len(), 1);
     assert_eq!(outcome.coverage["logical:a"], CoverageState::Partial);
@@ -225,13 +290,22 @@ fn cancellation_after_admission_preserves_buffered_evidence_and_partial_coverage
 fn cancellation_after_one_completed_source_keeps_that_source_complete() {
     let f = Fixture::new();
     let mut intake = f.intake(Fixture::window()).unwrap();
-    intake.try_push(&f.observation("done", "logical:a")).unwrap();
-    intake.cover("logical:a", CoverageState::InspectedObserved).unwrap();
-    intake.try_push(&f.observation("partial", "logical:b")).unwrap();
+    intake
+        .try_push(&f.observation("done", "logical:a"))
+        .unwrap();
+    intake
+        .cover("logical:a", CoverageState::InspectedObserved)
+        .unwrap();
+    intake
+        .try_push(&f.observation("partial", "logical:b"))
+        .unwrap();
     f.cancellation.cancel();
     let outcome = intake.finish().unwrap();
     assert_eq!(outcome.status, CollectionStatus::Partial);
-    assert_eq!(outcome.coverage["logical:a"], CoverageState::InspectedObserved);
+    assert_eq!(
+        outcome.coverage["logical:a"],
+        CoverageState::InspectedObserved
+    );
     assert_eq!(outcome.coverage["logical:b"], CoverageState::Partial);
     assert_eq!(outcome.diagnostics.len(), 1);
     assert_eq!(outcome.observations.len(), 2);
@@ -246,21 +320,39 @@ fn chunk_permutation_produces_identical_canonical_snapshot() {
         f.observation("b", "logical:b"),
         f.observation("c", "logical:a"),
     ];
-    let mut small = f.intake(WindowLimits { records: 1, bytes: 8192 }).unwrap();
+    let mut small = f
+        .intake(WindowLimits {
+            records: 1,
+            bytes: 8192,
+        })
+        .unwrap();
     for record in &records {
         small.try_push(record).unwrap();
         small.drain().unwrap();
     }
-    small.cover("logical:a", CoverageState::InspectedObserved).unwrap();
-    small.cover("logical:b", CoverageState::InspectedObserved).unwrap();
+    small
+        .cover("logical:a", CoverageState::InspectedObserved)
+        .unwrap();
+    small
+        .cover("logical:b", CoverageState::InspectedObserved)
+        .unwrap();
     let a = f.normalize(small.finish().unwrap());
 
-    let mut large = f.intake(WindowLimits { records: 3, bytes: 8192 }).unwrap();
+    let mut large = f
+        .intake(WindowLimits {
+            records: 3,
+            bytes: 8192,
+        })
+        .unwrap();
     for record in records.iter().rev() {
         large.try_push(record).unwrap();
     }
-    large.cover("logical:b", CoverageState::InspectedObserved).unwrap();
-    large.cover("logical:a", CoverageState::InspectedObserved).unwrap();
+    large
+        .cover("logical:b", CoverageState::InspectedObserved)
+        .unwrap();
+    large
+        .cover("logical:a", CoverageState::InspectedObserved)
+        .unwrap();
     let b = f.normalize(large.finish().unwrap());
     assert_eq!(a.id, b.id);
     assert_eq!(a, b);
@@ -270,20 +362,30 @@ fn source_run_collector_and_secret_substitution_fail_before_admission() {
     let f = Fixture::new();
     let mut intake = f.intake(Fixture::window()).unwrap();
     let mut wrong = f.observation("x", "not-granted");
-    assert!(matches!(intake.try_push(&wrong),
-        Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
+    assert!(matches!(
+        intake.try_push(&wrong),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
     wrong.source.item = "logical:a".into();
     wrong.run = CollectionRunId::new("forged-run").unwrap();
-    assert!(matches!(intake.try_push(&wrong),
-        Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
+    assert!(matches!(
+        intake.try_push(&wrong),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
     wrong.run = f.request.run.clone();
     wrong.collector = CollectorId::new("rogue").unwrap();
-    assert!(matches!(intake.try_push(&wrong),
-        Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
+    assert!(matches!(
+        intake.try_push(&wrong),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
     let mut secret = f.observation("secret", "logical:a");
-    secret.attributes.insert("source:raw".into(), "-----BEGIN PRIVATE KEY-----".into());
-    assert!(matches!(intake.try_push(&secret),
-        Err(StreamError::Inventory(InventoryError::ProhibitedMaterial))));
+    secret
+        .attributes
+        .insert("source:raw".into(), "-----BEGIN PRIVATE KEY-----".into());
+    assert!(matches!(
+        intake.try_push(&secret),
+        Err(StreamError::Inventory(InventoryError::ProhibitedMaterial))
+    ));
     assert_eq!(intake.pending_records(), 0);
 }
 #[test]
@@ -293,21 +395,39 @@ fn nonexistent_authority_and_invalid_window_budget_are_rejected() {
         kind: RawSourceKind::Telemetry,
         item: "not-granted".into(),
     });
-    assert!(matches!(f.intake(Fixture::window()), Err(StreamError::Scope(ScopeError::OutOfScope))));
+    assert!(matches!(
+        f.intake(Fixture::window()),
+        Err(StreamError::Scope(ScopeError::OutOfScope))
+    ));
     f.request.sources.pop();
-    assert!(matches!(f.intake(WindowLimits { records: 0, bytes: 8192 }),
-        Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
-    assert!(matches!(f.intake(WindowLimits {
-        records: f.request.limits.observations + 1, bytes: 8192,
-    }), Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
+    assert!(matches!(
+        f.intake(WindowLimits {
+            records: 0,
+            bytes: 8192
+        }),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
+    assert!(matches!(
+        f.intake(WindowLimits {
+            records: f.request.limits.observations + 1,
+            bytes: 8192,
+        }),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
 }
 #[test]
 fn completed_source_cannot_receive_new_records_or_duplicate_coverage() {
     let f = Fixture::new();
     let mut intake = f.intake(Fixture::window()).unwrap();
-    intake.cover("logical:a", CoverageState::InspectedNoObservation).unwrap();
-    assert!(matches!(intake.try_push(&f.observation("late", "logical:a")),
-        Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
-    assert!(matches!(intake.cover("logical:a", CoverageState::InspectedObserved),
-        Err(StreamError::Inventory(InventoryError::InvalidMetadata))));
+    intake
+        .cover("logical:a", CoverageState::InspectedNoObservation)
+        .unwrap();
+    assert!(matches!(
+        intake.try_push(&f.observation("late", "logical:a")),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
+    assert!(matches!(
+        intake.cover("logical:a", CoverageState::InspectedObserved),
+        Err(StreamError::Inventory(InventoryError::InvalidMetadata))
+    ));
 }
