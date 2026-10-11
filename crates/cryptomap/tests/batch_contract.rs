@@ -1,8 +1,8 @@
 //! Multi-collector normalization, provenance isolation and deterministic reconciliation.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
-    AssetKind, CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind, IdentityContext,
-    InventoryError, InventoryLimits, RunCompleteness,
+    AssetKind, CollectionRunId, CollectorId, Confidence, CoverageState, EvidenceKind,
+    IdentityContext, InventoryError, InventoryLimits, RunCompleteness,
     batch::{BatchLimits, BatchRun, normalize_batch},
     collector::{
         COLLECTOR_CONTRACT_VERSION, CollectionMode, CollectionOutcome, CollectionStatus,
@@ -32,12 +32,17 @@ impl Fixture {
         for (kind, source) in sources {
             scope.grant_logical(kind.clone(), *source).unwrap();
             supported.insert(kind.clone());
-            requested.push(RequestedSource { kind: kind.clone(), item: (*source).into() });
+            requested.push(RequestedSource {
+                kind: kind.clone(),
+                item: (*source).into(),
+            });
         }
         Self {
             scope,
-            identity: IdentityContext::new(tenant).unwrap()
-                .with_provider_instance(format!("provider:{collector}")).unwrap(),
+            identity: IdentityContext::new(tenant)
+                .unwrap()
+                .with_provider_instance(format!("provider:{collector}"))
+                .unwrap(),
             registry: Registry::builtin(),
             descriptor: CollectorDescriptor {
                 contract_version: COLLECTOR_CONTRACT_VERSION,
@@ -55,10 +60,19 @@ impl Fixture {
         }
     }
     fn observation(&self, event: &str, source: &str, fact: RawFactKind) -> RawObservation {
-        let kind = self.sources.iter().find(|s| s.item == source).unwrap().kind.clone();
+        let kind = self
+            .sources
+            .iter()
+            .find(|s| s.item == source)
+            .unwrap()
+            .kind
+            .clone();
         let mut attributes = BTreeMap::new();
         if matches!(fact, RawFactKind::AlgorithmUse { .. }) {
-            attributes.insert("cryptomap:algorithm-namespace".into(), "tls_cipher_suite".into());
+            attributes.insert(
+                "cryptomap:algorithm-namespace".into(),
+                "tls_cipher_suite".into(),
+            );
             attributes.insert("cryptomap:algorithm-kind".into(), "cipher_suite".into());
         }
         RawObservation {
@@ -68,7 +82,11 @@ impl Fixture {
             collector_version: self.descriptor.version.clone(),
             run: self.run.clone(),
             source: RawSourceLocator {
-                kind, item: source.into(), offset: None, line: None, column: None,
+                kind,
+                item: source.into(),
+                offset: None,
+                line: None,
+                column: None,
             },
             observed_at: "2026-10-11T12:00:00Z".into(),
             fact,
@@ -101,9 +119,15 @@ impl Fixture {
         observations: Vec<RawObservation>,
         coverage: BTreeMap<String, CoverageState>,
     ) -> CollectionOutcome {
-        let successful = coverage.values().filter(|s| matches!(
-            s, CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
-        )).count();
+        let successful = coverage
+            .values()
+            .filter(|s| {
+                matches!(
+                    s,
+                    CoverageState::InspectedObserved | CoverageState::InspectedNoObservation
+                )
+            })
+            .count();
         let status = if successful == coverage.len() {
             CollectionStatus::Complete
         } else if successful > 0 {
@@ -122,33 +146,47 @@ impl Fixture {
     }
 }
 fn cert() -> RawFactKind {
-    RawFactKind::Certificate { fingerprint_sha256: "ab".repeat(32) }
+    RawFactKind::Certificate {
+        fingerprint_sha256: "ab".repeat(32),
+    }
 }
 fn state(item: &str, coverage: CoverageState) -> BTreeMap<String, CoverageState> {
     BTreeMap::from([(item.into(), coverage)])
 }
 fn fixture_pair() -> (Fixture, Fixture) {
     (
-        Fixture::new("tenant-a", "run-A", "collector-telemetry",
-            &[(RawSourceKind::Telemetry, "shared")]),
-        Fixture::new("tenant-a", "run-B", "collector-certificate",
-            &[(RawSourceKind::Certificate, "shared")]),
+        Fixture::new(
+            "tenant-a",
+            "run-A",
+            "collector-telemetry",
+            &[(RawSourceKind::Telemetry, "shared")],
+        ),
+        Fixture::new(
+            "tenant-a",
+            "run-B",
+            "collector-certificate",
+            &[(RawSourceKind::Certificate, "shared")],
+        ),
     )
 }
 
 #[test]
 fn heterogeneous_collectors_with_same_source_name_preserve_run_coverage() {
     let (a, b) = fixture_pair();
-    let result = normalize_batch(vec![
-        a.input(a.outcome(
-            vec![a.observation("same-event", "shared", cert())],
-            state("shared", CoverageState::InspectedObserved),
-        )),
-        b.input(b.outcome(
-            vec![b.observation("same-event", "shared", cert())],
-            state("shared", CoverageState::InspectedObserved),
-        )),
-    ], BatchLimits::default()).unwrap();
+    let result = normalize_batch(
+        vec![
+            a.input(a.outcome(
+                vec![a.observation("same-event", "shared", cert())],
+                state("shared", CoverageState::InspectedObserved),
+            )),
+            b.input(b.outcome(
+                vec![b.observation("same-event", "shared", cert())],
+                state("shared", CoverageState::InspectedObserved),
+            )),
+        ],
+        BatchLimits::default(),
+    )
+    .unwrap();
     assert_eq!(result.assets.len(), 1);
     assert_eq!(result.evidence.len(), 2);
     assert_eq!(result.observations.len(), 2);
@@ -156,9 +194,12 @@ fn heterogeneous_collectors_with_same_source_name_preserve_run_coverage() {
     assert_eq!(result.coverage_records.len(), 2);
     assert_eq!(result.coverage.len(), 2);
     assert_ne!(result.coverage.keys().next(), result.coverage.keys().nth(1));
-    assert!(result.assets.values().all(|asset| matches!(
-        asset.kind, AssetKind::Certificate { .. }
-    )));
+    assert!(
+        result
+            .assets
+            .values()
+            .all(|asset| matches!(asset.kind, AssetKind::Certificate { .. }))
+    );
     result.verify(InventoryLimits::default()).unwrap();
 }
 
@@ -174,11 +215,11 @@ fn permutation_of_collector_completion_order_is_digest_invariant() {
         state("shared", CoverageState::InspectedObserved),
     );
     let first = normalize_batch(
-        vec![a.input(o1.clone()), b.input(o2.clone())], BatchLimits::default()
-    ).unwrap();
-    let reversed = normalize_batch(
-        vec![b.input(o2), a.input(o1)], BatchLimits::default()
-    ).unwrap();
+        vec![a.input(o1.clone()), b.input(o2.clone())],
+        BatchLimits::default(),
+    )
+    .unwrap();
+    let reversed = normalize_batch(vec![b.input(o2), a.input(o1)], BatchLimits::default()).unwrap();
     assert_eq!(first, reversed);
     assert_eq!(first.id, reversed.id);
 }
@@ -186,61 +227,100 @@ fn permutation_of_collector_completion_order_is_digest_invariant() {
 #[test]
 fn failed_and_partial_runs_do_not_erase_successful_assets_or_claim_complete() {
     let (good, failed) = fixture_pair();
-    let partial = Fixture::new("tenant-a", "run-C", "collector-partial",
+    let partial = Fixture::new(
+        "tenant-a",
+        "run-C",
+        "collector-partial",
         &[
             (RawSourceKind::Telemetry, "stream:observed"),
             (RawSourceKind::Telemetry, "stream:failed"),
-        ]);
-    let output = normalize_batch(vec![
-        good.input(good.outcome(
-            vec![good.observation("good", "shared", cert())],
-            state("shared", CoverageState::InspectedObserved),
-        )),
-        failed.input(failed.outcome(vec![], state("shared", CoverageState::Failed))),
-        partial.input(partial.outcome(
-            vec![partial.observation("partial", "stream:observed",
-                RawFactKind::Dependency {
-                    ecosystem: "cargo".into(), name: "rustls".into(),
-                    version: "0.23".into(),
-                })],
-            BTreeMap::from([
-                ("stream:observed".into(), CoverageState::InspectedObserved),
-                ("stream:failed".into(), CoverageState::Failed),
-            ]),
-        )),
-    ], BatchLimits::default()).unwrap();
+        ],
+    );
+    let output = normalize_batch(
+        vec![
+            good.input(good.outcome(
+                vec![good.observation("good", "shared", cert())],
+                state("shared", CoverageState::InspectedObserved),
+            )),
+            failed.input(failed.outcome(vec![], state("shared", CoverageState::Failed))),
+            partial.input(partial.outcome(
+                vec![partial.observation(
+                    "partial",
+                    "stream:observed",
+                    RawFactKind::Dependency {
+                        ecosystem: "cargo".into(),
+                        name: "rustls".into(),
+                        version: "0.23".into(),
+                    },
+                )],
+                BTreeMap::from([
+                    ("stream:observed".into(), CoverageState::InspectedObserved),
+                    ("stream:failed".into(), CoverageState::Failed),
+                ]),
+            )),
+        ],
+        BatchLimits::default(),
+    )
+    .unwrap();
     assert_eq!(output.runs.len(), 3);
     assert_eq!(output.assets.len(), 2);
     assert_eq!(output.coverage_records.len(), 4);
-    assert_eq!(output.runs[&good.run].completeness, RunCompleteness::Complete);
-    assert_eq!(output.runs[&failed.run].completeness, RunCompleteness::Failed);
-    assert_eq!(output.runs[&partial.run].completeness, RunCompleteness::Partial);
+    assert_eq!(
+        output.runs[&good.run].completeness,
+        RunCompleteness::Complete
+    );
+    assert_eq!(
+        output.runs[&failed.run].completeness,
+        RunCompleteness::Failed
+    );
+    assert_eq!(
+        output.runs[&partial.run].completeness,
+        RunCompleteness::Partial
+    );
     output.verify(InventoryLimits::default()).unwrap();
 }
 
 #[test]
 fn duplicate_run_ids_and_cross_tenant_scope_are_rejected() {
     let (a, _) = fixture_pair();
-    let duplicate = Fixture::new("tenant-a", "run-A", "other-collector",
-        &[(RawSourceKind::Telemetry, "shared")]);
-    let o1 = a.outcome(vec![a.observation("a", "shared", cert())],
-        state("shared", CoverageState::InspectedObserved));
-    let o2 = duplicate.outcome(vec![duplicate.observation("a", "shared", cert())],
-        state("shared", CoverageState::InspectedObserved));
-    assert!(matches!(normalize_batch(
-        vec![a.input(o1.clone()), duplicate.input(o2)],
-        BatchLimits::default()
-    ), Err(PipelineError::InvalidOutcome)));
-    let foreign = Fixture::new("tenant-b", "run-B", "other-collector",
-        &[(RawSourceKind::Telemetry, "shared")]);
+    let duplicate = Fixture::new(
+        "tenant-a",
+        "run-A",
+        "other-collector",
+        &[(RawSourceKind::Telemetry, "shared")],
+    );
+    let o1 = a.outcome(
+        vec![a.observation("a", "shared", cert())],
+        state("shared", CoverageState::InspectedObserved),
+    );
+    let o2 = duplicate.outcome(
+        vec![duplicate.observation("a", "shared", cert())],
+        state("shared", CoverageState::InspectedObserved),
+    );
+    assert!(matches!(
+        normalize_batch(
+            vec![a.input(o1.clone()), duplicate.input(o2)],
+            BatchLimits::default()
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
+    let foreign = Fixture::new(
+        "tenant-b",
+        "run-B",
+        "other-collector",
+        &[(RawSourceKind::Telemetry, "shared")],
+    );
     let foreign_outcome = foreign.outcome(
         vec![foreign.observation("a", "shared", cert())],
         state("shared", CoverageState::InspectedObserved),
     );
-    assert!(matches!(normalize_batch(
-        vec![a.input(o1), foreign.input(foreign_outcome)],
-        BatchLimits::default()
-    ), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        normalize_batch(
+            vec![a.input(o1), foreign.input(foreign_outcome)],
+            BatchLimits::default()
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
 }
 
 #[test]
@@ -251,18 +331,25 @@ fn authorization_and_forged_provenance_fail_closed() {
         state("shared", CoverageState::InspectedObserved),
     );
     forged.run = CollectionRunId::new("forged").unwrap();
-    assert!(matches!(normalize_batch(vec![
-        a.input(a.outcome(vec![], state("shared", CoverageState::Failed))),
-        b.input(forged)
-    ], BatchLimits::default()), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        normalize_batch(
+            vec![
+                a.input(a.outcome(vec![], state("shared", CoverageState::Failed))),
+                b.input(forged)
+            ],
+            BatchLimits::default()
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
     let mut unauthorized = a.outcome(
         vec![a.observation("event", "shared", cert())],
         state("shared", CoverageState::InspectedObserved),
     );
     unauthorized.observations[0].source.item = "not-granted".into();
-    assert!(matches!(normalize_batch(
-        vec![a.input(unauthorized)], BatchLimits::default()
-    ), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        normalize_batch(vec![a.input(unauthorized)], BatchLimits::default()),
+        Err(PipelineError::InvalidOutcome)
+    ));
 }
 
 #[test]
@@ -277,22 +364,39 @@ fn aggregate_run_source_observation_and_byte_budgets_reject_before_merge() {
         state("shared", CoverageState::InspectedObserved),
     );
     for limits in [
-        BatchLimits { runs: 1, ..BatchLimits::default() },
-        BatchLimits { sources: 1, ..BatchLimits::default() },
-        BatchLimits { observations: 1, ..BatchLimits::default() },
-        BatchLimits { raw_bytes: 1, ..BatchLimits::default() },
+        BatchLimits {
+            runs: 1,
+            ..BatchLimits::default()
+        },
+        BatchLimits {
+            sources: 1,
+            ..BatchLimits::default()
+        },
+        BatchLimits {
+            observations: 1,
+            ..BatchLimits::default()
+        },
+        BatchLimits {
+            raw_bytes: 1,
+            ..BatchLimits::default()
+        },
     ] {
-        assert!(matches!(normalize_batch(
-            vec![a.input(o1.clone()), b.input(o2.clone())], limits
-        ), Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))));
+        assert!(matches!(
+            normalize_batch(vec![a.input(o1.clone()), b.input(o2.clone())], limits),
+            Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))
+        ));
     }
     let constrained = BatchLimits {
-        inventory: InventoryLimits { evidence: 1, ..InventoryLimits::default() },
+        inventory: InventoryLimits {
+            evidence: 1,
+            ..InventoryLimits::default()
+        },
         ..BatchLimits::default()
     };
-    assert!(matches!(normalize_batch(vec![
-        a.input(o1), b.input(o2)
-    ], constrained), Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))));
+    assert!(matches!(
+        normalize_batch(vec![a.input(o1), b.input(o2)], constrained),
+        Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))
+    ));
 }
 
 #[test]
@@ -306,27 +410,60 @@ fn structurally_invalid_run_is_not_mislabeled_as_valid_partial_failure() {
         vec![b.observation("other", "shared", cert())],
         state("shared", CoverageState::Failed),
     );
-    assert!(matches!(normalize_batch(vec![
-        a.input(valid), b.input(invalid)
-    ], BatchLimits::default()), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        normalize_batch(
+            vec![a.input(valid), b.input(invalid)],
+            BatchLimits::default()
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
 }
 
 #[test]
 fn relinking_by_event_id_across_run_boundaries_is_not_allowed() {
     use cryptomap::ProtocolState;
-    let a = Fixture::new("tenant-a", "run-A", "protocol",
-        &[(RawSourceKind::Telemetry, "protocol")]);
-    let b = Fixture::new("tenant-a", "run-B", "certificate",
-        &[(RawSourceKind::Certificate, "certificate")]);
-    let mut protocol = a.observation("protocol", "protocol", RawFactKind::Protocol {
-        family: "TLS".into(), version: Some("1.3".into()),
-        state: ProtocolState::Negotiated,
-    });
-    protocol.attributes.insert("cryptomap:relation-kind".into(), "uses_certificate".into());
-    protocol.attributes.insert("cryptomap:relation-target-event".into(), "cert".into());
+    let a = Fixture::new(
+        "tenant-a",
+        "run-A",
+        "protocol",
+        &[(RawSourceKind::Telemetry, "protocol")],
+    );
+    let b = Fixture::new(
+        "tenant-a",
+        "run-B",
+        "certificate",
+        &[(RawSourceKind::Certificate, "certificate")],
+    );
+    let mut protocol = a.observation(
+        "protocol",
+        "protocol",
+        RawFactKind::Protocol {
+            family: "TLS".into(),
+            version: Some("1.3".into()),
+            state: ProtocolState::Negotiated,
+        },
+    );
+    protocol
+        .attributes
+        .insert("cryptomap:relation-kind".into(), "uses_certificate".into());
+    protocol
+        .attributes
+        .insert("cryptomap:relation-target-event".into(), "cert".into());
     let remote = b.observation("cert", "certificate", cert());
-    assert!(matches!(normalize_batch(vec![
-        a.input(a.outcome(vec![protocol], state("protocol", CoverageState::InspectedObserved))),
-        b.input(b.outcome(vec![remote], state("certificate", CoverageState::InspectedObserved))),
-    ], BatchLimits::default()), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        normalize_batch(
+            vec![
+                a.input(a.outcome(
+                    vec![protocol],
+                    state("protocol", CoverageState::InspectedObserved)
+                )),
+                b.input(b.outcome(
+                    vec![remote],
+                    state("certificate", CoverageState::InspectedObserved)
+                )),
+            ],
+            BatchLimits::default()
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
 }
