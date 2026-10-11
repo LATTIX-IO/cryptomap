@@ -228,8 +228,8 @@ fn map_fact(
     identity: &IdentityContext,
     registry: &Registry,
     evidence: &EvidenceId,
-) -> Result<(), PipelineError> {
-    match &raw.fact {
+) -> Result<AssetId, PipelineError> {
+    let asset = match &raw.fact {
         RawFactKind::AlgorithmUse {
             identifier,
             profile,
@@ -331,6 +331,7 @@ fn map_fact(
                     parameters.clone(),
                 )?;
             }
+            asset
         }
         RawFactKind::Dependency {
             ecosystem,
@@ -355,6 +356,7 @@ fn map_fact(
                 "dependency:presence",
                 "declared".into(),
             )?;
+            asset
         }
         RawFactKind::Certificate { fingerprint_sha256 } => {
             // RawObservation validates the exact 64-character SHA-256 hex
@@ -377,6 +379,7 @@ fn map_fact(
                 "certificate:fingerprint-sha256",
                 digest,
             )?;
+            asset
         }
         RawFactKind::KeyReference {
             provider,
@@ -410,6 +413,7 @@ fn map_fact(
                 "key:provider-reference",
                 reference.clone(),
             )?;
+            asset
         }
         RawFactKind::Protocol {
             family,
@@ -479,6 +483,7 @@ fn map_fact(
                     "unknown".into(),
                 )?;
             }
+            asset
         }
         RawFactKind::Configuration { property, value } => {
             // Never convert a declared configuration value into algorithm
@@ -494,9 +499,10 @@ fn map_fact(
                 BTreeMap::new(),
             )?;
             observe(builder, raw, &asset, evidence, property, value.clone())?;
+            asset
         }
-    }
-    Ok(())
+    };
+    Ok(asset)
 }
 
 /// Validate a collector outcome, resolve supported facts and produce a canonical snapshot.
@@ -640,16 +646,28 @@ pub fn normalize(
         });
         builder.set_coverage(source, state);
     }
+    let mut mapped_assets = BTreeMap::new();
+    let mut mapped_evidence = BTreeMap::new();
     for raw in records.values() {
         let evidence = evidence_for(raw)?;
-        map_fact(
+        let asset = map_fact(
             &mut builder,
             raw,
             input.identity,
             input.registry,
             &evidence.id,
         )?;
+        mapped_assets.insert(raw.event_id.clone(), asset);
+        mapped_evidence.insert(raw.event_id.clone(), evidence.id.clone());
         builder.add_evidence(evidence)?;
     }
+    // Second pass: only events that passed host authorization and normalization
+    // are addressable. Never synthesize edges from co-located or similar values.
+    crate::correlation::link_explicit(
+        &mut builder,
+        &records,
+        &mapped_assets,
+        &mapped_evidence,
+    )?;
     Ok(builder.finalize(input.inventory_limits)?)
 }
