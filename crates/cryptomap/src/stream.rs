@@ -327,6 +327,7 @@ mod tests {
         ));
         assert_eq!(error.to_string(), "stream contract validation failed");
         assert!(!error.to_string().contains("sensitive-source-identifier"));
+        assert!(!format!("{error:?}").contains("sensitive-source-identifier"));
         assert_eq!(StreamError::Backpressure.to_string(), "stream window full");
         assert_eq!(StreamError::Cancelled.to_string(), "collection cancelled");
     }
