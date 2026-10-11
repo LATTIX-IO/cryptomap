@@ -323,8 +323,15 @@ mod tests {
     #[test]
     fn strict_numeric_version_profile_rejects_nonsense_and_overflow() {
         for invalid in [
-            "not-a-version", "1", "1.2", "1.2.3.4", "01.2.3",
-            "1.02.3", "1.2.03", "-1.2.3", "1.2.3-alpha",
+            "not-a-version",
+            "1",
+            "1.2",
+            "1.2.3.4",
+            "01.2.3",
+            "1.02.3",
+            "1.2.03",
+            "-1.2.3",
+            "1.2.3-alpha",
             "18446744073709551616.0.0",
         ] {
             assert!(!exact_numeric_version(invalid));
@@ -332,7 +339,8 @@ mod tests {
         for version in ["0.0.0", "0.17.12", "1.2.3"] {
             assert!(exact_numeric_version(version));
         }
-        let root = b"[package]\nname = \"app\"\nversion = \"bad\"\n[dependencies]\nring = \"=0.17.12\"\n";
+        let root =
+            b"[package]\nname = \"app\"\nversion = \"bad\"\n[dependencies]\nring = \"=0.17.12\"\n";
         let pin = b"[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=not-a-version\"\n";
         assert!(parse_manifest(root, RawLimits::default()).is_err());
         assert!(parse_manifest(pin, RawLimits::default()).is_err());
