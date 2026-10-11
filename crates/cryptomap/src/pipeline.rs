@@ -527,6 +527,15 @@ pub fn normalize(
         return Err(PipelineError::InvalidOutcome);
     }
     input.raw_limits.validate()?;
+    // Run timestamps are host-pinned, not collector declarations. Reject
+    // observations placed outside this bounded interval before mapping,
+    // canonical identity construction or evidence storage. Compare instants
+    // rather than lexical RFC 3339 text so equivalent timezone offsets work.
+    let start = crate::validation::utc_seconds(input.started_at)?;
+    let end = crate::validation::utc_seconds(input.ended_at)?;
+    if start > end {
+        return Err(InventoryError::InvalidTimestamp.into());
+    }
     let request = CollectionRequest {
         run: input.expected_run.clone(),
         sources: input.sources.to_vec(),
@@ -559,6 +568,10 @@ pub fn normalize(
     let mut total_bytes = 0usize;
     for raw in outcome.observations {
         let bytes = raw.validate(&input.raw_limits)?;
+        let observed = crate::validation::utc_seconds(&raw.observed_at)?;
+        if observed < start || observed > end {
+            return Err(InventoryError::InvalidTimestamp.into());
+        }
         total_bytes = total_bytes
             .checked_add(bytes)
             .ok_or(InventoryError::LimitExceeded("raw bytes overflow"))?;
