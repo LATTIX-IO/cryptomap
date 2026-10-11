@@ -102,7 +102,7 @@ impl CollectionRequest {
     pub fn validate(&self, descriptor: &CollectorDescriptor) -> Result<(), InventoryError> {
         descriptor.validate()?;
         self.limits.validate()?;
-        if self.sources.is_empty() || self.sources.len() > self.limits.observations {
+        if self.sources.is_empty() || self.sources.len() > self.limits.sources {
             return Err(InventoryError::InvalidMetadata);
         }
         let mut unique = BTreeSet::new();
@@ -288,7 +288,8 @@ impl CollectionSink {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
-        if self.diagnostics.len() >= self.request.limits.observations {
+        if self.diagnostics.len()
+            >= self.request.limits.observations.saturating_add(self.request.limits.sources) {
             return Err(InventoryError::LimitExceeded("raw diagnostics"));
         }
         self.diagnostics.push(diagnostic);
@@ -301,6 +302,25 @@ impl CollectionSink {
             self.coverage
                 .entry(requested.item.clone())
                 .or_insert(CoverageState::NotInspected);
+        }
+        // Success coverage must match the evidence that was actually emitted.
+        // Downgrade contradictory states rather than claiming complete inspection.
+        for requested in &self.request.sources {
+            let observed = self.observations.values().any(|item| item.source.item == requested.item);
+            if let Some(state) = self.coverage.get_mut(&requested.item) {
+                let consistent = match state {
+                    CoverageState::InspectedObserved => observed,
+                    CoverageState::InspectedNoObservation => !observed,
+                    _ => !observed,
+                };
+                if !consistent {
+                    *state = CoverageState::Partial;
+                    self.diagnostics.push(CollectorDiagnostic {
+                        code: CollectorDiagnosticCode::InvalidObservation,
+                        source_item: Some(requested.item.clone()),
+                    });
+                }
+            }
         }
         let completed = self
             .coverage
