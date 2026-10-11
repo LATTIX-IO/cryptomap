@@ -129,6 +129,24 @@ fn malicious_lock_and_manifest_disagreements_never_infer_graph() {
 }
 
 #[test]
+fn contradictory_top_level_root_and_installed_package_identity_are_rejected() {
+    let top_level = LOCK.replacen(
+        "\"lockfileVersion\":3",
+        "\"name\":\"other-app\",\"version\":\"1.0.0\",\"lockfileVersion\":3",
+        1,
+    );
+    let aliased = LOCK.replace(
+        "\"version\":\"1.2.3\",\"resolved\"",
+        "\"name\":\"different-package\",\"version\":\"1.2.3\",\"resolved\"",
+    );
+    for lock in [top_level, aliased] {
+        let fixture = Fixture::new(MANIFEST, &lock);
+        let scope = fixture.scope(true, true, 4096);
+        assert_eq!(prove(&scope), Err(NpmReconciliationError::UnresolvedDependency));
+    }
+}
+
+#[test]
 fn bounded_source_read_and_aggregate_budget_both_enforced() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let too_small = fixture.scope(true, true, 8);
