@@ -215,3 +215,47 @@ fn serialize_rejects_undeclared_fields_and_invalid_source_positions() {
     invalid.source.line = Some(0);
     assert!(invalid.validate(&RawLimits::default()).is_err());
 }
+
+#[test]
+fn source_budget_is_independent_of_observation_budget() {
+    let mut req = request();
+    req.limits.sources = 3;
+    req.limits.observations = 1;
+    let mut sink = CollectionSink::new(descriptor(), req).unwrap();
+    sink.emit(observation("Cargo.lock")).unwrap();
+    assert!(sink.emit({
+        let mut second = observation("package-lock.json");
+        second.event_id = "source-2".into();
+        second
+    }).is_err());
+    assert_eq!(sink.finish().observations.len(), 1);
+}
+#[test]
+fn coverage_cannot_claim_success_against_actual_facts() {
+    let mut missed = CollectionSink::new(descriptor(), request()).unwrap();
+    missed.cover("Cargo.lock", CoverageState::InspectedObserved).unwrap();
+    let outcome = missed.finish();
+    assert_eq!(outcome.coverage["Cargo.lock"], CoverageState::Partial);
+    assert_eq!(outcome.status, CollectionStatus::Failed);
+    assert_eq!(outcome.diagnostics.len(), 1);
+
+    let mut false_absence = CollectionSink::new(descriptor(), request()).unwrap();
+    false_absence.emit(observation("Cargo.lock")).unwrap();
+    false_absence.cover("Cargo.lock", CoverageState::InspectedNoObservation).unwrap();
+    let outcome = false_absence.finish();
+    assert_eq!(outcome.coverage["Cargo.lock"], CoverageState::Partial);
+    assert_eq!(outcome.status, CollectionStatus::Failed);
+    assert_eq!(outcome.diagnostics.len(), 1);
+}
+#[test]
+fn field_limits_prevent_serialization_of_untrusted_values() {
+    let mut bad = observation("Cargo.lock");
+    bad.fact = RawFactKind::Configuration {
+        property: "config:setting".into(),
+        value: "x".repeat(2_000_000),
+    };
+    assert!(matches!(bad.validate(&RawLimits::default()), Err(InventoryError::InvalidMetadata)));
+    let mut marker = observation("Cargo.lock");
+    marker.attributes.insert("config:token".into(), "-----BEGIN PRIVATE KEY-----".into());
+    assert!(matches!(marker.validate(&RawLimits::default()), Err(InventoryError::ProhibitedMaterial)));
+}
