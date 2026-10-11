@@ -519,6 +519,23 @@ pub struct InventorySnapshot {
     #[serde(default)]
     pub coverage_records: Vec<CoverageRecord>,
 }
+/// Verify an observation instant against the run's trusted interval.
+///
+/// This check is intentionally repeated at snapshot finalization: imported
+/// evidence has not necessarily passed the live collection pipeline.
+fn validate_observation_window(
+    run: &CollectionRun,
+    observed_at: &str,
+) -> Result<(), InventoryError> {
+    let began = validation::utc_seconds(&run.started_at)?;
+    let ended = validation::utc_seconds(&run.ended_at)?;
+    let observed = validation::utc_seconds(observed_at)?;
+    if began > ended || observed < began || observed > ended {
+        return Err(InventoryError::InvalidTimestamp);
+    }
+    Ok(())
+}
+
 /// Mutable accumulator; finalize validates and computes canonical snapshot identity.
 #[derive(Debug, Default)]
 pub struct InventoryBuilder {
@@ -657,12 +674,7 @@ impl InventoryBuilder {
             // reconstructed canonical snapshots: recomputing a digest must
             // never launder out-of-window evidence into a verified snapshot.
             // Compare UTC instants, not timezone-formatted strings.
-            let began = validation::utc_seconds(&run.started_at)?;
-            let ended = validation::utc_seconds(&run.ended_at)?;
-            let observed = validation::utc_seconds(&evidence.observed_at)?;
-            if began > ended || observed < began || observed > ended {
-                return Err(InventoryError::InvalidTimestamp);
-            }
+            validate_observation_window(run, &evidence.observed_at)?;
         }
         for run in self.runs.values() {
             run.validate()?;
@@ -1006,5 +1018,55 @@ impl InventorySnapshot {
         self.observations
             .values()
             .filter(move |obs| &obs.asset == id)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod provenance_window_unit_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn run() -> CollectionRun {
+        CollectionRun {
+            id: CollectionRunId::new("unit-run").unwrap(),
+            collector: CollectorId::new("unit-collector").unwrap(),
+            collector_version: "1".into(),
+            scope: CollectionScopeId::new("unit-tenant").unwrap(),
+            requested: BTreeSet::from(["unit-source".into()]),
+            started_at: "2026-10-11T11:59:00Z".into(),
+            ended_at: "2026-10-11T12:01:00Z".into(),
+            completeness: RunCompleteness::Partial,
+        }
+    }
+
+    #[test]
+    fn inclusive_utc_window_and_timezone_offsets() {
+        for time in [
+            "2026-10-11T11:59:00Z",
+            "2026-10-11T12:01:00Z",
+            "2026-10-11T13:00:00+01:00",
+            "2026-10-11T08:00:00-04:00",
+        ] {
+            assert!(validate_observation_window(&run(), time).is_ok());
+        }
+    }
+
+    #[test]
+    fn invalid_intervals_and_untrusted_future_or_past_times_fail() {
+        for time in [
+            "2026-10-11T11:58:59Z",
+            "2026-10-11T12:01:01Z",
+            "2026-10-11T13:01:01+01:00",
+            "malformed-source-clock",
+        ] {
+            assert!(matches!(
+                validate_observation_window(&run(), time),
+                Err(InventoryError::InvalidTimestamp)
+            ));
+        }
+        let mut inverted = run();
+        inverted.started_at = "2026-10-11T12:02:00Z".into();
+        assert!(validate_observation_window(&inverted, "2026-10-11T12:01:00Z").is_err());
     }
 }
