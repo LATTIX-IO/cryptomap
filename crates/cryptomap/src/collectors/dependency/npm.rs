@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 const COLLECTOR_ID: &str = "cryptomap:npm-lockfile";
-const COLLECTOR_VERSION: &str = "0.1.0";
+const COLLECTOR_VERSION: &str = "0.2.0";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct LockedPackage {
