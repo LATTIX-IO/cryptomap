@@ -92,7 +92,9 @@ struct Fixture {
 impl Fixture {
     fn new(run: &str) -> Self {
         let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-time").unwrap());
-        scope.grant_logical(RawSourceKind::Telemetry, &source().item).unwrap();
+        scope
+            .grant_logical(RawSourceKind::Telemetry, &source().item)
+            .unwrap();
         Self {
             scope,
             identity: IdentityContext::new("tenant-time").unwrap(),
@@ -129,7 +131,8 @@ fn boundary_observations_and_timezone_equivalent_instants_are_accepted() {
         let result = normalize(
             fixture.input("2026-10-11T11:59:00Z", "2026-10-11T12:01:00Z"),
             outcome("run-a", vec![observation("event-a", "run-a", observed_at)]),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(result.assets.len(), 1);
         assert_eq!(result.evidence.len(), 1);
         result.verify(InventoryLimits::default()).unwrap();
@@ -145,8 +148,12 @@ fn timestamps_before_start_and_after_end_fail_closed_without_snapshot() {
     ] {
         let err = normalize(
             fixture.input("2026-10-11T11:59:00Z", "2026-10-11T12:01:00Z"),
-            outcome("run-a", vec![observation("private:customer-event", "run-a", when)]),
-        ).unwrap_err();
+            outcome(
+                "run-a",
+                vec![observation("private:customer-event", "run-a", when)],
+            ),
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             PipelineError::Inventory(InventoryError::InvalidTimestamp)
@@ -174,15 +181,17 @@ fn batch_rejects_one_temporally_forged_run_atomically() {
     let b = Fixture::new("run-b");
     let valid = BatchRun {
         input: a.input("2026-10-11T11:59:00Z", "2026-10-11T12:01:00Z"),
-        outcome: outcome("run-a", vec![observation(
-            "valid", "run-a", "2026-10-11T12:00:00Z"
-        )]),
+        outcome: outcome(
+            "run-a",
+            vec![observation("valid", "run-a", "2026-10-11T12:00:00Z")],
+        ),
     };
     let forged = BatchRun {
         input: b.input("2026-10-11T11:59:00Z", "2026-10-11T12:01:00Z"),
-        outcome: outcome("run-b", vec![observation(
-            "forged", "run-b", "2026-10-11T12:05:00Z"
-        )]),
+        outcome: outcome(
+            "run-b",
+            vec![observation("forged", "run-b", "2026-10-11T12:05:00Z")],
+        ),
     };
     assert!(matches!(
         normalize_batch(vec![valid, forged], BatchLimits::default()),
@@ -207,7 +216,10 @@ fn sink_seals_every_terminal_coverage_state_against_late_facts() {
         };
         let mut sink = CollectionSink::new(descriptor(), request).unwrap();
         let prior = observation("early", "run-a", "2026-10-11T12:00:00Z");
-        if matches!(state, CoverageState::InspectedObserved | CoverageState::Partial) {
+        if matches!(
+            state,
+            CoverageState::InspectedObserved | CoverageState::Partial
+        ) {
             sink.emit(prior.clone()).unwrap();
         }
         sink.cover(&source().item, state).unwrap();
@@ -231,7 +243,9 @@ struct LateCollector {
     calls: AtomicUsize,
 }
 impl Collector for LateCollector {
-    fn descriptor(&self) -> CollectorDescriptor { descriptor() }
+    fn descriptor(&self) -> CollectorDescriptor {
+        descriptor()
+    }
     fn collect(
         &self,
         request: &CollectionRequest,
@@ -239,16 +253,26 @@ impl Collector for LateCollector {
         _: &CancellationToken,
     ) -> Result<(), InventoryError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        sink.emit(observation("before", request.run.as_str(), "2026-10-11T12:00:00Z"))?;
+        sink.emit(observation(
+            "before",
+            request.run.as_str(),
+            "2026-10-11T12:00:00Z",
+        ))?;
         sink.cover(&source().item, CoverageState::InspectedObserved)?;
-        sink.emit(observation("after", request.run.as_str(), "2026-10-11T12:00:01Z"))?;
+        sink.emit(observation(
+            "after",
+            request.run.as_str(),
+            "2026-10-11T12:00:01Z",
+        ))?;
         Ok(())
     }
 }
 #[test]
 fn late_third_party_emission_cannot_be_canonicalized() {
     let fixture = Fixture::new("run-a");
-    let plugin = LateCollector { calls: AtomicUsize::new(0) };
+    let plugin = LateCollector {
+        calls: AtomicUsize::new(0),
+    };
     let invocation = ScopedInvocation {
         collector: &plugin,
         input: fixture.input("2026-10-11T11:59:00Z", "2026-10-11T12:01:00Z"),
