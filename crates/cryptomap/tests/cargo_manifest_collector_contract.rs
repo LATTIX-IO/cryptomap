@@ -110,6 +110,8 @@ fn root_and_exact_direct_pin_have_independent_hashed_manifest_evidence() {
 fn invalid_and_unsupported_manifests_fail_without_false_absence() {
     for bad in [
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"0.17\"\n",
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=not-a-version\"\n",
+        "[package]\nname = \"app\"\nversion = \"bad-version\"\n[dependencies]\nring = \"=0.17.12\"\n",
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=0.17.12\"\nring = \"=0.17.12\"\n",
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = { version = \"0.17\" }\n",
         "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[target.'cfg(windows)'.dependencies]\nring = \"=0.17.12\"\n",
