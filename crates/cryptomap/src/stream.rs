@@ -237,3 +237,45 @@ impl StreamIntake {
         Ok(self.sink.finish())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CollectionRunId, raw::RawLimits};
+
+    fn request() -> CollectionRequest {
+        CollectionRequest {
+            run: CollectionRunId::new("unit-run").unwrap(),
+            sources: vec![],
+            limits: RawLimits::default(),
+            options: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn window_limits_reject_unbounded_or_disabled_configuration() {
+        let request = request();
+        assert!(WindowLimits { records: 0, bytes: 1 }.validate(&request).is_err());
+        assert!(WindowLimits { records: 1, bytes: 0 }.validate(&request).is_err());
+        assert!(WindowLimits {
+            records: request.limits.observations + 1, bytes: 1,
+        }.validate(&request).is_err());
+        assert!(WindowLimits {
+            records: 1, bytes: request.limits.total_bytes + 1,
+        }.validate(&request).is_err());
+        assert!(WindowLimits {
+            records: 1, bytes: 4096,
+        }.validate(&request).is_ok());
+    }
+
+    #[test]
+    fn user_facing_errors_do_not_echo_sensitive_untrusted_identifiers() {
+        let error = StreamError::Inventory(InventoryError::DuplicateObservation(
+            "sensitive-source-identifier".into(),
+        ));
+        assert_eq!(error.to_string(), "stream contract validation failed");
+        assert!(!error.to_string().contains("sensitive-source-identifier"));
+        assert_eq!(StreamError::Backpressure.to_string(), "stream window full");
+        assert_eq!(StreamError::Cancelled.to_string(), "collection cancelled");
+    }
+}
