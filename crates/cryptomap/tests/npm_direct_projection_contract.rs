@@ -85,6 +85,12 @@ fn request(run: &str, source: &str) -> CollectionRequest {
     }
 }
 fn collect_both(scope: &CollectionScope, lock_item: &str) -> InventorySnapshot {
+    collect_both_with_root(scope, lock_item, true)
+}
+
+fn collect_both_with_root(
+    scope: &CollectionScope, lock_item: &str, retain_real_root: bool,
+) -> InventorySnapshot {
     let lock = NpmLockfileCollector::new(scope, "2026-10-11T12:00:00Z");
     let manifest = NpmManifestCollector::new(scope, "2026-10-11T12:00:00Z");
     let lock_descriptor = lock.descriptor();
@@ -96,8 +102,16 @@ fn collect_both(scope: &CollectionScope, lock_item: &str) -> InventorySnapshot {
     let lock_sources = requested(lock_item);
     let manifest_sources = requested("npm:manifest");
     let cancel = CancellationToken::default();
-    let lock_outcome =
+    let mut lock_outcome =
         collect_scoped(scope, &lock, request("run-npm-lock", lock_item), &cancel).unwrap();
+    if !retain_real_root {
+        // Simulate legacy/tampered collector output: a matching installed app
+        // record must not substitute for the true package-lock root event.
+        lock_outcome.observations.retain(|observation| {
+            observation.attributes.get("npm:lockfile-path").map(String::as_str)
+                != Some("npm:root")
+        });
+    }
     let manifest_outcome = collect_scoped(
         scope,
         &manifest,
@@ -212,6 +226,27 @@ fn npm_two_source_edge_is_deterministic_and_persistently_evidence_backed() {
         )
         .unwrap(),
         projected
+    );
+}
+
+#[test]
+fn same_name_installed_package_cannot_replace_real_lock_root_attestation() {
+    let spoofed = LOCK.replace(
+        "\"node_modules/@scope/ring\":",
+        "\"node_modules/app\":{\"version\":\"1.0.0\"},\"node_modules/@scope/ring\":",
+    );
+    assert_ne!(spoofed, LOCK);
+    let fixture = Fixture::new(MANIFEST, &spoofed);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let real = collect_both(&scope, "npm:lock");
+    assert_eq!(project(&real, &scope).unwrap().relationships.len(), 1);
+    let missing_real_root = collect_both_with_root(&scope, "npm:lock", false);
+    missing_real_root
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
+    assert_eq!(
+        project(&missing_real_root, &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
     );
 }
 
