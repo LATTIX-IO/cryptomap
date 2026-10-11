@@ -121,3 +121,33 @@ pub fn collect_normalized_batch(
     }
     normalize_batch(normalized_inputs, limits)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scope::ScopeError;
+
+    #[test]
+    fn empty_batch_fails_bounded_preflight() {
+        assert!(matches!(
+            collect_normalized_batch(
+                Vec::new(),
+                BatchLimits::default(),
+                &CancellationToken::default()
+            ),
+            Err(PipelineError::Inventory(InventoryError::LimitExceeded(
+                "batch runs"
+            )))
+        ));
+    }
+
+    #[test]
+    fn nested_inventory_error_never_exposes_untrusted_event_identity() {
+        let event = "private:customer:record-id";
+        let error = PipelineError::Scope(ScopeError::Collection(
+            InventoryError::DuplicateObservation(event.into()),
+        ));
+        assert!(!format!("{error:?}").contains(event));
+        assert!(!error.to_string().contains(event));
+    }
+}
