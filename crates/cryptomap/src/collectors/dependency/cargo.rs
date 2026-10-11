@@ -120,7 +120,11 @@ pub(super) fn parse_lock(
                 return Err(ResourceLimit);
             }
             let dependency = quoted(entry.trim(), limits.field_bytes)?.to_owned();
-            current.as_mut().ok_or(MalformedSource)?.dependencies.push(dependency);
+            current
+                .as_mut()
+                .ok_or(MalformedSource)?
+                .dependencies
+                .push(dependency);
             continue;
         }
         if line == "[[package]]" {
