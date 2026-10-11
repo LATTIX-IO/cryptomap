@@ -511,6 +511,24 @@ fn map_fact(
     Ok(asset)
 }
 
+// Two distinct source timestamps may describe the same instant with
+// different RFC3339 timezone offsets; verify numeric time, never string order.
+fn host_window(start: &str, end: &str) -> Result<(i64, i64), InventoryError> {
+    let start = crate::validation::utc_seconds(start)?;
+    let end = crate::validation::utc_seconds(end)?;
+    if start > end {
+        return Err(InventoryError::InvalidTimestamp);
+    }
+    Ok((start, end))
+}
+fn checked_observation_time(time: &str, start: i64, end: i64) -> Result<(), InventoryError> {
+    let observed = crate::validation::utc_seconds(time)?;
+    if observed < start || observed > end {
+        return Err(InventoryError::InvalidTimestamp);
+    }
+    Ok(())
+}
+
 /// Validate a collector outcome, resolve supported facts and produce a canonical snapshot.
 ///
 /// Inputs and replay identity are checked before insertion. No unapproved path
@@ -531,11 +549,7 @@ pub fn normalize(
     // observations placed outside this bounded interval before mapping,
     // canonical identity construction or evidence storage. Compare instants
     // rather than lexical RFC 3339 text so equivalent timezone offsets work.
-    let start = crate::validation::utc_seconds(input.started_at)?;
-    let end = crate::validation::utc_seconds(input.ended_at)?;
-    if start > end {
-        return Err(InventoryError::InvalidTimestamp.into());
-    }
+    let (start, end) = host_window(input.started_at, input.ended_at)?;
     let request = CollectionRequest {
         run: input.expected_run.clone(),
         sources: input.sources.to_vec(),
@@ -568,10 +582,7 @@ pub fn normalize(
     let mut total_bytes = 0usize;
     for raw in outcome.observations {
         let bytes = raw.validate(&input.raw_limits)?;
-        let observed = crate::validation::utc_seconds(&raw.observed_at)?;
-        if observed < start || observed > end {
-            return Err(InventoryError::InvalidTimestamp.into());
-        }
+        checked_observation_time(&raw.observed_at, start, end)?;
         total_bytes = total_bytes
             .checked_add(bytes)
             .ok_or(InventoryError::LimitExceeded("raw bytes overflow"))?;
@@ -684,4 +695,33 @@ pub fn normalize(
     // are addressable. Never synthesize edges from co-located or similar values.
     crate::correlation::link_explicit(&mut builder, &records, &mapped_assets, &mapped_evidence)?;
     Ok(builder.finalize(input.inventory_limits)?)
+}
+
+#[cfg(test)]
+mod temporal_unit_tests {
+    use super::*;
+
+    #[test]
+    fn strict_host_window_rejects_inverted_and_malformed_bounds() {
+        assert!(host_window("2026-10-11T12:00:01Z", "2026-10-11T12:00:00Z").is_err());
+        assert!(host_window("not-a-time", "2026-10-11T12:00:00Z").is_err());
+        assert!(host_window("2026-10-11T12:00:00Z", "bad").is_err());
+        assert!(host_window("2026-10-11T12:00:00Z", "2026-10-11T12:00:00Z").is_ok());
+    }
+
+    #[test]
+    fn observed_time_uses_utc_instant_and_inclusive_boundaries() {
+        // Verified second values for 11:59-12:01 UTC without trusting
+        // lexical timestamp ordering or host-local timezone.
+        let start = crate::validation::utc_seconds("2026-10-11T11:59:00Z");
+        let end = crate::validation::utc_seconds("2026-10-11T12:01:00Z");
+        let (Ok(start), Ok(end)) = (start, end) else {
+            panic!("unit fixture timestamps must be valid");
+        };
+        assert!(checked_observation_time("2026-10-11T11:59:00Z", start, end).is_ok());
+        assert!(checked_observation_time("2026-10-11T12:01:00Z", start, end).is_ok());
+        assert!(checked_observation_time("2026-10-11T13:00:00+01:00", start, end).is_ok());
+        assert!(checked_observation_time("2026-10-11T11:58:59Z", start, end).is_err());
+        assert!(checked_observation_time("2026-10-11T12:01:01Z", start, end).is_err());
+    }
 }
