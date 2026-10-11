@@ -98,6 +98,21 @@ fn file_capability_rejects_external_and_internal_symlinks() {
     assert!(FileRoot::open(fixture.root.join("root-link")).is_err());
 }
 
+#[cfg(unix)]
+#[test]
+fn post_grant_symlink_swap_is_rejected_at_open_time() {
+    use std::os::unix::fs::symlink;
+    let fixture = Fixture::new();
+    let root = FileRoot::open(fixture.dir()).unwrap();
+    let authorized = root.authorize("Cargo.lock", 1024).unwrap();
+    fs::rename(fixture.dir().join("Cargo.lock"), fixture.dir().join("original.lock")).unwrap();
+    symlink(fixture.root.join("secret.txt"), fixture.dir().join("Cargo.lock")).unwrap();
+    assert!(matches!(
+        authorized.open_read(),
+        Err(ScopeError::OutOfScope) | Err(ScopeError::Io)
+    ));
+}
+
 #[cfg(windows)]
 #[test]
 fn file_capability_rejects_windows_symlink_when_allowed_by_host() {
