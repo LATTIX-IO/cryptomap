@@ -167,7 +167,12 @@ impl Collector for MockCollector {
             Behavior::Fatal => return Err(InventoryError::InvalidMetadata),
             Behavior::ConflictingReplay => {
                 let source = sources[0];
-                let original = self.fact(request, source, "private:raw:event-identifier", certificate());
+                let original = self.fact(
+                    request,
+                    source,
+                    "private:raw:event-identifier",
+                    certificate(),
+                );
                 let mut changed = original.clone();
                 changed.fact = RawFactKind::Certificate {
                     fingerprint_sha256: "cd".repeat(32),
@@ -485,8 +490,12 @@ fn public_pipeline_and_scope_debug_messages_redact_untrusted_event_ids() {
     let err = collect_normalized(
         fixture.invocation(&collector),
         &CancellationToken::default(),
-    ).unwrap_err();
-    assert!(matches!(err, PipelineError::Scope(ScopeError::Collection(_))));
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        PipelineError::Scope(ScopeError::Collection(_))
+    ));
     assert!(!format!("{err:?}").contains("private:raw:event-identifier"));
     assert!(!err.to_string().contains("private:raw:event-identifier"));
 }
@@ -523,13 +532,17 @@ fn pre_cancelled_batch_never_invokes_any_collector() {
         vec![first.invocation(&a), second.invocation(&b)],
         BatchLimits::default(),
         &cancel,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(a.count(), 0);
     assert_eq!(b.count(), 0);
     assert!(snapshot.assets.is_empty());
     assert_eq!(snapshot.coverage_records.len(), 2);
-    assert!(snapshot.coverage_records.iter().all(|r| {
-        r.state == CoverageState::NotInspected
-    }));
+    assert!(
+        snapshot
+            .coverage_records
+            .iter()
+            .all(|r| { r.state == CoverageState::NotInspected })
+    );
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
