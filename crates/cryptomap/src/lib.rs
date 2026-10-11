@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod batch;
 pub mod collector;
 mod correlation;
 pub mod coverage;
