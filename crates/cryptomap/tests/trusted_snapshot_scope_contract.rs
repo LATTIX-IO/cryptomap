@@ -26,7 +26,8 @@ fn snapshot(scope: &str) -> InventorySnapshot {
 fn authorized_scope_accepts_deterministic_multiple_runs() {
     let snap = snapshot("tenant-a");
     let expected = CollectionScopeId::new("tenant-a").unwrap();
-    snap.verify_for_scope(&expected, InventoryLimits::default()).unwrap();
+    snap.verify_for_scope(&expected, InventoryLimits::default())
+        .unwrap();
     let json = serde_json::to_string(&snap).unwrap();
     assert_eq!(
         InventorySnapshot::from_json_verified_for_scope(
@@ -90,7 +91,11 @@ fn strict_json_and_byte_limits_precede_authorized_import() {
         InventorySnapshot::from_json_verified_for_scope(&json, &expected, limits),
         Err(InventoryError::LimitExceeded("snapshot bytes"))
     ));
-    let duplicate = json.replacen("\"schema_version\":2", "\"schema_version\":2,\"schema_version\":2", 1);
+    let duplicate = json.replacen(
+        "\"schema_version\":2",
+        "\"schema_version\":2,\"schema_version\":2",
+        1,
+    );
     assert_ne!(duplicate, json);
     assert!(InventorySnapshot::from_json_verified_for_scope(
         &duplicate, &expected, InventoryLimits::default()
