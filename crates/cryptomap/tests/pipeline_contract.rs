@@ -59,7 +59,10 @@ fn raw(event: &str, name: &str) -> RawObservation {
         inference_rule: None,
         source_sha256: None,
         attributes: BTreeMap::from([
-            ("cryptomap:algorithm-namespace".into(), "tls_cipher_suite".into()),
+            (
+                "cryptomap:algorithm-namespace".into(),
+                "tls_cipher_suite".into(),
+            ),
             ("cryptomap:algorithm-kind".into(), "cipher_suite".into()),
         ]),
     }
@@ -96,7 +99,9 @@ fn normalize_fixture(
 }
 fn setup() -> (CollectionScope, IdentityContext, Registry) {
     let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-1").unwrap());
-    scope.grant_logical(RawSourceKind::Telemetry, "stream:test").unwrap();
+    scope
+        .grant_logical(RawSourceKind::Telemetry, "stream:test")
+        .unwrap();
     (
         scope,
         IdentityContext::new("tenant-1").unwrap(),
@@ -108,18 +113,30 @@ fn setup() -> (CollectionScope, IdentityContext, Registry) {
 fn checked_algorithm_result_creates_canonical_evidence_and_coverage() {
     let (scope, identity, registry) = setup();
     let snapshot = normalize_fixture(
-        &scope, &identity, &registry,
+        &scope,
+        &identity,
+        &registry,
         outcome(vec![raw("event-1", "0x1301")]),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(snapshot.assets.len(), 1);
     assert_eq!(snapshot.evidence.len(), 1);
-    assert!(snapshot.observations.values().any(|o|
-        o.property == "algorithm:normalized" && o.value == "TLS_AES_128_GCM_SHA256"
-    ));
-    assert!(snapshot.observations.values().any(|o|
-        o.property == "algorithm:raw-identifier" && o.value == "0x1301"
-    ));
-    assert_eq!(snapshot.coverage.get("stream:test"), Some(&CoverageState::InspectedObserved));
+    assert!(
+        snapshot
+            .observations
+            .values()
+            .any(|o| o.property == "algorithm:normalized" && o.value == "TLS_AES_128_GCM_SHA256")
+    );
+    assert!(
+        snapshot
+            .observations
+            .values()
+            .any(|o| o.property == "algorithm:raw-identifier" && o.value == "0x1301")
+    );
+    assert_eq!(
+        snapshot.coverage.get("stream:test"),
+        Some(&CoverageState::InspectedObserved)
+    );
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
 
@@ -128,7 +145,13 @@ fn reversed_raw_record_order_produces_identical_snapshot_digest() {
     let (scope, identity, registry) = setup();
     let first = raw("event-1", "0x1301");
     let second = raw("event-2", "0x1302");
-    let a = normalize_fixture(&scope, &identity, &registry, outcome(vec![first.clone(), second.clone()])).unwrap();
+    let a = normalize_fixture(
+        &scope,
+        &identity,
+        &registry,
+        outcome(vec![first.clone(), second.clone()]),
+    )
+    .unwrap();
     let b = normalize_fixture(&scope, &identity, &registry, outcome(vec![second, first])).unwrap();
     assert_eq!(a.id, b.id);
     assert_eq!(a, b);
@@ -137,11 +160,24 @@ fn reversed_raw_record_order_produces_identical_snapshot_digest() {
 #[test]
 fn unknown_identifier_is_not_coerced_to_a_known_profile() {
     let (scope, identity, registry) = setup();
-    let snap = normalize_fixture(&scope, &identity, &registry, outcome(vec![raw("x", "0xFFFF")])).unwrap();
-    assert!(snap.observations.values().any(|o|
-        o.property == "algorithm:normalized" && o.value.contains("unmapped:")
-    ));
-    assert!(!snap.observations.values().any(|o| o.value == "TLS_AES_128_GCM_SHA256"));
+    let snap = normalize_fixture(
+        &scope,
+        &identity,
+        &registry,
+        outcome(vec![raw("x", "0xFFFF")]),
+    )
+    .unwrap();
+    assert!(
+        snap.observations
+            .values()
+            .any(|o| o.property == "algorithm:normalized" && o.value.contains("unmapped:"))
+    );
+    assert!(
+        !snap
+            .observations
+            .values()
+            .any(|o| o.value == "TLS_AES_128_GCM_SHA256")
+    );
 }
 
 #[test]
@@ -154,7 +190,9 @@ fn unauthorized_source_and_inconsistent_coverage_fail_closed() {
         Err(PipelineError::InvalidOutcome)
     ));
     let mut inconsistent = outcome(vec![raw("event-1", "0x1301")]);
-    inconsistent.coverage.insert("stream:test".into(), CoverageState::InspectedNoObservation);
+    inconsistent
+        .coverage
+        .insert("stream:test".into(), CoverageState::InspectedNoObservation);
     assert!(matches!(
         normalize_fixture(&scope, &identity, &registry, inconsistent),
         Err(PipelineError::InvalidOutcome)
@@ -167,7 +205,9 @@ fn conflicting_replay_and_unsupported_facts_are_not_silently_ignored() {
     let conflicting = outcome(vec![raw("duplicate", "0x1301"), raw("duplicate", "0x1302")]);
     assert!(matches!(
         normalize_fixture(&scope, &identity, &registry, conflicting),
-        Err(PipelineError::Inventory(InventoryError::DuplicateObservation(_)))
+        Err(PipelineError::Inventory(
+            InventoryError::DuplicateObservation(_)
+        ))
     ));
     let mut unsupported = raw("event-config", "0x1301");
     unsupported.fact = RawFactKind::Configuration {
@@ -185,7 +225,12 @@ fn identity_context_cannot_cross_an_authorized_scope() {
     let (scope, _, registry) = setup();
     let foreign = IdentityContext::new("different-tenant").unwrap();
     assert!(matches!(
-        normalize_fixture(&scope, &foreign, &registry, outcome(vec![raw("one", "0x1301")])),
+        normalize_fixture(
+            &scope,
+            &foreign,
+            &registry,
+            outcome(vec![raw("one", "0x1301")])
+        ),
         Err(PipelineError::InvalidOutcome)
     ));
 }
