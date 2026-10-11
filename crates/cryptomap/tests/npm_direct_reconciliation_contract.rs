@@ -14,10 +14,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
-const MANIFEST: &str =
-    r#"{"name":"app","version":"1.0.0","dependencies":{"@scope/ring":"1.2.3"}}"#;
-const LOCK: &str =
-    r#"{"lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0","dependencies":{"@scope/ring":"1.2.3"}},"node_modules/@scope/ring":{"version":"1.2.3","resolved":"https://user:token@registry.example.invalid/pkg.tgz"}}}"#;
+const MANIFEST: &str = r#"{"name":"app","version":"1.0.0","dependencies":{"@scope/ring":"1.2.3"}}"#;
+const LOCK: &str = r#"{"lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0","dependencies":{"@scope/ring":"1.2.3"}},"node_modules/@scope/ring":{"version":"1.2.3","resolved":"https://user:token@registry.example.invalid/pkg.tgz"}}}"#;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -63,12 +61,7 @@ impl Drop for Fixture {
     }
 }
 fn prove(scope: &CollectionScope) -> Result<NpmDirectReconciliation, NpmReconciliationError> {
-    reconcile_npm_direct(
-        scope,
-        "npm:manifest",
-        "npm:lock",
-        RawLimits::default(),
-    )
+    reconcile_npm_direct(scope, "npm:manifest", "npm:lock", RawLimits::default())
 }
 
 #[test]
@@ -94,25 +87,18 @@ fn missing_file_grants_and_reused_grant_identifier_fail_closed() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     for (manifest, lock) in [(false, false), (false, true), (true, false)] {
         let scope = fixture.scope(manifest, lock, 4096);
-        assert_eq!(prove(&scope), Err(NpmReconciliationError::UnauthorizedSource));
+        assert_eq!(
+            prove(&scope),
+            Err(NpmReconciliationError::UnauthorizedSource)
+        );
     }
     let scope = fixture.scope(true, true, 4096);
     assert_eq!(
-        reconcile_npm_direct(
-            &scope,
-            "npm:manifest",
-            "npm:manifest",
-            RawLimits::default(),
-        ),
+        reconcile_npm_direct(&scope, "npm:manifest", "npm:manifest", RawLimits::default(),),
         Err(NpmReconciliationError::InvalidSource)
     );
     assert_eq!(
-        reconcile_npm_direct(
-            &scope,
-            "../package.json",
-            "npm:lock",
-            RawLimits::default(),
-        ),
+        reconcile_npm_direct(&scope, "../package.json", "npm:lock", RawLimits::default(),),
         Err(NpmReconciliationError::UnauthorizedSource)
     );
 }
@@ -122,7 +108,10 @@ fn malicious_lock_and_manifest_disagreements_never_infer_graph() {
     for lock in [
         LOCK.replace("1.2.3\"},\"node_modules", "2.0.0\"},\"node_modules"),
         LOCK.replace("node_modules/@scope/ring", "packages/ring"),
-        LOCK.replace("\"version\":\"1.2.3\",\"resolved\"", "\"version\":\"1.2.4\",\"resolved\""),
+        LOCK.replace(
+            "\"version\":\"1.2.3\",\"resolved\"",
+            "\"version\":\"1.2.4\",\"resolved\"",
+        ),
         LOCK.replace("\"resolved\":", "\"link\":true,\"resolved\":"),
         LOCK.replace("\"lockfileVersion\":3", "\"lockfileVersion\":1"),
         LOCK.replace("\"version\":\"1.0.0\"", "\"version\":\"2.0.0\""),
