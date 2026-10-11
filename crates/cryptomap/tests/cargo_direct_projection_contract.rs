@@ -149,7 +149,6 @@ fn collected(scope: &CollectionScope, source_id: &str) -> InventorySnapshot {
     .unwrap()
 }
 
-
 fn collected_lock_only(scope: &CollectionScope, source_id: &str) -> InventorySnapshot {
     let collector = CargoLockfileCollector::new(scope, "2026-10-11T12:00:00Z");
     let descriptor = collector.descriptor();
@@ -219,10 +218,14 @@ fn direct_edge_uses_existing_root_and_target_evidence_and_is_replay_stable() {
         runs.insert(evidence.run.as_str());
         assert_eq!(evidence.source_sha256.as_ref().map(String::len), Some(64));
     }
-    assert_eq!(sources, std::collections::BTreeSet::from([
-        "Dependency:cargo:lock", "Dependency:cargo:manifest",
-    ]));
-    assert_eq!(runs, std::collections::BTreeSet::from(["run-lock", "run-manifest"]));
+    assert_eq!(
+        sources,
+        std::collections::BTreeSet::from(["Dependency:cargo:lock", "Dependency:cargo:manifest",])
+    );
+    assert_eq!(
+        runs,
+        std::collections::BTreeSet::from(["run-lock", "run-manifest"])
+    );
     assert_ne!(projected.id, snapshot.id);
     projected
         .verify_for_scope(scope.id(), InventoryLimits::default())
