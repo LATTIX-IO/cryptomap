@@ -31,7 +31,9 @@ fn evidence(run: &str, source: &str) -> Evidence {
     }
 }
 fn build(
-    run_id: &str, requested: &[&str], source: &str,
+    run_id: &str,
+    requested: &[&str],
+    source: &str,
     covered: &[(&str, CoverageState)],
 ) -> Result<InventorySnapshot, InventoryError> {
     let mut builder = InventoryBuilder::new();
@@ -49,17 +51,27 @@ fn build(
 }
 #[test]
 fn exact_authorized_typed_source_survives_verified_json_roundtrip() {
-    for kind in ["Dependency", "Certificate", "TlsEndpoint", "Source", "Telemetry"] {
+    for kind in [
+        "Dependency",
+        "Certificate",
+        "TlsEndpoint",
+        "Source",
+        "Telemetry",
+    ] {
         let src = format!("{kind}:logical:stream:item");
         let snapshot = build(
-            "run-a", &["logical:stream:item"], &src,
+            "run-a",
+            &["logical:stream:item"],
+            &src,
             &[("logical:stream:item", CoverageState::InspectedObserved)],
-        ).unwrap();
+        )
+        .unwrap();
         snapshot.verify(InventoryLimits::default()).unwrap();
         let encoded = serde_json::to_string(&snapshot).unwrap();
-        assert_eq!(snapshot, InventorySnapshot::from_json_verified(
-            &encoded, InventoryLimits::default()
-        ).unwrap());
+        assert_eq!(
+            snapshot,
+            InventorySnapshot::from_json_verified(&encoded, InventoryLimits::default()).unwrap()
+        );
     }
 }
 #[test]
@@ -71,16 +83,25 @@ fn fabricated_typed_source_outside_requested_scope_fails_closed() {
         "TlsEndpoint:ungranted",
     ] {
         assert!(matches!(
-            build("run-a", &["logical:stream:item"], forged,
-                &[("logical:stream:item", CoverageState::InspectedObserved)]),
+            build(
+                "run-a",
+                &["logical:stream:item"],
+                forged,
+                &[("logical:stream:item", CoverageState::InspectedObserved)]
+            ),
             Err(InventoryError::InvalidMetadata)
         ));
     }
 }
 #[test]
 fn legitimate_partial_source_retains_evidence_without_false_absence() {
-    let snap = build("run-a", &["logical:stream:item"], "Telemetry:logical:stream:item",
-        &[("logical:stream:item", CoverageState::Partial)]).unwrap();
+    let snap = build(
+        "run-a",
+        &["logical:stream:item"],
+        "Telemetry:logical:stream:item",
+        &[("logical:stream:item", CoverageState::Partial)],
+    )
+    .unwrap();
     assert_eq!(snap.evidence.len(), 1);
     assert_eq!(snap.coverage_records[0].state, CoverageState::Partial);
     snap.verify(InventoryLimits::default()).unwrap();
@@ -94,13 +115,22 @@ fn failed_uninspected_or_no_observation_source_cannot_sponsor_evidence() {
         CoverageState::InspectedNoObservation,
     ] {
         assert!(matches!(
-            build("run-a", &["logical:stream:item"], "Telemetry:logical:stream:item",
-                &[("logical:stream:item", state)]),
+            build(
+                "run-a",
+                &["logical:stream:item"],
+                "Telemetry:logical:stream:item",
+                &[("logical:stream:item", state)]
+            ),
             Err(InventoryError::InvalidMetadata)
         ));
     }
     assert!(matches!(
-        build("run-a", &["logical:stream:item"], "Telemetry:logical:stream:item", &[]),
+        build(
+            "run-a",
+            &["logical:stream:item"],
+            "Telemetry:logical:stream:item",
+            &[]
+        ),
         Err(InventoryError::InvalidMetadata)
     ));
 }
@@ -115,22 +145,31 @@ fn coverage_from_another_run_cannot_authorize_evidence() {
         state: CoverageState::InspectedObserved,
         reason_code: None,
     });
-    builder.add_evidence(evidence("run-a", "Telemetry:shared")).unwrap();
-    assert!(matches!(builder.finalize(InventoryLimits::default()),
-        Err(InventoryError::InvalidMetadata)));
+    builder
+        .add_evidence(evidence("run-a", "Telemetry:shared"))
+        .unwrap();
+    assert!(matches!(
+        builder.finalize(InventoryLimits::default()),
+        Err(InventoryError::InvalidMetadata)
+    ));
 }
 #[test]
 fn snapshot_tampering_with_unrequested_source_cannot_be_reverified() {
-    let original = build("run-a", &["a"], "Telemetry:a",
-        &[("a", CoverageState::InspectedObserved)]).unwrap();
+    let original = build(
+        "run-a",
+        &["a"],
+        "Telemetry:a",
+        &[("a", CoverageState::InspectedObserved)],
+    )
+    .unwrap();
     let mut tampered = original.clone();
     tampered.evidence.values_mut().next().unwrap().source = "Telemetry:foreign".into();
-    assert!(matches!(tampered.verify(InventoryLimits::default()),
-        Err(InventoryError::InvalidMetadata)));
+    assert!(matches!(
+        tampered.verify(InventoryLimits::default()),
+        Err(InventoryError::InvalidMetadata)
+    ));
     let json = serde_json::to_string(&tampered).unwrap();
-    assert!(InventorySnapshot::from_json_verified(
-        &json, InventoryLimits::default()
-    ).is_err());
+    assert!(InventorySnapshot::from_json_verified(&json, InventoryLimits::default()).is_err());
 }
 #[test]
 fn source_matching_never_borrows_similar_prefix_or_suffix() {
@@ -138,9 +177,12 @@ fn source_matching_never_borrows_similar_prefix_or_suffix() {
     // authorize similarly spelled/extended names.
     let allowed = "Telemetry:shared";
     assert!(matches!(
-        build("run-a", &[allowed], "Telemetry:shared:suffix", &[
-            (allowed, CoverageState::InspectedObserved)
-        ]),
+        build(
+            "run-a",
+            &[allowed],
+            "Telemetry:shared:suffix",
+            &[(allowed, CoverageState::InspectedObserved)]
+        ),
         Err(InventoryError::InvalidMetadata)
     ));
 }
@@ -153,10 +195,26 @@ fn unprefixed_legacy_evidence_preserves_schema_two_compatibility() {
 }
 #[test]
 fn independent_permutations_of_identical_authorized_sources_are_deterministic() {
-    let one = build("run-a", &["a","b"], "Telemetry:a",
-        &[("a",CoverageState::InspectedObserved),("b",CoverageState::Partial)]).unwrap();
-    let another = build("run-a", &["b","a"], "Telemetry:a",
-        &[("b",CoverageState::Partial),("a",CoverageState::InspectedObserved)]).unwrap();
-    assert_eq!(one,another);
-    assert_eq!(one.id,another.id);
+    let one = build(
+        "run-a",
+        &["a", "b"],
+        "Telemetry:a",
+        &[
+            ("a", CoverageState::InspectedObserved),
+            ("b", CoverageState::Partial),
+        ],
+    )
+    .unwrap();
+    let another = build(
+        "run-a",
+        &["b", "a"],
+        "Telemetry:a",
+        &[
+            ("b", CoverageState::Partial),
+            ("a", CoverageState::InspectedObserved),
+        ],
+    )
+    .unwrap();
+    assert_eq!(one, another);
+    assert_eq!(one.id, another.id);
 }
