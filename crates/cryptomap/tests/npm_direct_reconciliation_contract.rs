@@ -106,7 +106,7 @@ fn missing_file_grants_and_reused_grant_identifier_fail_closed() {
 #[test]
 fn malicious_lock_and_manifest_disagreements_never_infer_graph() {
     for lock in [
-        LOCK.replace("1.2.3\"},\"node_modules", "2.0.0\"},\"node_modules"),
+        LOCK.replace("\"dependencies\":{\"@scope/ring\":\"1.2.3\"}", "\"dependencies\":{\"@scope/ring\":\"2.0.0\"}"),
         LOCK.replace("node_modules/@scope/ring", "packages/ring"),
         LOCK.replace(
             "\"version\":\"1.2.3\",\"resolved\"",
@@ -116,6 +116,7 @@ fn malicious_lock_and_manifest_disagreements_never_infer_graph() {
         LOCK.replace("\"lockfileVersion\":3", "\"lockfileVersion\":1"),
         LOCK.replace("\"version\":\"1.0.0\"", "\"version\":\"2.0.0\""),
     ] {
+        assert_ne!(lock, LOCK, "adversarial mutation must change fixture");
         let fixture = Fixture::new(MANIFEST, &lock);
         let scope = fixture.scope(true, true, 4096);
         assert!(prove(&scope).is_err());
