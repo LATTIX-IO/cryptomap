@@ -8,7 +8,7 @@
 
 ## Reconciliation semantics
 
-- Different collector IDs can report the same source label. `CoverageRecord {run,source_item}` is authoritative. The legacy flat `coverage` map uses a domain-separated hash of the typed `(run,source)` JSON tuple, preventing overwrite or separator ambiguity; consumers should use typed coverage records.
+- Different collector IDs can report the same source label. `CoverageRecord {run,source_item}` is authoritative. Batch snapshots leave the legacy flat `coverage` map empty and populate authoritative `CoverageRecord {run,source_item}` entries only. Snapshot diffs project those typed records into stable `(administrative scope, collector, source)` identities. This prevents both same-label overwrite and false coverage changes when otherwise identical collection runs acquire fresh run IDs.
 - Independent observations from different runs retain the original evidence, source, collector, version and run IDs, even when both converge on the same canonical asset (e.g. a certificate with an identical public SHA-256 DER fingerprint).
 - Repeated supported relationships merge by canonical direction/type/endpoints and union the *asserting* evidence. No relationship is inferred across runs and a raw relation target event cannot reference another run: the existing single-run correlation gate rejects dangling references.
 - Run processing order is sorted by trusted `CollectionRunId`. All canonical maps are deterministic and the finalized snapshot ID is stable under permutation of collector completion order.
