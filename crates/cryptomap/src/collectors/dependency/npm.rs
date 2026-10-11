@@ -24,10 +24,10 @@ const COLLECTOR_ID: &str = "cryptomap:npm-lockfile";
 const COLLECTOR_VERSION: &str = "0.1.0";
 
 #[derive(Debug, PartialEq, Eq)]
-struct LockedPackage {
-    path: String,
-    name: String,
-    version: String,
+pub(super) struct LockedPackage {
+    pub(super) path: String,
+    pub(super) name: String,
+    pub(super) version: String,
 }
 
 fn package_name(path: &str) -> Option<&str> {
@@ -52,7 +52,7 @@ fn package_name(path: &str) -> Option<&str> {
     }
 }
 
-fn parse_lock(
+pub(super) fn parse_lock(
     bytes: &[u8],
     limits: RawLimits,
 ) -> Result<(Vec<LockedPackage>, bool), CollectorDiagnosticCode> {
