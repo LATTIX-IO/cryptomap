@@ -152,3 +152,71 @@ fn boundary_check_does_not_convert_failed_or_partial_coverage_to_absence() {
     assert_eq!(snapshot.evidence.len(), 1);
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
+
+#[test]
+fn fractional_evidence_outside_same_second_is_rejected_exactly() {
+    let mut builder = InventoryBuilder::new();
+    let mut r = run("fractional-run");
+    r.started_at = "2026-10-11T12:00:00.250Z".into();
+    r.ended_at = "2026-10-11T12:00:00.750Z".into();
+    builder.add_run(r).unwrap();
+    builder.add_evidence(evidence(
+        "fractional-run",
+        "2026-10-11T12:00:00.7500000000001Z",
+    )).unwrap();
+    assert!(matches!(
+        builder.finalize(InventoryLimits::default()),
+        Err(InventoryError::InvalidTimestamp)
+    ));
+}
+
+#[test]
+fn fractional_inclusive_bounds_and_timezone_offsets_are_comparable() {
+    for time in [
+        "2026-10-11T12:00:00.250Z",
+        "2026-10-11T12:00:00.25Z",
+        "2026-10-11T13:00:00.750+01:00",
+        "2026-10-11T08:00:00.500-04:00",
+    ] {
+        let mut r = run("fractional-run");
+        r.started_at = "2026-10-11T12:00:00.250Z".into();
+        r.ended_at = "2026-10-11T12:00:00.750Z".into();
+        let mut builder = InventoryBuilder::new();
+        builder.add_run(r).unwrap();
+        builder.add_evidence(evidence("fractional-run", time)).unwrap();
+        let snap = builder.finalize(InventoryLimits::default()).unwrap();
+        snap.verify(InventoryLimits::default()).unwrap();
+    }
+}
+
+#[test]
+fn inverted_fractional_run_interval_is_rejected_without_evidence() {
+    let mut invalid = run("run-empty");
+    invalid.started_at = "2026-10-11T12:00:00.900Z".into();
+    invalid.ended_at = "2026-10-11T12:00:00.100Z".into();
+    let mut builder = InventoryBuilder::new();
+    assert!(matches!(
+        builder.add_run(invalid),
+        Err(InventoryError::InvalidMetadata)
+    ));
+}
+
+#[test]
+fn snapshot_import_rejects_fractionally_forged_evidence() {
+    let original = assemble(&[("run-a", "2026-10-11T12:00:00Z")]).unwrap();
+    let mut tampered = original.clone();
+    let run = tampered.runs.values_mut().next().unwrap();
+    run.started_at = "2026-10-11T12:00:00.500Z".into();
+    run.ended_at = "2026-10-11T12:00:00.900Z".into();
+    tampered.evidence.values_mut().next().unwrap().observed_at =
+        "2026-10-11T12:00:00.400Z".into();
+    assert!(matches!(
+        tampered.verify(InventoryLimits::default()),
+        Err(InventoryError::InvalidTimestamp)
+    ));
+    let wire = serde_json::to_string(&tampered).unwrap();
+    assert!(InventorySnapshot::from_json_verified(
+        &wire,
+        InventoryLimits::default()
+    ).is_err());
+}
