@@ -139,6 +139,24 @@ fn direct_edge_uses_existing_root_and_target_evidence_and_is_replay_stable() {
         .verify_for_scope(scope.id(), InventoryLimits::default())
         .unwrap();
     assert_eq!(project(&projected, &scope).unwrap(), projected);
+    // Idempotent replay at the exact relationship count must not consume
+    // another slot or falsely report an exhausted budget.
+    let exact = InventoryLimits {
+        relationships: projected.relationships.len(),
+        ..InventoryLimits::default()
+    };
+    assert_eq!(
+        project_cargo_direct_edges(
+            &projected,
+            &scope,
+            "cargo:manifest",
+            "cargo:lock",
+            RawLimits::default(),
+            exact,
+        )
+        .unwrap(),
+        projected
+    );
     assert!(!format!("{projected:?}").contains("user:secret"));
     assert!(!format!("{projected:?}").contains("private.example.invalid"));
 }
