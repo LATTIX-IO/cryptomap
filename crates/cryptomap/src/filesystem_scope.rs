@@ -289,6 +289,7 @@ pub fn validate_relative(path: &Path) -> Result<(), ScopeError> {
 
 #[cfg(all(test, unix))]
 mod relative_root_tests {
+    #![allow(clippy::unwrap_used)]
     use super::{FileRoot, OsString};
     use cap_std::{ambient_authority, fs::Dir};
     use std::{
