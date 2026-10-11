@@ -741,9 +741,8 @@ fn opaque_key_references_preserve_case_sensitive_identity() {
         provider: "kms".into(),
         reference: "key-abc".into(),
     };
-    let snapshot = normalize_fixture(
-        &scope, &identity, &registry, outcome(vec![first, second])
-    ).unwrap();
+    let snapshot =
+        normalize_fixture(&scope, &identity, &registry, outcome(vec![first, second])).unwrap();
     assert_eq!(snapshot.assets.len(), 2);
     assert!(snapshot.observations.values().any(|o| o.value == "Key-ABC"));
     assert!(snapshot.observations.values().any(|o| o.value == "key-abc"));
