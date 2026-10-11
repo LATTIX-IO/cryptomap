@@ -204,7 +204,7 @@ fn unauthorized_source_and_inconsistent_coverage_fail_closed() {
 }
 
 #[test]
-fn conflicting_replay_and_unsupported_facts_are_not_silently_ignored() {
+fn conflicting_replay_and_malformed_configuration_are_rejected() {
     let (scope, identity, registry) = setup();
     let conflicting = outcome(vec![raw("duplicate", "0x1301"), raw("duplicate", "0x1302")]);
     assert!(matches!(
@@ -213,14 +213,14 @@ fn conflicting_replay_and_unsupported_facts_are_not_silently_ignored() {
             InventoryError::DuplicateObservation(_)
         ))
     ));
-    let mut unsupported = raw("event-config", "0x1301");
-    unsupported.fact = RawFactKind::Configuration {
-        property: "test:key".into(),
+    let mut malformed = raw("event-config", "0x1301");
+    malformed.fact = RawFactKind::Configuration {
+        property: "unnamespaced".into(),
         value: "nonsecret".into(),
     };
     assert!(matches!(
-        normalize_fixture(&scope, &identity, &registry, outcome(vec![unsupported])),
-        Err(PipelineError::UnsupportedFact)
+        normalize_fixture(&scope, &identity, &registry, outcome(vec![malformed])),
+        Err(PipelineError::Inventory(InventoryError::InvalidMetadata))
     ));
 }
 
