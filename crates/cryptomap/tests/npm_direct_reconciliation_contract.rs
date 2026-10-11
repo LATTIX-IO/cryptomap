@@ -154,6 +154,26 @@ fn contradictory_top_level_root_and_installed_package_identity_are_rejected() {
 }
 
 #[test]
+fn production_only_direct_classifications_are_required_in_real_scoped_files() {
+    for flag in ["dev", "optional", "devOptional", "peer", "inBundle"] {
+        let modified = LOCK.replace(
+            "\"resolved\":",
+            &format!("\"{flag}\":true,\"resolved\":"),
+        );
+        let fixture = Fixture::new(MANIFEST, &modified);
+        let scope = fixture.scope(true, true, 4096);
+        assert_eq!(
+            prove(&scope),
+            Err(NpmReconciliationError::UnsupportedProfile)
+        );
+    }
+    let bad_name = MANIFEST.replace("@scope/ring", "_invalid");
+    let fixture = Fixture::new(&bad_name, LOCK);
+    let scope = fixture.scope(true, true, 4096);
+    assert_eq!(prove(&scope), Err(NpmReconciliationError::InvalidSource));
+}
+
+#[test]
 fn bounded_source_read_and_aggregate_budget_both_enforced() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let too_small = fixture.scope(true, true, 8);
