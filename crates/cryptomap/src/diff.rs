@@ -79,9 +79,15 @@ fn rechecked(
     // source's authorization and make missing observations disappear.
     let source = run.requested.iter().find(|source| {
         observed.source == source.as_str()
-            || ["Dependency", "Certificate", "TlsEndpoint", "Source", "Telemetry"]
-                .iter()
-                .any(|kind| observed.source == format!("{kind}:{source}"))
+            || [
+                "Dependency",
+                "Certificate",
+                "TlsEndpoint",
+                "Source",
+                "Telemetry",
+            ]
+            .iter()
+            .any(|kind| observed.source == format!("{kind}:{source}"))
     });
     let Some(source) = source else {
         return false;
