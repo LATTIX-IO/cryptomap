@@ -318,7 +318,13 @@ mod tests {
         assert_eq!(packages[0].name, "app");
         assert_eq!(packages[0].version, "1.0.0");
         assert_eq!(
-            parse_lock(lock, RawLimits { observations: 1, ..RawLimits::default() }),
+            parse_lock(
+                lock,
+                RawLimits {
+                    observations: 1,
+                    ..RawLimits::default()
+                }
+            ),
             Err(CollectorDiagnosticCode::ResourceLimit)
         );
     }
