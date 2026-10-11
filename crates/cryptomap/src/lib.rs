@@ -689,6 +689,21 @@ impl InventoryBuilder {
                 return Err(InventoryError::LimitExceeded(label));
             }
         }
+        // One canonical snapshot represents one administrative collection scope.
+        // Live batch orchestration already enforces this. Enforce it again when
+        // finalizing/importing snapshots: a caller must not bypass that boundary
+        // by constructing a builder or rehashing mixed-tenant JSON directly.
+        // A run-less legacy snapshot remains valid for schema compatibility.
+        let mut administrative_scope: Option<&CollectionScopeId> = None;
+        for run in self.runs.values() {
+            match administrative_scope {
+                Some(expected) if expected != &run.scope => {
+                    return Err(InventoryError::InvalidMetadata);
+                }
+                None => administrative_scope = Some(&run.scope),
+                _ => {}
+            }
+        }
         for asset in self.assets.values() {
             asset.validate(&limits)?;
         }
@@ -1173,5 +1188,48 @@ mod source_attestation_unit_tests {
             typed_evidence_item(&run(), "old-opaque-evidence-label").unwrap(),
             None
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod snapshot_scope_unit_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn run(id: &str, scope: &str) -> CollectionRun {
+        CollectionRun {
+            id: CollectionRunId::new(id).unwrap(),
+            collector: CollectorId::new("unit-fixture").unwrap(),
+            collector_version: "1.0".into(),
+            scope: CollectionScopeId::new(scope).unwrap(),
+            requested: BTreeSet::new(),
+            started_at: "2026-10-11T11:59:00Z".into(),
+            ended_at: "2026-10-11T12:01:00Z".into(),
+            completeness: RunCompleteness::Partial,
+        }
+    }
+
+    #[test]
+    fn empty_and_single_scope_finalize_without_migration() {
+        let empty = InventoryBuilder::new()
+            .finalize(InventoryLimits::default())
+            .unwrap();
+        assert!(empty.runs.is_empty());
+        let mut one = InventoryBuilder::new();
+        one.add_run(run("run-a", "tenant-a")).unwrap();
+        one.add_run(run("run-b", "tenant-a")).unwrap();
+        one.finalize(InventoryLimits::default()).unwrap();
+    }
+
+    #[test]
+    fn different_administrative_scopes_cannot_share_a_snapshot() {
+        let mut builder = InventoryBuilder::new();
+        builder.add_run(run("run-a", "tenant-a")).unwrap();
+        builder.add_run(run("run-b", "tenant-b")).unwrap();
+        assert!(matches!(
+            builder.finalize(InventoryLimits::default()),
+            Err(InventoryError::InvalidMetadata)
+        ));
     }
 }
