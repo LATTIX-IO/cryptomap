@@ -9,24 +9,27 @@ use crate::{
     IdentityContext, InventoryBuilder, InventoryLimits, InventorySnapshot, Relationship,
     RelationshipId, RelationshipKind, raw::RawLimits, scope::CollectionScope,
 };
-use std::collections::{BTreeMap, BTreeSet};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 fn role_event(
-    tag: &str, prefix: &str, item: &str, name: &str, version: &str, role: &str,
+    tag: &str,
+    prefix: &str,
+    item: &str,
+    name: &str,
+    version: &str,
+    role: &str,
 ) -> Result<String, NpmReconciliationError> {
     let fields = serde_json::to_vec(&(tag, item, name, version, role))
         .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
     Ok(format!("{prefix}{:x}", Sha256::digest(fields)))
 }
 
-fn lock_event(item: &str, path: &str, version: &str)
-    -> Result<String, NpmReconciliationError> {
+fn lock_event(item: &str, path: &str, version: &str) -> Result<String, NpmReconciliationError> {
     let fields = serde_json::to_vec(&("cryptomap:npm-dependency:v1", item, path, version))
         .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
     Ok(format!("npm:v1:{:x}", Sha256::digest(fields)))
 }
-
 
 fn bound_evidence(
     snapshot: &InventorySnapshot,
@@ -127,8 +130,12 @@ pub fn project_npm_direct_edges(
     let root = id_for(&proven.root_name, &proven.root_version)?;
     let root_lock_event = lock_event(lock_item, "npm:root", &proven.root_version)?;
     let root_manifest_event = role_event(
-        "cryptomap:npm-manifest:v1", "npm-manifest:v1:", manifest_item,
-        &proven.root_name, &proven.root_version, "root",
+        "cryptomap:npm-manifest:v1",
+        "npm-manifest:v1:",
+        manifest_item,
+        &proven.root_name,
+        &proven.root_version,
+        "root",
     )?;
     let source = format!("Dependency:{lock_item}");
     let root_by_run = bound_evidence(
@@ -162,11 +169,17 @@ pub fn project_npm_direct_edges(
     for dependency in &proven.direct {
         let target = id_for(&dependency.name, &dependency.version)?;
         let target_lock_event = lock_event(
-            lock_item, &format!("node_modules/{}", dependency.name), &dependency.version,
+            lock_item,
+            &format!("node_modules/{}", dependency.name),
+            &dependency.version,
         )?;
         let target_manifest_event = role_event(
-            "cryptomap:npm-manifest:v1", "npm-manifest:v1:", manifest_item,
-            &dependency.name, &dependency.version, "direct",
+            "cryptomap:npm-manifest:v1",
+            "npm-manifest:v1:",
+            manifest_item,
+            &dependency.name,
+            &dependency.version,
+            "direct",
         )?;
         if target == root {
             return Err(UnresolvedDependency);
