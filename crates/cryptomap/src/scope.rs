@@ -23,7 +23,6 @@ use std::{
 };
 
 /// Sanitized authorization error type, without untrusted path or endpoint data.
-#[derive(Debug)]
 pub enum ScopeError {
     /// Invalid or ambiguous caller configuration.
     InvalidInput,
@@ -45,6 +44,13 @@ impl fmt::Display for ScopeError {
             Self::Io => f.write_str("scoped I/O failed"),
             Self::Collection(_) => f.write_str("collector contract failed"),
         }
+    }
+}
+// Public debug logs must not echo raw event IDs, paths or nested error
+// payloads supplied by untrusted source data.
+impl fmt::Debug for ScopeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 impl Error for ScopeError {}

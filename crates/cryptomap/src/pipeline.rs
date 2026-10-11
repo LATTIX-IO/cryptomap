@@ -25,7 +25,6 @@ use std::{
 };
 
 /// A typed pipeline failure that does not embed secret-bearing source contents.
-#[derive(Debug)]
 pub enum PipelineError {
     /// The imported outcome is inconsistent with the request or collector.
     InvalidOutcome,
@@ -47,6 +46,13 @@ impl fmt::Display for PipelineError {
             Self::Inventory(_) => f.write_str("invalid raw or canonical inventory"),
             Self::Registry(_) => f.write_str("algorithm registry resolution failed"),
         }
+    }
+}
+// Public debug logs must not echo raw event IDs, paths or nested error
+// payloads supplied by untrusted source data.
+impl fmt::Debug for PipelineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 impl Error for PipelineError {}
