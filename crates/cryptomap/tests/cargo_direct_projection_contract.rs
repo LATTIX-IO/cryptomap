@@ -4,8 +4,7 @@ use cryptomap::{
     CollectionRunId, IdentityContext, InventoryLimits, InventorySnapshot, RelationshipKind,
     collector::{CancellationToken, Collector, RequestedSource},
     collectors::dependency::{
-        cargo::CargoLockfileCollector,
-        manifest::CargoReconciliationError,
+        cargo::CargoLockfileCollector, manifest::CargoReconciliationError,
         projection::project_cargo_direct_edges,
     },
     coverage::CollectionScopeId,
@@ -21,7 +20,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
-const MANIFEST: &str = "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=0.17.12\"\n";
+const MANIFEST: &str =
+    "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=0.17.12\"\n";
 const LOCK: &str = "version = 4\n[[package]]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\n \"ring\",\n]\n[[package]]\nname = \"ring\"\nversion = \"0.17.12\"\nsource = \"registry+https://user:secret@private.example.invalid/index\"\n";
 
 struct Fixture {
@@ -30,10 +30,8 @@ struct Fixture {
 impl Fixture {
     fn new(manifest: &str, lock: &str) -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "cryptomap-projection-{}-{id}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("cryptomap-projection-{}-{id}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("Cargo.toml"), manifest).unwrap();
         fs::write(root.join("Cargo.lock"), lock).unwrap();
@@ -101,7 +99,10 @@ fn collected(scope: &CollectionScope, source_id: &str) -> InventorySnapshot {
     .unwrap()
 }
 
-fn project(snapshot: &InventorySnapshot, scope: &CollectionScope) -> Result<InventorySnapshot, CargoReconciliationError> {
+fn project(
+    snapshot: &InventorySnapshot,
+    scope: &CollectionScope,
+) -> Result<InventorySnapshot, CargoReconciliationError> {
     project_cargo_direct_edges(
         snapshot,
         scope,
@@ -192,7 +193,10 @@ fn stale_lockfile_digest_and_mutated_canonical_snapshot_are_rejected() {
 
 #[test]
 fn ambiguous_pin_and_reduced_relationship_budget_cannot_emit_edges() {
-    let fixture = Fixture::new(MANIFEST, &format!("{LOCK}\n[[package]]\nname = \"ring\"\nversion = \"0.17.11\"\n"));
+    let fixture = Fixture::new(
+        MANIFEST,
+        &format!("{LOCK}\n[[package]]\nname = \"ring\"\nversion = \"0.17.11\"\n"),
+    );
     let scope = fixture.scope("tenant-a", "cargo:lock", true);
     let snapshot = collected(&scope, "cargo:lock");
     assert_eq!(
@@ -208,8 +212,12 @@ fn ambiguous_pin_and_reduced_relationship_budget_cannot_emit_edges() {
     };
     assert_eq!(
         project_cargo_direct_edges(
-            &snapshot, &scope, "cargo:manifest", "cargo:lock",
-            RawLimits::default(), limit,
+            &snapshot,
+            &scope,
+            "cargo:manifest",
+            "cargo:lock",
+            RawLimits::default(),
+            limit,
         ),
         Err(CargoReconciliationError::ResourceLimit)
     );
