@@ -45,7 +45,10 @@ pub struct CargoManifestCollector<'a> {
 impl<'a> CargoManifestCollector<'a> {
     /// Construct a collector without touching the filesystem.
     pub fn new(scope: &'a CollectionScope, observed_at: impl Into<String>) -> Self {
-        Self { scope, observed_at: observed_at.into() }
+        Self {
+            scope,
+            observed_at: observed_at.into(),
+        }
     }
 }
 impl Collector for CargoManifestCollector<'_> {
@@ -83,7 +86,8 @@ impl Collector for CargoManifestCollector<'_> {
                 sink.cover(&source.item, CoverageState::NotInspected)?;
                 continue;
             }
-            let read = self.scope
+            let read = self
+                .scope
                 .open_file(RawSourceKind::Dependency, &source.item)
                 .and_then(|file| file.read_bounded());
             let (bytes, manifest) = match read {
@@ -124,10 +128,12 @@ impl Collector for CargoManifestCollector<'_> {
                 return Err(InventoryError::InvalidMetadata);
             };
             let digest = format!("{:x}", Sha256::digest(&bytes));
-            let entries = std::iter::once((root_name, root_version, "root"))
-                .chain(manifest.direct.into_iter().map(|(name, version)| {
-                    (name, version, "direct")
-                }));
+            let entries = std::iter::once((root_name, root_version, "root")).chain(
+                manifest
+                    .direct
+                    .into_iter()
+                    .map(|(name, version)| (name, version, "direct")),
+            );
             let mut cancelled = false;
             let mut emitted = 0;
             for (name, version, role) in entries {
@@ -178,11 +184,14 @@ impl Collector for CargoManifestCollector<'_> {
                 })?;
                 sink.cover(&source.item, CoverageState::Partial)?;
             } else {
-                sink.cover(&source.item, if emitted == 0 {
-                    CoverageState::InspectedNoObservation
-                } else {
-                    CoverageState::InspectedObserved
-                })?;
+                sink.cover(
+                    &source.item,
+                    if emitted == 0 {
+                        CoverageState::InspectedNoObservation
+                    } else {
+                        CoverageState::InspectedObserved
+                    },
+                )?;
             }
         }
         Ok(())
