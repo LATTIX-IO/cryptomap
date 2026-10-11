@@ -25,37 +25,28 @@ pub struct FileRoot {
 }
 
 impl FileRoot {
-    /// Open the caller's directory without following a symlink at ANY path
-    /// component, including the root itself.
+    /// Open a host-authorized directory with no-follow descent at each component.
     ///
-    /// Only the filesystem volume root ("/" or "C:\\") is opened with ambient
-    /// authority. Every descendant component is opened relative to the previous
-    /// directory handle using an atomic no-follow operation. This closes the
-    /// check-then-open race in an ambient full-path directory open.
+    /// Absolute paths descend from the filesystem volume root. Relative paths
+    /// descend from an *opened current-directory handle*, never from a pathname
+    /// reconstructed using `current_dir()`. That distinction prevents an
+    /// attacker replacing the CWD's former pathname between lookup and open.
     ///
-    /// Untrusted collectors must not choose this root; authorization belongs
-    /// to the hosting process, not to a collector descriptor.
+    /// Untrusted collectors must not choose this root; the host grants access.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, ScopeError> {
         let requested = root.as_ref();
         if requested.as_os_str().is_empty() {
             return Err(ScopeError::InvalidInput);
         }
-        let absolute = if requested.is_absolute() {
-            requested.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .map_err(|_| ScopeError::Io)?
-                .join(requested)
-        };
+        let is_absolute = requested.is_absolute();
         let mut anchor = PathBuf::new();
         let mut names: Vec<OsString> = Vec::new();
-        for component in absolute.components() {
+        for component in requested.components() {
             match component {
                 Component::Prefix(prefix) => {
-                    let _ = &prefix;
-                    // On Windows, UNC, device and verbatim prefixes can evade
-                    // ordinary path component assumptions. Accept drive roots
-                    // only; explicit network roots need a separate contract.
+                    if !is_absolute {
+                        return Err(ScopeError::InvalidInput);
+                    }
                     #[cfg(windows)]
                     {
                         use std::path::Prefix;
@@ -65,7 +56,12 @@ impl FileRoot {
                     }
                     anchor.push(prefix.as_os_str());
                 }
-                Component::RootDir => anchor.push(component.as_os_str()),
+                Component::RootDir => {
+                    if !is_absolute {
+                        return Err(ScopeError::InvalidInput);
+                    }
+                    anchor.push(component.as_os_str());
+                }
                 Component::Normal(part) => {
                     if part.to_string_lossy().contains(['*', '?', '\0', ':']) {
                         return Err(ScopeError::InvalidInput);
@@ -76,14 +72,33 @@ impl FileRoot {
                 Component::ParentDir => return Err(ScopeError::OutOfScope),
             }
         }
-        if !anchor.is_absolute() {
-            return Err(ScopeError::InvalidInput);
-        }
-        // Ambient authority is used ONLY for a platform filesystem anchor,
-        // never for the untrusted or racy requested full directory path.
-        let mut dir =
-            Dir::open_ambient_dir(&anchor, ambient_authority()).map_err(|_| ScopeError::Io)?;
-        let mut root_path = anchor;
+        // Opening "." is the only ambient operation on a relative request.
+        // From then on, all operations are confined to that specific handle.
+        let (dir, root_path) = if is_absolute {
+            if !anchor.is_absolute() {
+                return Err(ScopeError::InvalidInput);
+            }
+            let dir =
+                Dir::open_ambient_dir(&anchor, ambient_authority()).map_err(|_| ScopeError::Io)?;
+            (dir, anchor)
+        } else {
+            let dir =
+                Dir::open_ambient_dir(".", ambient_authority()).map_err(|_| ScopeError::Io)?;
+            // A relative display path is intentionally NOT a reconstructed
+            // absolute path, and must never be used as an authority token.
+            (dir, PathBuf::from("."))
+        };
+        Self::descend(dir, root_path, names)
+    }
+
+    // The root is always built using opened directory handles, including the
+    // relative-root case. Kept separate to exercise directory replacement
+    // deterministically without a timing-dependent concurrency test.
+    fn descend(
+        mut dir: Dir,
+        mut root_path: PathBuf,
+        names: Vec<OsString>,
+    ) -> Result<Self, ScopeError> {
         for component in names {
             dir = dir
                 .open_dir_nofollow(&component)
@@ -96,7 +111,7 @@ impl FileRoot {
         })
     }
 
-    /// Resolved display-only location of the root (not an access token).
+    /// Display-only location of the root (relative if originally relative).\n    ///\n    /// This path is not an access token and must not be reopened for I/O.
     pub fn root_path(&self) -> &Path {
         &self.root
     }
@@ -270,4 +285,49 @@ pub fn validate_relative(path: &Path) -> Result<(), ScopeError> {
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod relative_root_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::{FileRoot, OsString};
+    use cap_std::{ambient_authority, fs::Dir};
+    use std::{
+        fs,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn opened_cwd_handle_survives_rename_and_path_replacement() {
+        let unique = NEXT.fetch_add(1, Ordering::Relaxed);
+        let fixture = std::env::temp_dir().join(format!(
+            "cryptomap-cwd-anchor-{}-{unique}",
+            std::process::id()
+        ));
+        let active = fixture.join("active");
+        let moved = fixture.join("moved");
+        fs::create_dir_all(active.join("inside")).unwrap();
+        fs::write(active.join("inside").join("proof.txt"), b"authorized").unwrap();
+
+        let cwd_handle = Dir::open_ambient_dir(&active, ambient_authority()).unwrap();
+        fs::rename(&active, &moved).unwrap();
+        fs::create_dir_all(active.join("inside")).unwrap();
+        fs::write(active.join("inside").join("proof.txt"), b"substituted").unwrap();
+
+        // The security property does not depend on winning a scheduling race:
+        // the directory name is replaced AFTER acquiring its handle but BEFORE
+        // descending into "inside". Path-based descent would read "substituted".
+        let root =
+            FileRoot::descend(cwd_handle, ".".into(), vec![OsString::from("inside")]).unwrap();
+        assert_eq!(
+            root.authorize("proof.txt", 64)
+                .unwrap()
+                .read_bounded()
+                .unwrap(),
+            b"authorized"
+        );
+        fs::remove_dir_all(&fixture).unwrap();
+    }
 }
