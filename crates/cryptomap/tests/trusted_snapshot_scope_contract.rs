@@ -89,8 +89,10 @@ fn strict_json_and_byte_limits_precede_authorized_import() {
     let snap = snapshot("tenant-a");
     let expected = CollectionScopeId::new("tenant-a").unwrap();
     let json = serde_json::to_string(&snap).unwrap();
-    let mut limits = InventoryLimits::default();
-    limits.snapshot_bytes = json.len() - 1;
+    let limits = InventoryLimits {
+        snapshot_bytes: json.len() - 1,
+        ..InventoryLimits::default()
+    };
     assert!(matches!(
         InventorySnapshot::from_json_verified_for_scope(&json, &expected, limits),
         Err(InventoryError::LimitExceeded("snapshot bytes"))
