@@ -12,7 +12,8 @@ use cap_std::{
     fs::{Dir, OpenOptions},
 };
 use std::{
-    io::Read,
+    ffi::OsString,
+    io::{self, Read},
     path::{Component, Path, PathBuf},
 };
 
@@ -47,10 +48,11 @@ impl FileRoot {
                 .join(requested)
         };
         let mut anchor = PathBuf::new();
-        let mut names = Vec::new();
+        let mut names: Vec<OsString> = Vec::new();
         for component in absolute.components() {
             match component {
                 Component::Prefix(prefix) => {
+                    let _ = &prefix;
                     // On Windows, UNC, device and verbatim prefixes can evade
                     // ordinary path component assumptions. Accept drive roots
                     // only; explicit network roots need a separate contract.
@@ -200,13 +202,15 @@ impl AuthorizedFile<'_> {
         Ok(file)
     }
 
-    /// Open a bounded read handle, never a raw unlimited file descriptor.
+    /// Open a read-only capability with an enforced maximum read budget.
     ///
-    /// The returned reader cannot yield more than the authorized byte count.
-    /// For explicit over-limit detection use `read_bounded` instead.
-    pub fn open_read(&self) -> Result<std::io::Take<cap_std::fs::File>, ScopeError> {
-        let file = self.open_handle()?;
-        Ok(file.take(self.max_bytes as u64))
+    /// The returned reader does not expose the inner file handle.
+    /// `read_bounded` additionally detects content that exceeds the budget.
+    pub fn open_read(&self) -> Result<AuthorizedReader, ScopeError> {
+        Ok(AuthorizedReader {
+            file: self.open_handle()?,
+            remaining: self.max_bytes as u64,
+        })
     }
 
     /// Read at most the approved bytes, returning ResourceLimit for overflow.
@@ -221,6 +225,26 @@ impl AuthorizedFile<'_> {
             return Err(ScopeError::ResourceLimit);
         }
         Ok(data)
+    }
+}
+
+/// Opaque bounded file reader that never exposes its underlying file handle.
+#[derive(Debug)]
+pub struct AuthorizedReader {
+    file: cap_std::fs::File,
+    remaining: u64,
+}
+
+impl Read for AuthorizedReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.remaining == 0 {
+            return Ok(0);
+        }
+        let maximum = usize::try_from(self.remaining).unwrap_or(usize::MAX);
+        let len = buf.len().min(maximum);
+        let count = self.file.read(&mut buf[..len])?;
+        self.remaining -= count as u64;
+        Ok(count)
     }
 }
 
