@@ -37,8 +37,7 @@ fn bound_evidence(
     source: &str,
     sha256: &str,
     source_item: &str,
-    collector_id: &str,
-    collector_version: &str,
+    collector: (&str, &str),
     expected_event: &str,
 ) -> BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> {
     let mut per_run: BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> = BTreeMap::new();
@@ -55,8 +54,8 @@ fn bound_evidence(
         };
         if evidence.source != source
             || evidence.source_sha256.as_deref() != Some(sha256)
-            || evidence.collector.as_str() != collector_id
-            || evidence.collector_version != collector_version
+            || evidence.collector.as_str() != collector.0
+            || evidence.collector_version != collector.1
             || evidence.kind != EvidenceKind::Direct
             || evidence.confidence != Confidence::Confirmed
         {
@@ -144,8 +143,7 @@ pub fn project_npm_direct_edges(
         &source,
         &proven.lock_sha256,
         lock_item,
-        "cryptomap:npm-lockfile",
-        "0.2.0",
+        ("cryptomap:npm-lockfile", "0.2.0"),
         &root_lock_event,
     );
     let manifest_source = format!("Dependency:{manifest_item}");
@@ -155,8 +153,7 @@ pub fn project_npm_direct_edges(
         &manifest_source,
         &proven.manifest_sha256,
         manifest_item,
-        "cryptomap:npm-manifest",
-        "0.1.0",
+        ("cryptomap:npm-manifest", "0.1.0"),
         &root_manifest_event,
     );
     if root_by_run.is_empty() || manifest_root_by_run.is_empty() {
@@ -190,8 +187,7 @@ pub fn project_npm_direct_edges(
             &source,
             &proven.lock_sha256,
             lock_item,
-            "cryptomap:npm-lockfile",
-            "0.2.0",
+            ("cryptomap:npm-lockfile", "0.2.0"),
             &target_lock_event,
         );
         let manifest_target_by_run = bound_evidence(
@@ -200,8 +196,7 @@ pub fn project_npm_direct_edges(
             &manifest_source,
             &proven.manifest_sha256,
             manifest_item,
-            "cryptomap:npm-manifest",
-            "0.1.0",
+            ("cryptomap:npm-manifest", "0.1.0"),
             &target_manifest_event,
         );
         let mut supporting = BTreeSet::new();
