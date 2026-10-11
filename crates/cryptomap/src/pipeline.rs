@@ -396,9 +396,15 @@ pub fn normalize(
         .collect();
     for (source, state) in &outcome.coverage {
         let has_observations = observed.contains(source.as_str());
+        // A partially inspected source may emit useful evidence, but must
+        // remain Partial rather than claiming the source is fully covered.
+        // Failed, unsupported and uninspected sources must never emit facts.
         if (matches!(state, CoverageState::InspectedObserved) && !has_observations)
-            || (has_observations && !matches!(state, CoverageState::InspectedObserved))
-            || (matches!(state, CoverageState::InspectedNoObservation) && has_observations)
+            || (has_observations
+                && !matches!(
+                    state,
+                    CoverageState::InspectedObserved | CoverageState::Partial
+                ))
         {
             return Err(PipelineError::InvalidOutcome);
         }
