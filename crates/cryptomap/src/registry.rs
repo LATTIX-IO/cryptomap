@@ -63,6 +63,8 @@ pub enum RegistryError {
     InvalidCanonical,
     /// Registry serialization could not be encoded.
     EncodingFailure,
+    /// Only namespace owners may extend a registry; standard namespaces are reserved.
+    ReservedNamespace,
 }
 
 /// Exact normalized resolution, with immutable raw provenance.
@@ -70,12 +72,18 @@ pub enum RegistryError {
 pub enum Resolution {
     /// Exact documented mapping in the registry.
     Known {
+        /// Source standard namespace used for this resolution.
+        namespace: Namespace,
+        /// Operation-specific lookup domain.
+        kind: Kind,
         /// Exact canonical profile identifier, never just family alone.
         canonical: String,
         /// Crypto family (not evidence of actual deployment/use).
         family: String,
         /// Stable mapping provenance key.
         rule: String,
+        /// Published standard or authoritative registry reference.
+        source: String,
         /// Registry semantic version.
         registry_version: String,
         /// Original, unmodified input.
@@ -83,6 +91,10 @@ pub enum Resolution {
     },
     /// No mapping is defined in this namespace and kind.
     Unknown {
+        /// Lookup namespace retained for future reprocessing.
+        namespace: Namespace,
+        /// Lookup kind retained for future reprocessing.
+        kind: Kind,
         /// Original identifier preserved without guessing.
         raw: String,
         /// Registry version used for lookup.
@@ -136,10 +148,24 @@ impl Registry {
         }
     }
 
-    /// Add one exact alias, refusing collisions instead of replacing mappings.
+    /// Register an explicitly owned extension. Standard namespaces are reserved.
+    ///
+    /// Does not allow a caller to invent IANA, X.509, SSH or OpenSSL entries.
+    /// All extensions remain local: no network fetch or implicit updates.
     pub fn register(&mut self, entry: Mapping) -> Result<(), RegistryError> {
+        if !matches!(entry.namespace, Namespace::Extension(_)) {
+            return Err(RegistryError::ReservedNamespace);
+        }
+        self.insert_entry(entry)
+    }
+
+    // Built-in standards data is inserted only by this crate, never by
+    // callers through the public register method.
+    fn insert_entry(&mut self, entry: Mapping) -> Result<(), RegistryError> {
+        if !valid(&entry.canonical) {
+            return Err(RegistryError::InvalidCanonical);
+        }
         if !valid(&entry.alias)
-            || !valid(&entry.canonical)
             || !valid(&entry.family)
             || !valid(&entry.rule)
             || !valid(&entry.source)
@@ -175,13 +201,18 @@ impl Registry {
             .get(&(namespace.clone(), kind.clone(), raw.to_owned()))
         {
             Some(m) => Ok(Resolution::Known {
+                namespace: namespace.clone(),
+                kind: kind.clone(),
                 canonical: m.canonical.clone(),
                 family: m.family.clone(),
                 rule: m.rule.clone(),
+                source: m.source.clone(),
                 registry_version: version,
                 raw: raw.to_owned(),
             }),
             None => Ok(Resolution::Unknown {
+                namespace: namespace.clone(),
+                kind: kind.clone(),
                 raw: raw.to_owned(),
                 registry_version: version,
             }),
@@ -210,7 +241,7 @@ impl Registry {
                        rule: &str,
                        source: &str| {
             assert!(
-                out.register(Mapping {
+                out.insert_entry(Mapping {
                     namespace,
                     kind,
                     alias: alias.into(),
@@ -356,16 +387,53 @@ mod tests {
         );
     }
     #[test]
+    fn results_include_full_provenance_and_can_be_replayed() {
+        let registry = Registry::builtin();
+        let known = registry
+            .resolve(&Namespace::X509Oid, &Kind::Signature, "1.2.840.113549.1.1.11")
+            .unwrap();
+        let encoded = serde_json::to_string(&known).unwrap();
+        let decoded: Resolution = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(known, decoded);
+        assert!(matches!(
+            known,
+            Resolution::Known {
+                namespace: Namespace::X509Oid,
+                kind: Kind::Signature,
+                source,
+                rule,
+                ..
+            } if source == "https://www.rfc-editor.org/rfc/rfc4055"
+              && rule == "rfc4055:sha256-rsa"
+        ));
+        let unknown = registry
+            .resolve(&Namespace::OpenSsl, &Kind::Hash, "SHA1234")
+            .unwrap();
+        let encoded = serde_json::to_string(&unknown).unwrap();
+        let decoded: Resolution = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(unknown, decoded);
+        assert!(matches!(
+            decoded,
+            Resolution::Unknown {
+                namespace: Namespace::OpenSsl,
+                kind: Kind::Hash,
+                raw,
+                ..
+            } if raw == "SHA1234"
+        ));
+    }
+
+    #[test]
     fn insertion_order_does_not_change_digest() {
         let sample = Registry::builtin();
         let mut forward = Registry::empty();
         let mut reverse = Registry::empty();
         let entries: Vec<_> = sample.entries.values().cloned().collect();
         for entry in &entries {
-            forward.register(entry.clone()).unwrap();
+            forward.insert_entry(entry.clone()).unwrap();
         }
         for entry in entries.into_iter().rev() {
-            reverse.register(entry).unwrap();
+            reverse.insert_entry(entry).unwrap();
         }
         assert_eq!(sample.digest(), forward.digest());
         assert_eq!(forward.digest(), reverse.digest());
@@ -374,7 +442,22 @@ mod tests {
     fn collision_oversize_and_unknown_fail_closed() {
         let mut registry = Registry::builtin();
         let original = registry.entries.values().next().unwrap().clone();
-        assert_eq!(registry.register(original), Err(RegistryError::Collision));
+        assert_eq!(registry.register(original.clone()), Err(RegistryError::ReservedNamespace));
+        let extension = Mapping {
+            namespace: Namespace::Extension("acme.security".into()),
+            kind: original.kind,
+            alias: "custom-sha256".into(),
+            canonical: "acme:sha256".into(),
+            family: "SHA-2".into(),
+            rule: "acme:1".into(),
+            source: "urn:acme:crypto-registry".into(),
+        };
+        registry.register(extension.clone()).unwrap();
+        assert_eq!(registry.register(extension.clone()), Err(RegistryError::Collision));
+        let mut invalid = extension;
+        invalid.canonical = " ".into();
+        invalid.alias = "fresh-alias".into();
+        assert_eq!(registry.register(invalid), Err(RegistryError::InvalidCanonical));
         assert_eq!(
             registry.resolve(&Namespace::Ssh, &Kind::Key, &"x".repeat(257)),
             Err(RegistryError::InvalidInput)
