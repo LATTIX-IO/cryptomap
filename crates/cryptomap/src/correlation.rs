@@ -4,8 +4,8 @@
 //! guesses relationships from matching names, profiles, or source proximity.
 //! A relationship is a collector assertion, not independently verified use.
 use crate::{
-    AssetId, EvidenceId, EvidenceKind, InventoryBuilder, Relationship,
-    RelationshipId, RelationshipKind, ProtocolState,
+    AssetId, EvidenceId, EvidenceKind, InventoryBuilder, ProtocolState, Relationship,
+    RelationshipId, RelationshipKind,
     pipeline::PipelineError,
     raw::{RawFactKind, RawObservation},
 };
@@ -32,17 +32,26 @@ fn compatible(kind: RelationshipKind, source: &RawFactKind, target: &RawFactKind
     match (kind, source, target) {
         (
             RelationshipKind::UsesCertificate,
-            RawFactKind::Protocol { state: ProtocolState::Negotiated, .. },
+            RawFactKind::Protocol {
+                state: ProtocolState::Negotiated,
+                ..
+            },
             RawFactKind::Certificate { .. },
         ) => true,
         (
             RelationshipKind::UsesKey,
-            RawFactKind::Protocol { state: ProtocolState::Negotiated, .. },
+            RawFactKind::Protocol {
+                state: ProtocolState::Negotiated,
+                ..
+            },
             RawFactKind::KeyReference { .. },
         ) => true,
         (
             RelationshipKind::UsesAlgorithm,
-            RawFactKind::Protocol { state: ProtocolState::Negotiated, .. },
+            RawFactKind::Protocol {
+                state: ProtocolState::Negotiated,
+                ..
+            },
             RawFactKind::AlgorithmUse { .. },
         ) => true,
         (
@@ -52,7 +61,10 @@ fn compatible(kind: RelationshipKind, source: &RawFactKind, target: &RawFactKind
         ) => true,
         (
             RelationshipKind::ConfiguredFor,
-            RawFactKind::Protocol { state: ProtocolState::Configured, .. },
+            RawFactKind::Protocol {
+                state: ProtocolState::Configured,
+                ..
+            },
             RawFactKind::Configuration { .. },
         ) => true,
         _ => false,
@@ -84,13 +96,17 @@ pub(crate) fn link_explicit(
             return Err(PipelineError::InvalidOutcome);
         }
         let kind = relation_kind(kind_value).ok_or(PipelineError::InvalidOutcome)?;
-        let target = records.get(target_id).ok_or(PipelineError::InvalidOutcome)?;
+        let target = records
+            .get(target_id)
+            .ok_or(PipelineError::InvalidOutcome)?;
         if !compatible(kind, &raw.fact, &target.fact) {
             return Err(PipelineError::InvalidOutcome);
         }
         let from = assets.get(event_id).ok_or(PipelineError::InvalidOutcome)?;
         let to = assets.get(target_id).ok_or(PipelineError::InvalidOutcome)?;
-        let supporting = evidence.get(event_id).ok_or(PipelineError::InvalidOutcome)?;
+        let supporting = evidence
+            .get(event_id)
+            .ok_or(PipelineError::InvalidOutcome)?;
         builder.add_relationship(Relationship {
             id: RelationshipId::from_endpoints(kind, from, to)?,
             from: from.clone(),
