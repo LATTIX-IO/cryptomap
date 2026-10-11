@@ -4,7 +4,8 @@
 //! Reject symlink/junction indirection by default, including links *inside*
 //! the root; the capability implementation also prevents escape under races.
 use crate::scope::ScopeError;
-use cap_std::{ambient_authority, fs::Dir};
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::{ambient_authority, fs::{Dir, OpenOptions}};
 use std::{
     io::Read,
     path::{Component, Path, PathBuf},
@@ -106,7 +107,23 @@ impl AuthorizedFile<'_> {
     /// filesystem escape if another process races a path component.
     pub fn open_read(&self) -> Result<cap_std::fs::File, ScopeError> {
         self.root.inspect(&self.relative)?;
-        self.root.dir.open(&self.relative).map_err(|_| ScopeError::Io)
+        // Open each parent without following symlinks. The final component is
+        // also opened O_NOFOLLOW / Windows reparse-safe by cap-fs-ext.
+        // This protects the *exact authorized file* even if an attacker swaps
+        // a directory entry between our validation and actual OS open.
+        let mut dir = self.root.dir.open_dir(".").map_err(|_| ScopeError::Io)?;
+        if let Some(parent) = self.relative.parent() {
+            for component in parent.components() {
+                let Component::Normal(name) = component else {
+                    return Err(ScopeError::OutOfScope);
+                };
+                dir = dir.open_dir_nofollow(name).map_err(|_| ScopeError::OutOfScope)?;
+            }
+        }
+        let basename = self.relative.file_name().ok_or(ScopeError::InvalidInput)?;
+        let mut options = OpenOptions::new();
+        options.read(true).follow(FollowSymlinks::No);
+        dir.open_with(basename, &options).map_err(|_| ScopeError::OutOfScope)
     }
 
     /// Read at most the approved bytes, returning ResourceLimit for overflow.
