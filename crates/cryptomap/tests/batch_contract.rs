@@ -467,3 +467,94 @@ fn relinking_by_event_id_across_run_boundaries_is_not_allowed() {
         Err(PipelineError::InvalidOutcome)
     ));
 }
+
+#[test]
+fn independently_asserted_edges_union_evidence_across_runs_only_for_same_identity() {
+    use cryptomap::{ProtocolState, RelationshipKind};
+    let sources = [
+        (RawSourceKind::Telemetry, "stream:tls"),
+        (RawSourceKind::Certificate, "store:cert"),
+    ];
+    // Same collector and exact source site but different run IDs: canonical
+    // protocol and certificate identities converge, run evidence does not.
+    let a = Fixture::new("tenant-a", "run-A", "tls-collector", &sources);
+    let b = Fixture::new("tenant-a", "run-B", "tls-collector", &sources);
+    let build = |fixture: &Fixture| {
+        let mut asserted = fixture.observation("protocol", "stream:tls",
+            RawFactKind::Protocol {
+                family: "TLS".into(),
+                version: Some("1.3".into()),
+                state: ProtocolState::Negotiated,
+            });
+        asserted.attributes.insert(
+            "cryptomap:relation-kind".into(),
+            "uses_certificate".into(),
+        );
+        asserted.attributes.insert(
+            "cryptomap:relation-target-event".into(),
+            "certificate".into(),
+        );
+        fixture.outcome(
+            vec![asserted, fixture.observation("certificate", "store:cert", cert())],
+            BTreeMap::from([
+                ("stream:tls".into(), CoverageState::InspectedObserved),
+                ("store:cert".into(), CoverageState::InspectedObserved),
+            ]),
+        )
+    };
+    let out_a = build(&a);
+    let out_b = build(&b);
+    let merged = normalize_batch(
+        vec![b.input(out_b.clone()), a.input(out_a.clone())],
+        BatchLimits::default(),
+    ).unwrap();
+    assert_eq!(merged.assets.len(), 2);
+    assert_eq!(merged.evidence.len(), 4);
+    assert_eq!(merged.relationships.len(), 1);
+    let edge = merged.relationships.values().next().unwrap();
+    assert_eq!(edge.kind, RelationshipKind::UsesCertificate);
+    assert_eq!(edge.evidence.len(), 2);
+    assert_eq!(merged.coverage_records.len(), 4);
+    merged.verify(InventoryLimits::default()).unwrap();
+
+    let limited = BatchLimits {
+        inventory: InventoryLimits {
+            relationships: 0,
+            ..InventoryLimits::default()
+        },
+        ..BatchLimits::default()
+    };
+    assert!(matches!(
+        normalize_batch(vec![a.input(out_a), b.input(out_b)], limited),
+        Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))
+    ));
+}
+
+#[test]
+fn matching_profile_and_certificate_without_explicit_assertion_create_no_edge() {
+    use cryptomap::ProtocolState;
+    let fixture = Fixture::new("tenant-a", "run-unlinked", "tls-collector",
+        &[
+            (RawSourceKind::Telemetry, "stream:tls"),
+            (RawSourceKind::Certificate, "store:cert"),
+        ],
+    );
+    let outcome = fixture.outcome(
+        vec![
+            fixture.observation("protocol", "stream:tls", RawFactKind::Protocol {
+                family: "TLS".into(),
+                version: Some("1.3".into()),
+                state: ProtocolState::Negotiated,
+            }),
+            fixture.observation("certificate", "store:cert", cert()),
+        ],
+        BTreeMap::from([
+            ("stream:tls".into(), CoverageState::InspectedObserved),
+            ("store:cert".into(), CoverageState::InspectedObserved),
+        ]),
+    );
+    let snapshot = normalize_batch(vec![fixture.input(outcome)],
+        BatchLimits::default()).unwrap();
+    assert!(snapshot.relationships.is_empty());
+    snapshot.verify(InventoryLimits::default()).unwrap();
+}
