@@ -357,6 +357,9 @@ fn dependency_presence_does_not_infer_algorithm_execution() {
             .values()
             .all(|obs| obs.property == "dependency:presence" && obs.value == "declared")
     );
+    // On Windows the capability-root directory handle prevents deletion.
+    // Release it before removing the temporary fixture directory.
+    drop(scope);
     fs::remove_dir_all(temp).unwrap();
 }
 
@@ -388,4 +391,81 @@ fn absent_location_and_explicit_zero_remain_distinct_assets() {
     b.source.offset = Some(0);
     let snap = normalize_fixture(&scope, &identity, &registry, outcome(vec![a, b])).unwrap();
     assert_eq!(snap.assets.len(), 2);
+}
+
+#[test]
+fn partial_source_with_observations_preserves_both_facts_and_partial_status() {
+    let (scope, identity, registry) = setup();
+    let mut data = outcome(vec![raw("partial-one", "0x1301")]);
+    data.coverage
+        .insert("stream:test".into(), CoverageState::Partial);
+    data.status = CollectionStatus::Failed;
+    // There are no completely inspected sources, so aggregate status is
+    // Failed, while the source-specific result remains Partial.
+    let snap = normalize_fixture(&scope, &identity, &registry, data).unwrap();
+    assert_eq!(snap.assets.len(), 1);
+    assert_eq!(snap.evidence.len(), 1);
+    assert_eq!(snap.coverage.get("stream:test"), Some(&CoverageState::Partial));
+    assert_eq!(
+        snap.runs.values().next().unwrap().completeness,
+        cryptomap::coverage::RunCompleteness::Failed
+    );
+    snap.verify(InventoryLimits::default()).unwrap();
+}
+
+#[test]
+fn failed_source_with_observations_is_rejected() {
+    let (scope, identity, registry) = setup();
+    let mut data = outcome(vec![raw("failed-one", "0x1301")]);
+    data.coverage.insert("stream:test".into(), CoverageState::Failed);
+    data.status = CollectionStatus::Failed;
+    assert!(matches!(
+        normalize_fixture(&scope, &identity, &registry, data),
+        Err(PipelineError::InvalidOutcome)
+    ));
+}
+
+#[test]
+fn conflicting_location_encoding_does_not_collapse_sources() {
+    let (scope, identity, registry) = setup();
+    let mut colon = raw("source-with-colon", "0x1301");
+    colon.source.item = "a:1".into();
+    colon.source.offset = Some(2);
+    let mut plain = raw("source-without-colon", "0x1301");
+    plain.source.item = "a".into();
+    plain.source.offset = Some(1);
+    plain.source.line = Some(2);
+    // Locations with potentially ambiguous string concatenation cannot
+    // collide, even when source IDs share delimiters.
+    // Test the exact tuple semantics with separately authorized sources.
+    let mut mixed_scope = CollectionScope::new(CollectionScopeId::new("tenant-1").unwrap());
+    mixed_scope.grant_logical(RawSourceKind::Telemetry, "a:1").unwrap();
+    mixed_scope.grant_logical(RawSourceKind::Telemetry, "a").unwrap();
+    let sources = [
+        RequestedSource { kind: RawSourceKind::Telemetry, item: "a:1".into() },
+        RequestedSource { kind: RawSourceKind::Telemetry, item: "a".into() },
+    ];
+    let mut data = outcome(vec![colon, plain]);
+    data.coverage.clear();
+    data.coverage.insert("a:1".into(), CoverageState::InspectedObserved);
+    data.coverage.insert("a".into(), CoverageState::InspectedObserved);
+    let expected_descriptor = descriptor();
+    let expected_run = CollectionRunId::new("run-a").unwrap();
+    let result = normalize(
+        PipelineInput {
+            scope: &mixed_scope,
+            identity: &identity,
+            registry: &registry,
+            expected_descriptor: &expected_descriptor,
+            expected_run: &expected_run,
+            sources: &sources,
+            raw_limits: RawLimits::default(),
+            inventory_limits: InventoryLimits::default(),
+            started_at: "2026-10-11T11:59:00Z",
+            ended_at: "2026-10-11T12:01:00Z",
+        },
+        data,
+    ).unwrap();
+    assert_eq!(result.assets.len(), 2);
+    drop(scope);
 }
