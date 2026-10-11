@@ -204,31 +204,37 @@ fn duplicate_replay_is_idempotent_both_within_and_across_windows() {
     assert!(result.diagnostics.is_empty());
 }
 #[test]
-fn contradictory_same_event_is_rejected_and_cross_window_conflict_poisoned() {
+fn conflicting_pending_replay_poisoned_and_cannot_be_finalized() {
     let f = Fixture::new();
-    let one = f.observation("shared", "logical:a");
-    let mut other = one.clone();
-    other.fact = RawFactKind::Certificate {
+    let first = f.observation("private:event:conflict", "logical:a");
+    let mut conflicting = first.clone();
+    conflicting.fact = RawFactKind::Certificate {
         fingerprint_sha256: "cd".repeat(32),
     };
     let mut intake = f.intake(Fixture::window()).unwrap();
-    intake.try_push(&one).unwrap();
-    assert!(matches!(
-        intake.try_push(&other),
-        Err(StreamError::Inventory(
-            InventoryError::DuplicateObservation(_)
-        ))
-    ));
-    assert_eq!(intake.pending_records(), 1);
-    intake.drain().unwrap();
-    intake.try_push(&other).unwrap();
-    assert!(matches!(
-        intake.drain(),
-        Err(StreamError::Inventory(
-            InventoryError::DuplicateObservation(_)
-        ))
-    ));
+    intake.try_push(&first).unwrap();
+    let err = intake.try_push(&conflicting).unwrap_err();
+    assert!(matches!(err, StreamError::ReplayConflict));
+    assert!(!format!("{err:?}").contains("private:event:conflict"));
     assert!(matches!(intake.drain(), Err(StreamError::Poisoned)));
+    assert!(matches!(intake.finish(), Err(StreamError::Poisoned)));
+}
+
+#[test]
+fn conflicting_replay_across_drained_windows_poisoned_and_redacted() {
+    let f = Fixture::new();
+    let first = f.observation("private:event:conflict", "logical:a");
+    let mut conflicting = first.clone();
+    conflicting.fact = RawFactKind::Certificate {
+        fingerprint_sha256: "cd".repeat(32),
+    };
+    let mut intake = f.intake(Fixture::window()).unwrap();
+    intake.try_push(&first).unwrap();
+    intake.drain().unwrap();
+    intake.try_push(&conflicting).unwrap();
+    let err = intake.drain().unwrap_err();
+    assert!(matches!(err, StreamError::ReplayConflict));
+    assert!(!format!("{err:?}").contains("private:event:conflict"));
     assert!(matches!(intake.finish(), Err(StreamError::Poisoned)));
 }
 #[test]
