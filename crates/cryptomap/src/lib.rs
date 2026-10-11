@@ -13,6 +13,7 @@ pub mod network_scope;
 pub mod privacy;
 pub mod query;
 pub mod raw;
+pub mod registry;
 pub mod scope;
 pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
 mod diff;
