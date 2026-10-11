@@ -175,7 +175,9 @@ fn prove(
     }
     // Top-level npm lock identity, when present, cannot contradict the
     // package table root: otherwise the apparent root may be substituted.
-    if obj.get("name").is_some_and(|value| value.as_str() != Some(&manifest.name))
+    if obj
+        .get("name")
+        .is_some_and(|value| value.as_str() != Some(&manifest.name))
         || obj
             .get("version")
             .is_some_and(|value| value.as_str() != Some(&manifest.version))
