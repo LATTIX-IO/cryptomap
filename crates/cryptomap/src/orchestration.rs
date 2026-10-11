@@ -108,7 +108,12 @@ pub fn collect_normalized_batch(
             limits: invocation.input.raw_limits,
             options: Default::default(),
         };
-        let outcome = collect_scoped(invocation.input.scope, invocation.collector, request, cancel)?;
+        let outcome = collect_scoped(
+            invocation.input.scope,
+            invocation.collector,
+            request,
+            cancel,
+        )?;
         normalized_inputs.push(BatchRun {
             input: invocation.input,
             outcome,
