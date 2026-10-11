@@ -4,9 +4,9 @@
 //! Reject symlink/junction indirection by default, including links *inside*
 //! the root; the capability implementation also prevents escape under races.
 use crate::scope::ScopeError;
-use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 #[cfg(unix)]
 use cap_fs_ext::OpenOptionsSyncExt;
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::{
     ambient_authority,
     fs::{Dir, OpenOptions},
@@ -81,8 +81,8 @@ impl FileRoot {
         }
         // Ambient authority is used ONLY for a platform filesystem anchor,
         // never for the untrusted or racy requested full directory path.
-        let mut dir = Dir::open_ambient_dir(&anchor, ambient_authority())
-            .map_err(|_| ScopeError::Io)?;
+        let mut dir =
+            Dir::open_ambient_dir(&anchor, ambient_authority()).map_err(|_| ScopeError::Io)?;
         let mut root_path = anchor;
         for component in names {
             dir = dir
@@ -90,7 +90,10 @@ impl FileRoot {
                 .map_err(|_| ScopeError::OutOfScope)?;
             root_path.push(component);
         }
-        Ok(Self { dir, root: root_path })
+        Ok(Self {
+            dir,
+            root: root_path,
+        })
     }
 
     /// Resolved display-only location of the root (not an access token).
