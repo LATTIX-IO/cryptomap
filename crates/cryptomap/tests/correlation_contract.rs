@@ -192,8 +192,10 @@ fn run(
         .unwrap()
         .with_provider_instance("kms-instance-1")
         .unwrap();
-    let mut inventory_limits = InventoryLimits::default();
-    inventory_limits.relationships = max_relationships;
+    let inventory_limits = InventoryLimits {
+        relationships: max_relationships,
+        ..InventoryLimits::default()
+    };
     normalize(
         PipelineInput {
             scope: &scope,
