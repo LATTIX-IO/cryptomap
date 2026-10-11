@@ -358,17 +358,19 @@ fn all_invalid_batch_authorities_fail_before_any_collector_execution() {
     ), Err(PipelineError::InvalidOutcome)));
     assert_eq!(a.count(), 0);
     assert_eq!(c.count(), 0);
+    let other = Fixture::new("tenant-1", "run-b", "partner-b", &["stream:b"]);
+    let d = other.mock(Behavior::Certificate);
     let cap = BatchLimits {
         sources: 1,
         ..BatchLimits::default()
     };
     assert!(matches!(collect_normalized_batch(
-        vec![first.invocation(&a), duplicate.invocation(&c)],
+        vec![first.invocation(&a), other.invocation(&d)],
         cap,
         &CancellationToken::default(),
-    ), Err(PipelineError::InvalidOutcome)));
+    ), Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))));
     assert_eq!(a.count(), 0);
-    assert_eq!(c.count(), 0);
+    assert_eq!(d.count(), 0);
 }
 #[test]
 fn forged_collector_descriptor_or_ungranted_source_never_executes() {
