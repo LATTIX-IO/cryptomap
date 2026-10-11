@@ -23,11 +23,12 @@ const COLLECTOR_ID: &str = "cryptomap:cargo-lockfile";
 const COLLECTOR_VERSION: &str = "0.1.0";
 
 #[derive(Debug, PartialEq, Eq)]
-struct LockedPackage {
-    name: String,
-    version: String,
+pub(super) struct LockedPackage {
+    pub(super) name: String,
+    pub(super) version: String,
     // A digest avoids leaking tokens from Git/registry source URLs.
-    source_digest: Option<String>,
+    pub(super) source_digest: Option<String>,
+    pub(super) dependencies: Vec<String>,
 }
 
 #[derive(Default)]
@@ -36,6 +37,7 @@ struct PendingPackage {
     version: Option<String>,
     source_digest: Option<String>,
     fields: BTreeSet<String>,
+    dependencies: Vec<String>,
 }
 
 impl PendingPackage {
@@ -48,6 +50,7 @@ impl PendingPackage {
             name,
             version,
             source_digest: self.source_digest,
+            dependencies: self.dependencies,
         })
     }
 }
@@ -69,7 +72,7 @@ fn append_package(
     Ok(())
 }
 
-fn quoted(input: &str, limit: usize) -> Result<&str, CollectorDiagnosticCode> {
+pub(super) fn quoted(input: &str, limit: usize) -> Result<&str, CollectorDiagnosticCode> {
     let inside = input
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
@@ -84,7 +87,7 @@ fn quoted(input: &str, limit: usize) -> Result<&str, CollectorDiagnosticCode> {
     Ok(inside)
 }
 
-fn parse_lock(
+pub(super) fn parse_lock(
     input: &[u8],
     limits: RawLimits,
 ) -> Result<Vec<LockedPackage>, CollectorDiagnosticCode> {
@@ -113,7 +116,15 @@ fn parse_lock(
                 continue;
             }
             let entry = line.strip_suffix(',').unwrap_or(line);
-            quoted(entry.trim(), limits.field_bytes)?;
+            if current.as_ref().ok_or(MalformedSource)?.dependencies.len() >= limits.observations {
+                return Err(ResourceLimit);
+            }
+            let dependency = quoted(entry.trim(), limits.field_bytes)?.to_owned();
+            current
+                .as_mut()
+                .ok_or(MalformedSource)?
+                .dependencies
+                .push(dependency);
             continue;
         }
         if line == "[[package]]" {
