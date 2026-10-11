@@ -724,3 +724,28 @@ fn mixed_fact_types_permute_to_identical_canonical_snapshot() {
     assert_eq!(a.evidence.len(), 6);
     a.verify(InventoryLimits::default()).unwrap();
 }
+
+#[test]
+fn opaque_key_references_preserve_case_sensitive_identity() {
+    let (scope, identity, registry) = setup();
+    let identity = identity.with_provider_instance("kms-scope-a").unwrap();
+    let mut first = raw("key-uppercase", "unused");
+    first.attributes.clear();
+    first.fact = RawFactKind::KeyReference {
+        provider: "kms".into(),
+        reference: "Key-ABC".into(),
+    };
+    let mut second = first.clone();
+    second.event_id = "key-lowercase".into();
+    second.fact = RawFactKind::KeyReference {
+        provider: "kms".into(),
+        reference: "key-abc".into(),
+    };
+    let snapshot = normalize_fixture(
+        &scope, &identity, &registry, outcome(vec![first, second])
+    ).unwrap();
+    assert_eq!(snapshot.assets.len(), 2);
+    assert!(snapshot.observations.values().any(|o| o.value == "Key-ABC"));
+    assert!(snapshot.observations.values().any(|o| o.value == "key-abc"));
+    snapshot.verify(InventoryLimits::default()).unwrap();
+}
