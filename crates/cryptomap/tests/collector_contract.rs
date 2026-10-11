@@ -125,6 +125,18 @@ fn unauthorized_or_incompatible_source_is_rejected() {
 }
 
 #[test]
+fn cross_kind_same_item_cannot_create_ambiguous_coverage() {
+    let mut desc = descriptor();
+    desc.capabilities.sources.insert(RawSourceKind::Certificate);
+    let mut req = request();
+    req.sources.push(RequestedSource {
+        kind: RawSourceKind::Certificate,
+        item: "Cargo.lock".into(),
+    });
+    assert!(CollectionSink::new(desc, req).is_err());
+}
+
+#[test]
 fn conflicting_event_identity_is_refused() {
     let mut sink = CollectionSink::new(descriptor(), request()).unwrap();
     sink.emit(observation("Cargo.lock")).unwrap();
