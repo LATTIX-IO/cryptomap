@@ -4,4 +4,6 @@ pub mod manifest;
 pub mod manifest_collector;
 pub mod npm;
 pub mod npm_manifest;
+pub mod npm_manifest_collector;
+pub mod npm_projection;
 pub mod projection;
