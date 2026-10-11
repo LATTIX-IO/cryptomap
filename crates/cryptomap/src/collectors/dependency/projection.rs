@@ -148,7 +148,11 @@ pub fn project_cargo_direct_edges(
         .iter()
         .filter(|edge| !snapshot.relationships.contains_key(&edge.id))
         .count();
-    if new_edges > inventory_limits.relationships.saturating_sub(snapshot.relationships.len()) {
+    if new_edges
+        > inventory_limits
+            .relationships
+            .saturating_sub(snapshot.relationships.len())
+    {
         return Err(CargoReconciliationError::ResourceLimit);
     }
 
