@@ -164,7 +164,7 @@ pub fn validate_relative(path: &Path) -> Result<(), ScopeError> {
         let text = part.to_string_lossy();
         if text.is_empty()
             || text.contains(['*', '?', '\0', ':'])
-            || text.as_bytes().len() > 255
+            || text.len() > 255
             || (!cfg!(windows) && text.contains('\\'))
         {
             return Err(ScopeError::InvalidInput);
