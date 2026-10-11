@@ -26,6 +26,8 @@ pub enum CargoReconciliationError {
     UnsupportedProfile,
     /// Candidate packages, root identity, pin or dependency reference disagree.
     UnresolvedDependency,
+    /// Snapshot identity, source digest, collector, or run-level provenance was unbound.
+    UnboundEvidence,
 }
 
 impl fmt::Display for CargoReconciliationError {
