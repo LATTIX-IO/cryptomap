@@ -80,16 +80,13 @@ enum Section {
 fn name_ok(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
-        && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
-fn parse_manifest(
-    input: &[u8],
-    limits: RawLimits,
-) -> Result<Manifest, CargoReconciliationError> {
-    use CargoReconciliationError::{
-        InvalidSource, ResourceLimit, UnsupportedProfile,
-    };
+fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReconciliationError> {
+    use CargoReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if input.len() > limits.total_bytes {
         return Err(ResourceLimit);
     }
@@ -123,8 +120,7 @@ fn parse_manifest(
         let (key, value) = line.split_once('=').ok_or(InvalidSource)?;
         let key = key.trim();
         let value = value.trim();
-        let decoded = quoted(value, limits.field_bytes)
-            .map_err(|_| UnsupportedProfile)?;
+        let decoded = quoted(value, limits.field_bytes).map_err(|_| UnsupportedProfile)?;
         match section {
             Section::None => return Err(UnsupportedProfile),
             Section::Package => match key {
@@ -150,7 +146,11 @@ fn parse_manifest(
                 if manifest.direct.len() >= limits.observations {
                     return Err(ResourceLimit);
                 }
-                if manifest.direct.insert(key.to_owned(), pinned.to_owned()).is_some() {
+                if manifest
+                    .direct
+                    .insert(key.to_owned(), pinned.to_owned())
+                    .is_some()
+                {
                     return Err(InvalidSource);
                 }
             }
@@ -174,9 +174,7 @@ fn prove_direct(
     // Workspace/local root only: never infer a root from a registry package.
     let roots: Vec<_> = packages
         .iter()
-        .filter(|p| {
-            p.name == root_name && p.version == root_version && p.source_digest.is_none()
-        })
+        .filter(|p| p.name == root_name && p.version == root_version && p.source_digest.is_none())
         .collect();
     if roots.len() != 1 {
         return Err(UnresolvedDependency);
@@ -198,12 +196,16 @@ fn prove_direct(
         if candidates.len() != 1 {
             return Err(UnresolvedDependency);
         }
-        let other_versions = packages.iter().any(|p| p.name == name && p.version != version);
+        let other_versions = packages
+            .iter()
+            .any(|p| p.name == name && p.version != version);
         let explicit = format!("{name} {version}");
         let matches = root
             .dependencies
             .iter()
-            .filter(|entry| entry.as_str() == explicit || (!other_versions && entry.as_str() == name))
+            .filter(|entry| {
+                entry.as_str() == explicit || (!other_versions && entry.as_str() == name)
+            })
             .count();
         if matches != 1 || name == root_name {
             return Err(UnresolvedDependency);
@@ -245,7 +247,10 @@ pub fn reconcile_cargo_direct(
         .open_file(RawSourceKind::Dependency, lock_item)
         .and_then(|file| file.read_bounded())
         .map_err(|_| UnauthorizedSource)?;
-    let total = manifest_bytes.len().checked_add(lock_bytes.len()).ok_or(ResourceLimit)?;
+    let total = manifest_bytes
+        .len()
+        .checked_add(lock_bytes.len())
+        .ok_or(ResourceLimit)?;
     if total > limits.total_bytes {
         return Err(ResourceLimit);
     }
@@ -270,7 +275,8 @@ pub fn reconcile_cargo_direct(
 mod tests {
     use super::*;
 
-    const MANIFEST: &[u8] = b"[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=0.17.12\"\n";
+    const MANIFEST: &[u8] =
+        b"[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=0.17.12\"\n";
     const LOCK: &[u8] = b"version = 4\n[[package]]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\n \"ring\",\n]\n[[package]]\nname = \"ring\"\nversion = \"0.17.12\"\n";
 
     #[test]
