@@ -66,10 +66,10 @@ pub struct CargoDirectReconciliation {
 }
 
 #[derive(Default)]
-struct Manifest {
-    root_name: Option<String>,
-    root_version: Option<String>,
-    direct: BTreeMap<String, String>,
+pub(super) struct Manifest {
+    pub(super) root_name: Option<String>,
+    pub(super) root_version: Option<String>,
+    pub(super) direct: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy)]
@@ -87,7 +87,25 @@ fn name_ok(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
-fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReconciliationError> {
+// Deliberately narrow supported Cargo version profile: three nonnegative
+// semver numeric components, without leading zeroes or u64 overflow.
+// Valid prerelease/build metadata belongs to the future full-TOML increment.
+fn exact_numeric_version(version: &str) -> bool {
+    let mut components = version.split('.');
+    (0..3).all(|_| {
+        components.next().is_some_and(|component| {
+            !component.is_empty()
+                && (component.len() == 1 || !component.starts_with('0'))
+                && component.bytes().all(|byte| byte.is_ascii_digit())
+                && component.parse::<u64>().is_ok()
+        })
+    }) && components.next().is_none()
+}
+
+pub(super) fn parse_manifest(
+    input: &[u8],
+    limits: RawLimits,
+) -> Result<Manifest, CargoReconciliationError> {
     use CargoReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if input.len() > limits.total_bytes {
         return Err(ResourceLimit);
@@ -129,7 +147,7 @@ fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReco
                 "name" if manifest.root_name.is_none() && name_ok(decoded) => {
                     manifest.root_name = Some(decoded.to_owned());
                 }
-                "version" if manifest.root_version.is_none() => {
+                "version" if manifest.root_version.is_none() && exact_numeric_version(decoded) => {
                     manifest.root_version = Some(decoded.to_owned());
                 }
                 _ => return Err(UnsupportedProfile),
@@ -139,10 +157,7 @@ fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReco
                     return Err(InvalidSource);
                 }
                 let pinned = decoded.strip_prefix('=').ok_or(UnsupportedProfile)?;
-                if pinned.is_empty()
-                    || pinned.contains(['*', '>', '<', '~', '^', ',', ' '])
-                    || pinned.len() > limits.field_bytes
-                {
+                if !exact_numeric_version(pinned) || pinned.len() > limits.field_bytes {
                     return Err(UnsupportedProfile);
                 }
                 if manifest.direct.len() >= limits.observations {
@@ -303,6 +318,32 @@ mod tests {
         ] {
             assert!(parse_manifest(bytes, RawLimits::default()).is_err());
         }
+    }
+
+    #[test]
+    fn strict_numeric_version_profile_rejects_nonsense_and_overflow() {
+        for invalid in [
+            "not-a-version",
+            "1",
+            "1.2",
+            "1.2.3.4",
+            "01.2.3",
+            "1.02.3",
+            "1.2.03",
+            "-1.2.3",
+            "1.2.3-alpha",
+            "18446744073709551616.0.0",
+        ] {
+            assert!(!exact_numeric_version(invalid));
+        }
+        for version in ["0.0.0", "0.17.12", "1.2.3"] {
+            assert!(exact_numeric_version(version));
+        }
+        let root =
+            b"[package]\nname = \"app\"\nversion = \"bad\"\n[dependencies]\nring = \"=0.17.12\"\n";
+        let pin = b"[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"=not-a-version\"\n";
+        assert!(parse_manifest(root, RawLimits::default()).is_err());
+        assert!(parse_manifest(pin, RawLimits::default()).is_err());
     }
 
     #[test]

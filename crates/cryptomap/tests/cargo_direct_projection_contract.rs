@@ -2,17 +2,18 @@
 #![allow(clippy::unwrap_used)]
 use cryptomap::{
     CollectionRunId, IdentityContext, InventoryLimits, InventorySnapshot, RelationshipKind,
-    collector::{CancellationToken, Collector, RequestedSource},
+    batch::{BatchLimits, BatchRun, normalize_batch},
+    collector::{CancellationToken, CollectionRequest, Collector, RequestedSource},
     collectors::dependency::{
         cargo::CargoLockfileCollector, manifest::CargoReconciliationError,
-        projection::project_cargo_direct_edges,
+        manifest_collector::CargoManifestCollector, projection::project_cargo_direct_edges,
     },
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized},
     pipeline::PipelineInput,
     raw::{RawLimits, RawSourceKind},
     registry::Registry,
-    scope::CollectionScope,
+    scope::{CollectionScope, collect_scoped},
 };
 use std::{
     fs,
@@ -69,11 +70,91 @@ impl Drop for Fixture {
 }
 
 fn collected(scope: &CollectionScope, source_id: &str) -> InventorySnapshot {
+    let lock_collector = CargoLockfileCollector::new(scope, "2026-10-11T12:00:00Z");
+    let manifest_collector = CargoManifestCollector::new(scope, "2026-10-11T12:00:00Z");
+    let lock_descriptor = lock_collector.descriptor();
+    let manifest_descriptor = manifest_collector.descriptor();
+    let identity = IdentityContext::new(scope.id().as_str()).unwrap();
+    let registry = Registry::builtin();
+    let lock_run = CollectionRunId::new("run-lock").unwrap();
+    let manifest_run = CollectionRunId::new("run-manifest").unwrap();
+    let lock_sources = vec![RequestedSource {
+        kind: RawSourceKind::Dependency,
+        item: source_id.to_owned(),
+    }];
+    let manifest_sources = vec![RequestedSource {
+        kind: RawSourceKind::Dependency,
+        item: "cargo:manifest".into(),
+    }];
+    let cancellation = CancellationToken::default();
+    let lock_outcome = collect_scoped(
+        scope,
+        &lock_collector,
+        CollectionRequest {
+            run: lock_run.clone(),
+            sources: lock_sources.clone(),
+            limits: RawLimits::default(),
+            options: Default::default(),
+        },
+        &cancellation,
+    )
+    .unwrap();
+    let manifest_outcome = collect_scoped(
+        scope,
+        &manifest_collector,
+        CollectionRequest {
+            run: manifest_run.clone(),
+            sources: manifest_sources.clone(),
+            limits: RawLimits::default(),
+            options: Default::default(),
+        },
+        &cancellation,
+    )
+    .unwrap();
+    normalize_batch(
+        vec![
+            BatchRun {
+                input: PipelineInput {
+                    scope,
+                    identity: &identity,
+                    registry: &registry,
+                    expected_descriptor: &lock_descriptor,
+                    expected_run: &lock_run,
+                    sources: &lock_sources,
+                    raw_limits: RawLimits::default(),
+                    inventory_limits: InventoryLimits::default(),
+                    started_at: "2026-10-11T11:59:00Z",
+                    ended_at: "2026-10-11T12:01:00Z",
+                },
+                outcome: lock_outcome,
+            },
+            BatchRun {
+                input: PipelineInput {
+                    scope,
+                    identity: &identity,
+                    registry: &registry,
+                    expected_descriptor: &manifest_descriptor,
+                    expected_run: &manifest_run,
+                    sources: &manifest_sources,
+                    raw_limits: RawLimits::default(),
+                    inventory_limits: InventoryLimits::default(),
+                    started_at: "2026-10-11T11:59:00Z",
+                    ended_at: "2026-10-11T12:01:00Z",
+                },
+                outcome: manifest_outcome,
+            },
+        ],
+        BatchLimits::default(),
+    )
+    .unwrap()
+}
+
+fn collected_lock_only(scope: &CollectionScope, source_id: &str) -> InventorySnapshot {
     let collector = CargoLockfileCollector::new(scope, "2026-10-11T12:00:00Z");
     let descriptor = collector.descriptor();
     let identity = IdentityContext::new(scope.id().as_str()).unwrap();
     let registry = Registry::builtin();
-    let run = CollectionRunId::new("run-1").unwrap();
+    let run = CollectionRunId::new("run-lock").unwrap();
     let requested = vec![RequestedSource {
         kind: RawSourceKind::Dependency,
         item: source_id.to_owned(),
@@ -128,12 +209,23 @@ fn direct_edge_uses_existing_root_and_target_evidence_and_is_replay_stable() {
     assert_eq!(projected.relationships.len(), 1);
     let edge = projected.relationships.values().next().unwrap();
     assert_eq!(edge.kind, RelationshipKind::DependsOn);
-    assert_eq!(edge.evidence.len(), 2);
+    assert_eq!(edge.evidence.len(), 4);
+    let mut sources = std::collections::BTreeSet::new();
+    let mut runs = std::collections::BTreeSet::new();
     for id in &edge.evidence {
         let evidence = projected.evidence.get(id).unwrap();
-        assert_eq!(evidence.source, "Dependency:cargo:lock");
+        sources.insert(evidence.source.as_str());
+        runs.insert(evidence.run.as_str());
         assert_eq!(evidence.source_sha256.as_ref().map(String::len), Some(64));
     }
+    assert_eq!(
+        sources,
+        std::collections::BTreeSet::from(["Dependency:cargo:lock", "Dependency:cargo:manifest",])
+    );
+    assert_eq!(
+        runs,
+        std::collections::BTreeSet::from(["run-lock", "run-manifest"])
+    );
     assert_ne!(projected.id, snapshot.id);
     projected
         .verify_for_scope(scope.id(), InventoryLimits::default())
@@ -238,5 +330,52 @@ fn ambiguous_pin_and_reduced_relationship_budget_cannot_emit_edges() {
             limit,
         ),
         Err(CargoReconciliationError::ResourceLimit)
+    );
+}
+
+#[test]
+fn lock_only_snapshot_cannot_invent_manifest_attestation() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", "cargo:lock", true);
+    let lock_only = collected_lock_only(&scope, "cargo:lock");
+    assert_eq!(lock_only.evidence.len(), 2);
+    lock_only
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
+    assert_eq!(
+        project(&lock_only, &scope),
+        Err(CargoReconciliationError::UnboundEvidence)
+    );
+}
+
+#[test]
+fn changed_manifest_digest_must_not_reuse_old_canonical_attestation() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", "cargo:lock", true);
+    let collected = collected(&scope, "cargo:lock");
+    let modified_manifest = format!("{MANIFEST}\n# independently modified after collection\n");
+    let modified = Fixture::new(&modified_manifest, LOCK);
+    let modified_scope = modified.scope("tenant-a", "cargo:lock", true);
+    // The lockfile still resolves the same exact dependency: the manifest
+    // content hash, not package-name equality, must reject stale evidence.
+    assert_eq!(
+        project(&collected, &modified_scope),
+        Err(CargoReconciliationError::UnboundEvidence)
+    );
+}
+
+#[test]
+fn failed_manifest_collection_never_produces_direct_edges() {
+    let valid = Fixture::new(MANIFEST, LOCK);
+    let scope = valid.scope("tenant-a", "cargo:lock", true);
+    let snapshot = collected(&scope, "cargo:lock");
+    let invalid = Fixture::new(
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = \"0.17\"\n",
+        LOCK,
+    );
+    let invalid_scope = invalid.scope("tenant-a", "cargo:lock", true);
+    assert_eq!(
+        project(&snapshot, &invalid_scope),
+        Err(CargoReconciliationError::UnsupportedProfile)
     );
 }
