@@ -120,7 +120,10 @@ fn parse_json(bytes: &[u8]) -> Result<Value, NpmReconciliationError> {
         serde_json::from_slice(bytes).map_err(|_| NpmReconciliationError::InvalidSource)?;
     Ok(document.0)
 }
-pub(super) fn parse_manifest(bytes: &[u8], limits: RawLimits) -> Result<Manifest, NpmReconciliationError> {
+pub(super) fn parse_manifest(
+    bytes: &[u8],
+    limits: RawLimits,
+) -> Result<Manifest, NpmReconciliationError> {
     use NpmReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if bytes.len() > limits.total_bytes {
         return Err(ResourceLimit);
