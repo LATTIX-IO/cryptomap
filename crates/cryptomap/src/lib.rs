@@ -1063,6 +1063,38 @@ impl InventorySnapshot {
         }
         Ok(())
     }
+    /// Verify canonical integrity and bind every collection run to a scope
+    /// supplied by the trusted caller rather than the imported snapshot.
+    ///
+    /// The expected scope must come from the host authorization context, not
+    /// from the untrusted JSON. Runless legacy snapshots cannot demonstrate
+    /// tenant ownership and are deliberately rejected by this entry point.
+    /// This check is not an identity signature or an authentication mechanism.
+    pub fn verify_for_scope(
+        &self,
+        expected_scope: &CollectionScopeId,
+        limits: InventoryLimits,
+    ) -> Result<(), InventoryError> {
+        self.verify(limits)?;
+        if self.runs.is_empty()
+            || self.runs.values().any(|run| &run.scope != expected_scope)
+        {
+            return Err(InventoryError::InvalidMetadata);
+        }
+        Ok(())
+    }
+
+    /// Parse and verify a snapshot against an independently authorized scope.
+    /// Preserves the strict JSON, size, schema and canonical digest checks.
+    pub fn from_json_verified_for_scope(
+        input: &str,
+        expected_scope: &CollectionScopeId,
+        limits: InventoryLimits,
+    ) -> Result<Self, InventoryError> {
+        let snapshot = Self::from_json_verified(input, limits)?;
+        snapshot.verify_for_scope(expected_scope, limits)?;
+        Ok(snapshot)
+    }
     /// Decode JSON only after verifying schema, source references and canonical digest.
     pub fn from_json_verified(
         input: &str,
