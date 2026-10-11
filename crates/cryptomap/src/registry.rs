@@ -390,7 +390,11 @@ mod tests {
     fn results_include_full_provenance_and_can_be_replayed() {
         let registry = Registry::builtin();
         let known = registry
-            .resolve(&Namespace::X509Oid, &Kind::Signature, "1.2.840.113549.1.1.11")
+            .resolve(
+                &Namespace::X509Oid,
+                &Kind::Signature,
+                "1.2.840.113549.1.1.11",
+            )
             .unwrap();
         let encoded = serde_json::to_string(&known).unwrap();
         let decoded: Resolution = serde_json::from_str(&encoded).unwrap();
@@ -442,7 +446,10 @@ mod tests {
     fn collision_oversize_and_unknown_fail_closed() {
         let mut registry = Registry::builtin();
         let original = registry.entries.values().next().unwrap().clone();
-        assert_eq!(registry.register(original.clone()), Err(RegistryError::ReservedNamespace));
+        assert_eq!(
+            registry.register(original.clone()),
+            Err(RegistryError::ReservedNamespace)
+        );
         let extension = Mapping {
             namespace: Namespace::Extension("acme.security".into()),
             kind: original.kind,
@@ -453,11 +460,17 @@ mod tests {
             source: "urn:acme:crypto-registry".into(),
         };
         registry.register(extension.clone()).unwrap();
-        assert_eq!(registry.register(extension.clone()), Err(RegistryError::Collision));
+        assert_eq!(
+            registry.register(extension.clone()),
+            Err(RegistryError::Collision)
+        );
         let mut invalid = extension;
         invalid.canonical = " ".into();
         invalid.alias = "fresh-alias".into();
-        assert_eq!(registry.register(invalid), Err(RegistryError::InvalidCanonical));
+        assert_eq!(
+            registry.register(invalid),
+            Err(RegistryError::InvalidCanonical)
+        );
         assert_eq!(
             registry.resolve(&Namespace::Ssh, &Kind::Key, &"x".repeat(257)),
             Err(RegistryError::InvalidInput)
