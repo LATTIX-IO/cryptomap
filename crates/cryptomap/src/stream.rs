@@ -9,7 +9,7 @@ use crate::{
         CancellationToken, CollectionOutcome, CollectionRequest, CollectionSink,
         CollectorDescriptor, CollectorDiagnostic, CollectorDiagnosticCode,
     },
-    raw::{RawObservation, RawSourceKind},
+    raw::RawObservation,
     scope::{CollectionScope, ScopeError},
 };
 use std::{
@@ -237,8 +237,3 @@ impl StreamIntake {
         Ok(self.sink.finish())
     }
 }
-
-/// Avoid exposing an authorization grant based solely on the untrusted fact
-/// type. A source type is constrained by the exact CollectionRequest already
-/// checked at construction and for each incoming observation.
-const _: fn(RawSourceKind) = |_: RawSourceKind| {};
