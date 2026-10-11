@@ -170,7 +170,7 @@ fn bounded_fields_and_secret_material_fail() {
 #[test]
 fn limits_are_rollback_safe() {
     let mut constrained = request();
-    constrained.limits.observations = 1;
+    constrained.limits.observations = 2;
     constrained.limits.total_bytes = 100;
     constrained.limits.record_bytes = 100;
     constrained.limits.field_bytes = 50;
