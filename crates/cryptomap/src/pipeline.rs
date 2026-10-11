@@ -663,11 +663,6 @@ pub fn normalize(
     }
     // Second pass: only events that passed host authorization and normalization
     // are addressable. Never synthesize edges from co-located or similar values.
-    crate::correlation::link_explicit(
-        &mut builder,
-        &records,
-        &mapped_assets,
-        &mapped_evidence,
-    )?;
+    crate::correlation::link_explicit(&mut builder, &records, &mapped_assets, &mapped_evidence)?;
     Ok(builder.finalize(input.inventory_limits)?)
 }
