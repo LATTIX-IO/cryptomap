@@ -114,7 +114,8 @@ impl CollectionRequest {
                 return Err(InventoryError::InvalidMetadata);
             }
             crate::validation::safe_text(&src.item, self.limits.field_bytes)?;
-            if !unique.insert((src.kind.clone(), src.item.clone())) {
+            // Coverage is keyed by item, so different kinds may not reuse the same name.
+            if !unique.insert(src.item.clone()) {
                 return Err(InventoryError::InvalidMetadata);
             }
         }
