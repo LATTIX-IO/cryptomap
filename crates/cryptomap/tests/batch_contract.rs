@@ -192,8 +192,15 @@ fn heterogeneous_collectors_with_same_source_name_preserve_run_coverage() {
     assert_eq!(result.observations.len(), 2);
     assert_eq!(result.runs.len(), 2);
     assert_eq!(result.coverage_records.len(), 2);
-    assert_eq!(result.coverage.len(), 2);
-    assert_ne!(result.coverage.keys().next(), result.coverage.keys().nth(1));
+    // Do not pollute legacy coverage with ephemeral run-derived keys;
+    // the typed records hold the authoritative run+source tuple.
+    assert!(result.coverage.is_empty());
+    let distinct: BTreeSet<_> = result
+        .coverage_records
+        .iter()
+        .map(|r| (&r.run, &r.source_item))
+        .collect();
+    assert_eq!(distinct.len(), 2);
     assert!(
         result
             .assets
@@ -569,4 +576,53 @@ fn matching_profile_and_certificate_without_explicit_assertion_create_no_edge() 
     let snapshot = normalize_batch(vec![fixture.input(outcome)], BatchLimits::default()).unwrap();
     assert!(snapshot.relationships.is_empty());
     snapshot.verify(InventoryLimits::default()).unwrap();
+}
+
+#[test]
+fn reinspection_with_fresh_run_ids_has_stable_coverage_and_confirmed_evidence_removal() {
+    let before = Fixture::new("tenant-a", "old-run", "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")]);
+    let after = Fixture::new("tenant-a", "new-run", "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")]);
+    let previous = normalize_batch(vec![
+        before.input(before.outcome(
+            vec![before.observation("event", "shared", cert())],
+            state("shared", CoverageState::InspectedObserved),
+        ))
+    ], BatchLimits::default()).unwrap();
+    let current = normalize_batch(vec![
+        after.input(after.outcome(
+            vec![after.observation("event", "shared", cert())],
+            state("shared", CoverageState::InspectedObserved),
+        ))
+    ], BatchLimits::default()).unwrap();
+    let changes = previous.diff(&current);
+    assert!(changes.coverage_changed.is_empty());
+    assert!(changes.evidence_tentative_removed.is_empty());
+    assert!(changes.observations_tentative_removed.is_empty());
+    assert_eq!(changes.evidence_removed.len(), 1);
+    assert_eq!(changes.observations_removed.len(), 1);
+    assert!(changes.tentative_removed.is_empty());
+    assert!(previous.coverage.is_empty() && current.coverage.is_empty());
+}
+
+#[test]
+fn partial_reinspection_does_not_confirm_missing_prior_evidence() {
+    let before = Fixture::new("tenant-a", "old-run", "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")]);
+    let after = Fixture::new("tenant-a", "new-run", "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")]);
+    let old = normalize_batch(vec![
+        before.input(before.outcome(
+            vec![before.observation("event", "shared", cert())],
+            state("shared", CoverageState::InspectedObserved),
+        ))
+    ], BatchLimits::default()).unwrap();
+    let new = normalize_batch(vec![
+        after.input(after.outcome(vec![], state("shared", CoverageState::Failed))),
+    ], BatchLimits::default()).unwrap();
+    let diff = old.diff(&new);
+    assert_eq!(diff.evidence_tentative_removed.len(), 1);
+    assert!(diff.evidence_removed.is_empty());
+    assert_eq!(diff.tentative_removed.len(), 1);
 }
