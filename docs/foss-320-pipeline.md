@@ -14,7 +14,7 @@ Dependency facts produce `AssetKind::Library` and a `dependency:presence=declare
 
 Every input event is checked before insertion, then replay identity is sorted with a `BTreeMap`; conflicting duplicate event IDs fail. Typed IDs are derived from domain-separated SHA-256 hashes of JSON tuples, so source string concatenation cannot cause ID ambiguity. Use-site identity is a hash of a typed source-kind/item/location tuple, retaining `None` distinctly from `Some(0)`. Independent source events use distinct observation contexts to avoid manufacturing contradictory-value conflicts solely because of alias differences.
 
-The pipeline rejects disagreement between emitted observations and source coverage or aggregate status. Failures and uninspected sources retain exact `CoverageRecord` values, with `RunCompleteness::Partial` or `Failed`; one failed source does not erase a separate successful source. Snapshot finalization invokes existing asset, reference, evidence, timestamp, quota, and digest checks.
+The pipeline rejects disagreement between emitted observations and source coverage or aggregate status. A partially inspected source may contribute evidence while retaining `CoverageState::Partial`; failed, unsupported and uninspected sources cannot provide observations. A run with no fully inspected source is `Failed` at the aggregate level even when partially observed evidence survives, until FOSS-328 defines richer aggregate diagnostic states. Failures and uninspected sources retain exact `CoverageRecord` values, with `RunCompleteness::Partial` or `Failed`; one failed source does not erase a separate successful source. Snapshot finalization invokes existing asset, reference, evidence, timestamp, quota, and digest checks.
 
 ## Acceptance verification
 
@@ -27,7 +27,7 @@ cargo test --test pipeline_contract --locked
 cargo test --workspace --all-features --locked
 ```
 
-Integration fixtures cover approved algorithm records, exact canonical profiles and raw provenance, replay-permutation invariance, unknown-safe handling, out-of-scope attempts, contradictory collection states, conflicting replay, unsupported fact types, tenant identity isolation, forged run/collector rejection, typed use-site distinction, failed-source partial coverage and noninferential dependency presence. Required CI additionally includes Windows, Rust 1.85, docs and dependency/security gates.
+Integration fixtures cover approved algorithm records, exact canonical profiles and raw provenance, replay-permutation invariance, unknown-safe handling, out-of-scope attempts, contradictory collection states, conflicting replay, unsupported fact types, tenant identity isolation, forged run/collector rejection, typed use-site distinction, failed-source partial coverage, partial-source evidence retention, Windows-capability handle release, and noninferential dependency presence. Required CI additionally includes Windows, Rust 1.85, docs and dependency/security gates.
 
 ## Follow-on increments
 
