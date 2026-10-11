@@ -518,11 +518,9 @@ fn certificate_fingerprint_is_validated_and_canonicalized_without_certificate_bo
             signature_profile: None
         } if fingerprint_sha256 == &"ab".repeat(32)
     )));
-    assert!(snap
-        .observations
-        .values()
-        .all(|obs| obs.property == "certificate:fingerprint-sha256"
-            && obs.value == "ab".repeat(32)));
+    assert!(snap.observations.values().all(
+        |obs| obs.property == "certificate:fingerprint-sha256" && obs.value == "ab".repeat(32)
+    ));
     snap.verify(InventoryLimits::default()).unwrap();
 }
 
@@ -554,9 +552,14 @@ fn key_reference_requires_provider_instance_and_never_sets_algorithm() {
     };
     assert!(matches!(
         normalize_fixture(&scope, &identity, &registry, outcome(vec![item.clone()])),
-        Err(PipelineError::Inventory(InventoryError::InsufficientIdentity))
+        Err(PipelineError::Inventory(
+            InventoryError::InsufficientIdentity
+        ))
     ));
-    let pinned = identity.clone().with_provider_instance("kms-instance-1").unwrap();
+    let pinned = identity
+        .clone()
+        .with_provider_instance("kms-instance-1")
+        .unwrap();
     let snap = normalize_fixture(&scope, &pinned, &registry, outcome(vec![item.clone()])).unwrap();
     assert!(snap.assets.values().all(|asset| matches!(
         &asset.kind,
@@ -566,10 +569,13 @@ fn key_reference_requires_provider_instance_and_never_sets_algorithm() {
             fingerprint: Some(_)
         }
     )));
-    assert!(snap.observations.values().all(|o| o.property == "key:provider-reference"));
+    assert!(
+        snap.observations
+            .values()
+            .all(|o| o.property == "key:provider-reference")
+    );
     let other_instance = identity.with_provider_instance("kms-instance-2").unwrap();
-    let other = normalize_fixture(&scope, &other_instance, &registry, outcome(vec![item]))
-        .unwrap();
+    let other = normalize_fixture(&scope, &other_instance, &registry, outcome(vec![item])).unwrap();
     assert_ne!(snap.assets.keys().next(), other.assets.keys().next());
 }
 
@@ -608,21 +614,28 @@ fn protocol_state_and_unknown_version_remain_distinct_without_inference() {
     assert_eq!(snap.assets.len(), 3);
     assert!(snap.assets.values().any(|a| matches!(
         a.kind,
-        AssetKind::Protocol { state: ProtocolState::Negotiated, .. }
+        AssetKind::Protocol {
+            state: ProtocolState::Negotiated,
+            ..
+        }
     )));
     assert!(snap.assets.values().any(|a| matches!(
         a.kind,
-        AssetKind::Protocol { state: ProtocolState::Configured, .. }
+        AssetKind::Protocol {
+            state: ProtocolState::Configured,
+            ..
+        }
     )));
     assert!(snap.assets.values().any(|a| matches!(
         &a.kind,
         AssetKind::DetailedProtocol { metadata } if
             matches!(metadata.version, cryptomap::metadata::Observed::Unknown)
     )));
-    assert!(snap
-        .observations
-        .values()
-        .any(|o| o.property == "protocol:version-availability" && o.value == "unknown"));
+    assert!(
+        snap.observations
+            .values()
+            .any(|o| o.property == "protocol:version-availability" && o.value == "unknown")
+    );
 }
 
 #[test]
@@ -636,16 +649,22 @@ fn configuration_remains_source_use_and_rejects_sensitive_property() {
         value: "TLSv1.3".into(),
     };
     let snap = normalize_fixture(
-        &scope, &identity, &registry, outcome(vec![configured.clone()])
-    ).unwrap();
-    assert!(snap
-        .assets
-        .values()
-        .all(|asset| matches!(asset.kind, AssetKind::SourceUse { .. })));
-    assert!(snap
-        .observations
-        .values()
-        .all(|o| o.property == "app:tls_min_version" && o.value == "TLSv1.3"));
+        &scope,
+        &identity,
+        &registry,
+        outcome(vec![configured.clone()]),
+    )
+    .unwrap();
+    assert!(
+        snap.assets
+            .values()
+            .all(|asset| matches!(asset.kind, AssetKind::SourceUse { .. }))
+    );
+    assert!(
+        snap.observations
+            .values()
+            .all(|o| o.property == "app:tls_min_version" && o.value == "TLSv1.3")
+    );
     configured.fact = RawFactKind::Configuration {
         property: "app:password".into(),
         value: "unredacted-example".into(),
