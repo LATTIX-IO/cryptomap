@@ -319,6 +319,9 @@ impl CollectionSink {
                 let consistent = match state {
                     CoverageState::InspectedObserved => observed,
                     CoverageState::InspectedNoObservation => !observed,
+                    // Partially inspected sources are permitted to retain
+                    // already collected evidence without claiming completion.
+                    CoverageState::Partial => true,
                     _ => !observed,
                 };
                 if !consistent {
