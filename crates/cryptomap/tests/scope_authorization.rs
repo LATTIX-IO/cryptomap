@@ -1,10 +1,10 @@
 //! FOSS-319: capability-rooted filesystem and explicit network scope tests.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
-    CollectionRunId, CollectorId, CollectionScopeId, InventoryError,
+    CollectionRunId, CollectionScopeId, CollectorId, InventoryError,
     collector::{
-        CancellationToken, CollectionMode, CollectionRequest, CollectionSink, Collector,
-        CollectorCapabilities, CollectorDescriptor, RequestedSource, COLLECTOR_CONTRACT_VERSION,
+        COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode, CollectionRequest,
+        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor, RequestedSource,
     },
     filesystem_scope::{FileRoot, validate_relative},
     network_scope::{NetworkScope, NetworkTarget},
@@ -27,24 +27,38 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let num = NEXT.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("cryptomap-foss319-{}-{}", std::process::id(), num));
+        let root =
+            std::env::temp_dir().join(format!("cryptomap-foss319-{}-{}", std::process::id(), num));
         fs::create_dir_all(root.join("inside")).unwrap();
         fs::write(root.join("inside").join("Cargo.lock"), b"safe-file").unwrap();
         fs::write(root.join("secret.txt"), b"outside-data").unwrap();
         Self { root }
     }
-    fn dir(&self) -> PathBuf { self.root.join("inside") }
+    fn dir(&self) -> PathBuf {
+        self.root.join("inside")
+    }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 #[test]
 fn explicit_file_capability_reads_only_allowed_relative_file() {
     let fixture = Fixture::new();
     let root = FileRoot::open(fixture.dir()).unwrap();
     assert!(root.authorize("Cargo.lock", 32).is_ok());
-    assert_eq!(root.authorize("Cargo.lock", 32).unwrap().read_bounded().unwrap(), b"safe-file");
-    assert!(matches!(root.authorize("Cargo.lock", 2).unwrap().read_bounded(), Err(ScopeError::ResourceLimit)));
+    assert_eq!(
+        root.authorize("Cargo.lock", 32)
+            .unwrap()
+            .read_bounded()
+            .unwrap(),
+        b"safe-file"
+    );
+    assert!(matches!(
+        root.authorize("Cargo.lock", 2).unwrap().read_bounded(),
+        Err(ScopeError::ResourceLimit)
+    ));
     assert!(root.authorize("../secret.txt", 32).is_err());
     assert!(root.authorize(fixture.root.join("secret.txt"), 32).is_err());
     assert!(root.authorize("missing.lock", 32).is_err());
@@ -54,7 +68,16 @@ fn explicit_file_capability_reads_only_allowed_relative_file() {
 
 #[test]
 fn validate_relative_rejects_traversal_globs_and_device_names() {
-    for text in ["../secret", "sub/../../secret", "/etc/passwd", ".", "file?.pem", "file*.pem", "C:\\Windows\\win.ini", "\\\\server\\share"] {
+    for text in [
+        "../secret",
+        "sub/../../secret",
+        "/etc/passwd",
+        ".",
+        "file?.pem",
+        "file*.pem",
+        "C:\\Windows\\win.ini",
+        "\\\\server\\share",
+    ] {
         assert!(validate_relative(Path::new(text)).is_err(), "{text}");
     }
     assert!(validate_relative(Path::new("sub/file.pem")).is_ok());
@@ -100,10 +123,25 @@ fn explicit_network_pins_and_ports_are_enforced() {
     assert!(scope.grant(target).is_err());
     assert!(scope.permits(&id));
     let permitted = scope.authorize(&id).unwrap();
-    assert!(matches!(permitted.connect(SocketAddr::new(ip, port + 1), Duration::from_millis(500)), Err(ScopeError::OutOfScope)));
-    assert!(matches!(permitted.connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127,0,0,2)), port), Duration::from_millis(500)), Err(ScopeError::OutOfScope)));
-    assert!(permitted.connect(SocketAddr::new(ip, port), Duration::ZERO).is_err());
-    let _client = permitted.connect(SocketAddr::new(ip, port), Duration::from_secs(1)).unwrap();
+    assert!(matches!(
+        permitted.connect(SocketAddr::new(ip, port + 1), Duration::from_millis(500)),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(matches!(
+        permitted.connect(
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)), port),
+            Duration::from_millis(500)
+        ),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(
+        permitted
+            .connect(SocketAddr::new(ip, port), Duration::ZERO)
+            .is_err()
+    );
+    let _client = permitted
+        .connect(SocketAddr::new(ip, port), Duration::from_secs(1))
+        .unwrap();
     let _accepted = listener.accept().unwrap();
 }
 
@@ -115,7 +153,15 @@ fn hostname_requires_caller_pinned_ip_and_rejects_ambiguous_urls() {
     assert!(NetworkTarget::new("example.com/redirect", 443, None, [ip]).is_err());
     assert!(NetworkTarget::new("example.com", 0, None, [ip]).is_err());
     assert!(NetworkTarget::new("example.com", 443, Some("invalid/url"), [ip]).is_err());
-    assert!(NetworkTarget::new("127.0.0.1", 443, None, [IpAddr::V4(Ipv4Addr::new(10,0,0,1))]).is_err());
+    assert!(
+        NetworkTarget::new(
+            "127.0.0.1",
+            443,
+            None,
+            [IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))]
+        )
+        .is_err()
+    );
     let target = NetworkTarget::new("API.Example.com", 443, Some("API.Example.com"), [ip]).unwrap();
     assert_eq!(target.id(), "api.example.com:443");
     assert_eq!(target.sni(), Some("api.example.com"));
@@ -139,13 +185,25 @@ fn descriptor() -> CollectorDescriptor {
 }
 struct Mock;
 impl Collector for Mock {
-    fn descriptor(&self) -> CollectorDescriptor { descriptor() }
-    fn collect(&self, _: &CollectionRequest, _: &mut CollectionSink, _: &CancellationToken) -> Result<(), InventoryError> { Ok(()) }
+    fn descriptor(&self) -> CollectorDescriptor {
+        descriptor()
+    }
+    fn collect(
+        &self,
+        _: &CollectionRequest,
+        _: &mut CollectionSink,
+        _: &CancellationToken,
+    ) -> Result<(), InventoryError> {
+        Ok(())
+    }
 }
 fn request(kind: RawSourceKind, item: &str) -> CollectionRequest {
     CollectionRequest {
         run: CollectionRunId::new("run").unwrap(),
-        sources: vec![RequestedSource { kind, item: item.into() }],
+        sources: vec![RequestedSource {
+            kind,
+            item: item.into(),
+        }],
         limits: RawLimits::default(),
         options: BTreeMap::new(),
     }
@@ -154,24 +212,76 @@ fn request(kind: RawSourceKind, item: &str) -> CollectionRequest {
 fn scoped_collector_fails_closed_before_invoking_unapproved_source() {
     let fixture = Fixture::new();
     let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-1").unwrap());
-    scope.grant_file(RawSourceKind::Dependency, "Cargo.lock", fixture.dir(), "Cargo.lock", 1024).unwrap();
+    scope
+        .grant_file(
+            RawSourceKind::Dependency,
+            "Cargo.lock",
+            fixture.dir(),
+            "Cargo.lock",
+            1024,
+        )
+        .unwrap();
     let okay = request(RawSourceKind::Dependency, "Cargo.lock");
     assert!(collect_scoped(&scope, &Mock, okay, &CancellationToken::default()).is_ok());
     let outsider = request(RawSourceKind::Dependency, "../secret.txt");
-    assert!(matches!(collect_scoped(&scope, &Mock, outsider, &CancellationToken::default()), Err(ScopeError::OutOfScope)));
+    assert!(matches!(
+        collect_scoped(&scope, &Mock, outsider, &CancellationToken::default()),
+        Err(ScopeError::OutOfScope)
+    ));
     let wrong_kind = request(RawSourceKind::TlsEndpoint, "Cargo.lock");
-    assert!(matches!(scope.validate_request(&wrong_kind), Err(ScopeError::OutOfScope)));
-    assert_eq!(scope.open_file(RawSourceKind::Dependency, "Cargo.lock").unwrap().read_bounded().unwrap(), b"safe-file");
-    assert!(scope.open_file(RawSourceKind::Dependency, "outside.txt").is_err());
+    assert!(matches!(
+        scope.validate_request(&wrong_kind),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert_eq!(
+        scope
+            .open_file(RawSourceKind::Dependency, "Cargo.lock")
+            .unwrap()
+            .read_bounded()
+            .unwrap(),
+        b"safe-file"
+    );
+    assert!(
+        scope
+            .open_file(RawSourceKind::Dependency, "outside.txt")
+            .is_err()
+    );
 }
 #[test]
 fn logical_authorizations_are_exact_and_nonexpanding() {
     let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-1").unwrap());
-    scope.grant_logical(RawSourceKind::Certificate, "store:CurrentUser/Root").unwrap();
-    scope.grant_logical(RawSourceKind::Telemetry, "stream:approved").unwrap();
-    assert!(scope.grant_logical(RawSourceKind::Certificate, "store:CurrentUser/Root").is_err());
-    assert!(scope.grant_logical(RawSourceKind::Source, "source:*").is_err());
-    assert!(scope.validate_request(&request(RawSourceKind::Certificate, "store:CurrentUser/Root")).is_ok());
-    assert!(scope.validate_request(&request(RawSourceKind::Telemetry, "stream:other")).is_err());
-    assert!(scope.open_file(RawSourceKind::Certificate, "store:CurrentUser/Root").is_err());
+    scope
+        .grant_logical(RawSourceKind::Certificate, "store:CurrentUser/Root")
+        .unwrap();
+    scope
+        .grant_logical(RawSourceKind::Telemetry, "stream:approved")
+        .unwrap();
+    assert!(
+        scope
+            .grant_logical(RawSourceKind::Certificate, "store:CurrentUser/Root")
+            .is_err()
+    );
+    assert!(
+        scope
+            .grant_logical(RawSourceKind::Source, "source:*")
+            .is_err()
+    );
+    assert!(
+        scope
+            .validate_request(&request(
+                RawSourceKind::Certificate,
+                "store:CurrentUser/Root"
+            ))
+            .is_ok()
+    );
+    assert!(
+        scope
+            .validate_request(&request(RawSourceKind::Telemetry, "stream:other"))
+            .is_err()
+    );
+    assert!(
+        scope
+            .open_file(RawSourceKind::Certificate, "store:CurrentUser/Root")
+            .is_err()
+    );
 }

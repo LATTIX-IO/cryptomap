@@ -30,7 +30,9 @@ fn valid_dns_host(host: &str) -> bool {
                 && label.len() <= 63
                 && !label.starts_with('-')
                 && !label.ends_with('-')
-                && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
         })
 }
 
@@ -70,7 +72,12 @@ impl NetworkTarget {
         if pinned_ips.is_empty() || pinned_ips.len() > 32 {
             return Err(ScopeError::InvalidInput);
         }
-        Ok(Self { host, port, sni, pinned_ips })
+        Ok(Self {
+            host,
+            port,
+            sni,
+            pinned_ips,
+        })
     }
 
     /// Exact canonical endpoint name, bracketed for IPv6.
@@ -151,8 +158,12 @@ impl AuthorizedEndpoint<'_> {
 
     /// Explicit IP destinations, checked again on every connection.
     pub fn approved_destinations(&self) -> Vec<SocketAddr> {
-        self.entry.pinned_ips.iter()
-            .copied().map(|ip| SocketAddr::new(ip, self.entry.port)).collect()
+        self.entry
+            .pinned_ips
+            .iter()
+            .copied()
+            .map(|ip| SocketAddr::new(ip, self.entry.port))
+            .collect()
     }
 
     /// Connect only to an approved IP and exact port with a finite timeout.

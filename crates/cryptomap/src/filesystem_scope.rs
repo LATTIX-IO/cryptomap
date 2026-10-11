@@ -5,7 +5,10 @@
 //! the root; the capability implementation also prevents escape under races.
 use crate::scope::ScopeError;
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
-use cap_std::{ambient_authority, fs::{Dir, OpenOptions}};
+use cap_std::{
+    ambient_authority,
+    fs::{Dir, OpenOptions},
+};
 use std::{
     io::Read,
     path::{Component, Path, PathBuf},
@@ -29,8 +32,7 @@ impl FileRoot {
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err(ScopeError::InvalidInput);
         }
-        let dir = Dir::open_ambient_dir(root, ambient_authority())
-            .map_err(|_| ScopeError::Io)?;
+        let dir = Dir::open_ambient_dir(root, ambient_authority()).map_err(|_| ScopeError::Io)?;
         let root = std::fs::canonicalize(root).map_err(|_| ScopeError::Io)?;
         Ok(Self { dir, root })
     }
@@ -66,8 +68,11 @@ impl FileRoot {
         for component in path.components() {
             if let Component::Normal(part) = component {
                 prefix.push(part);
-                let kind = self.dir.symlink_metadata(&prefix)
-                    .map_err(|_| ScopeError::Io)?.file_type();
+                let kind = self
+                    .dir
+                    .symlink_metadata(&prefix)
+                    .map_err(|_| ScopeError::Io)?
+                    .file_type();
                 if kind.is_symlink() {
                     return Err(ScopeError::OutOfScope);
                 }
@@ -76,7 +81,10 @@ impl FileRoot {
         // cap-std canonicalization is relative to this Dir, even when the
         // operating system encounters symlinks or Windows reparse points.
         // Reject redirection inside root as well as escape attempts.
-        let resolved = self.dir.canonicalize(path).map_err(|_| ScopeError::OutOfScope)?;
+        let resolved = self
+            .dir
+            .canonicalize(path)
+            .map_err(|_| ScopeError::OutOfScope)?;
         if resolved != path {
             return Err(ScopeError::OutOfScope);
         }
@@ -117,20 +125,22 @@ impl AuthorizedFile<'_> {
                 let Component::Normal(name) = component else {
                     return Err(ScopeError::OutOfScope);
                 };
-                dir = dir.open_dir_nofollow(name).map_err(|_| ScopeError::OutOfScope)?;
+                dir = dir
+                    .open_dir_nofollow(name)
+                    .map_err(|_| ScopeError::OutOfScope)?;
             }
         }
         let basename = self.relative.file_name().ok_or(ScopeError::InvalidInput)?;
         let mut options = OpenOptions::new();
         options.read(true).follow(FollowSymlinks::No);
-        dir.open_with(basename, &options).map_err(|_| ScopeError::OutOfScope)
+        dir.open_with(basename, &options)
+            .map_err(|_| ScopeError::OutOfScope)
     }
 
     /// Read at most the approved bytes, returning ResourceLimit for overflow.
     pub fn read_bounded(&self) -> Result<Vec<u8>, ScopeError> {
         let file = self.open_read()?;
-        let cap = u64::try_from(self.max_bytes)
-            .map_err(|_| ScopeError::InvalidInput)?;
+        let cap = u64::try_from(self.max_bytes).map_err(|_| ScopeError::InvalidInput)?;
         let mut data = Vec::new();
         file.take(cap.saturating_add(1))
             .read_to_end(&mut data)

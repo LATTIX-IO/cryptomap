@@ -12,7 +12,8 @@ use crate::{
     collector::{self, CancellationToken, CollectionOutcome, CollectionRequest, Collector},
     filesystem_scope::{AuthorizedFile, FileRoot},
     network_scope::{AuthorizedEndpoint, NetworkScope, NetworkTarget},
-    raw::RawSourceKind, validation,
+    raw::RawSourceKind,
+    validation,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -80,7 +81,9 @@ impl CollectionScope {
     /// Create a unique, explicitly caller-authorized collection scope.
     pub fn new(id: CollectionScopeId) -> Self {
         Self {
-            id, files: BTreeMap::new(), network: NetworkScope::new(),
+            id,
+            files: BTreeMap::new(),
+            network: NetworkScope::new(),
             logical: BTreeSet::new(),
         }
     }
@@ -104,8 +107,10 @@ impl CollectionScope {
     ) -> Result<(), ScopeError> {
         if !matches!(
             kind,
-            RawSourceKind::Dependency | RawSourceKind::Certificate
-                | RawSourceKind::Source | RawSourceKind::Telemetry
+            RawSourceKind::Dependency
+                | RawSourceKind::Certificate
+                | RawSourceKind::Source
+                | RawSourceKind::Telemetry
         ) {
             return Err(ScopeError::InvalidInput);
         }
@@ -118,7 +123,14 @@ impl CollectionScope {
         let root = FileRoot::open(root)?;
         let relative = relative.as_ref().to_path_buf();
         root.authorize(&relative, max_bytes)?;
-        self.files.insert(key, FileGrant { root, relative, max_bytes });
+        self.files.insert(
+            key,
+            FileGrant {
+                root,
+                relative,
+                max_bytes,
+            },
+        );
         Ok(())
     }
 
@@ -175,7 +187,9 @@ impl CollectionScope {
         kind: RawSourceKind,
         item: &str,
     ) -> Result<AuthorizedFile<'_>, ScopeError> {
-        let grant = self.files.get(&(kind, item.to_owned()))
+        let grant = self
+            .files
+            .get(&(kind, item.to_owned()))
             .ok_or(ScopeError::OutOfScope)?;
         grant.root.authorize(&grant.relative, grant.max_bytes)
     }
@@ -198,6 +212,5 @@ pub fn collect_scoped<C: Collector + ?Sized>(
     cancel: &CancellationToken,
 ) -> Result<CollectionOutcome, ScopeError> {
     scope.validate_request(&request)?;
-    collector::collect(collector, request, cancel)
-        .map_err(ScopeError::Collection)
+    collector::collect(collector, request, cancel).map_err(ScopeError::Collection)
 }
