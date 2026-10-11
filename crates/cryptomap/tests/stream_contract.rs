@@ -442,10 +442,19 @@ fn completed_source_cannot_receive_new_records_or_duplicate_coverage() {
 fn cumulative_record_quota_cannot_be_evaded_by_draining_windows() {
     let mut f = Fixture::new();
     f.request.limits.observations = 1;
-    let mut intake = f.intake(WindowLimits { records: 1, bytes: 8192 }).unwrap();
-    intake.try_push(&f.observation("first", "logical:a")).unwrap();
+    let mut intake = f
+        .intake(WindowLimits {
+            records: 1,
+            bytes: 8192,
+        })
+        .unwrap();
+    intake
+        .try_push(&f.observation("first", "logical:a"))
+        .unwrap();
     assert_eq!(intake.drain().unwrap(), 1);
-    intake.try_push(&f.observation("second", "logical:a")).unwrap();
+    intake
+        .try_push(&f.observation("second", "logical:a"))
+        .unwrap();
     assert!(matches!(
         intake.drain(),
         Err(StreamError::Inventory(InventoryError::LimitExceeded(_)))
@@ -461,13 +470,17 @@ fn cumulative_byte_quota_cannot_be_evaded_by_draining_windows() {
     f.request.limits.total_bytes = record_bytes + 1;
     f.request.limits.record_bytes = record_bytes + 1;
     f.request.limits.field_bytes = 128;
-    let mut intake = f.intake(WindowLimits {
-        records: 1,
-        bytes: record_bytes + 1,
-    }).unwrap();
+    let mut intake = f
+        .intake(WindowLimits {
+            records: 1,
+            bytes: record_bytes + 1,
+        })
+        .unwrap();
     intake.try_push(&first).unwrap();
     intake.drain().unwrap();
-    intake.try_push(&f.observation("other", "logical:a")).unwrap();
+    intake
+        .try_push(&f.observation("other", "logical:a"))
+        .unwrap();
     assert!(matches!(
         intake.drain(),
         Err(StreamError::Inventory(InventoryError::LimitExceeded(_)))
