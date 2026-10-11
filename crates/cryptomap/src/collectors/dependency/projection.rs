@@ -2,7 +2,7 @@
 //!
 //! Both source files are independently authorized and freshly re-read.
 //! The existing canonical snapshot must contain matching, successful,
-//! same-run Cargo.lock package-presence evidence for both endpoints.
+//! same-run evidence within each of the Cargo.lock and Cargo.toml runs.
 use super::manifest::{CargoReconciliationError, reconcile_cargo_direct};
 use crate::{
     AssetId, AssetKind, CollectionRunId, Confidence, CoverageState, EvidenceId, EvidenceKind,
@@ -17,6 +17,7 @@ fn bound_evidence(
     source: &str,
     sha256: &str,
     source_item: &str,
+    collector_id: &str,
 ) -> BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> {
     let mut per_run: BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> = BTreeMap::new();
     for observation in snapshot.observations.values() {
@@ -31,7 +32,7 @@ fn bound_evidence(
         };
         if evidence.source != source
             || evidence.source_sha256.as_deref() != Some(sha256)
-            || evidence.collector.as_str() != "cryptomap:cargo-lockfile"
+            || evidence.collector.as_str() != collector_id
             || evidence.kind != EvidenceKind::Direct
             || evidence.confidence != Confidence::Confirmed
         {
@@ -62,16 +63,15 @@ fn bound_evidence(
 ///
 /// Both manifest_item and lock_item must be exact granted items in scope.
 /// Reconciles current on-disk bytes and requires a verified tenant-bound
-/// snapshot with directly observed Cargo.lock package evidence, matching
-/// lockfile digest, a successful coverage record, and same-run root/target
-/// provenance. No package execution, network, new synthetic package evidence,
+/// snapshot with independently collected direct Cargo.lock AND Cargo.toml
+/// package evidence, matching both file digests, successful coverage records,
+/// and same-run root/target provenance within each collector. No package execution, network, new synthetic package evidence,
 /// or inferred algorithm-use fact is introduced.
 ///
-/// This is a conservative incremental projection: the relationship points to
-/// existing Cargo.lock evidence. Manifest authorization/reconciliation is
-/// checked at call time, but a separate canonical manifest Evidence record
-/// is not produced by this function. Future work should persist manifest
-/// evidence and support broader Cargo.toml syntax.
+/// Relationships reference four pre-existing evidence IDs at minimum: two
+/// lockfile observations and two manifest observations. Both documents must
+/// have been collected independently by the host-authorized pipeline. There
+/// is no runtime-use inference or implicit schema migration.
 pub fn project_cargo_direct_edges(
     snapshot: &InventorySnapshot,
     scope: &CollectionScope,
@@ -105,8 +105,16 @@ pub fn project_cargo_direct_edges(
     };
     let root = id_for(&proven.root_name, &proven.root_version)?;
     let source = format!("Dependency:{lock_item}");
-    let root_by_run = bound_evidence(snapshot, &root, &source, &proven.lock_sha256, lock_item);
-    if root_by_run.is_empty() {
+    let root_by_run = bound_evidence(
+        snapshot, &root, &source, &proven.lock_sha256, lock_item,
+        "cryptomap:cargo-lockfile",
+    );
+    let manifest_source = format!("Dependency:{manifest_item}");
+    let manifest_root_by_run = bound_evidence(
+        snapshot, &root, &manifest_source, &proven.manifest_sha256, manifest_item,
+        "cryptomap:cargo-manifest",
+    );
+    if root_by_run.is_empty() || manifest_root_by_run.is_empty() {
         return Err(UnboundEvidence);
     }
 
@@ -118,8 +126,14 @@ pub fn project_cargo_direct_edges(
         if target == root {
             return Err(UnresolvedDependency);
         }
-        let target_by_run =
-            bound_evidence(snapshot, &target, &source, &proven.lock_sha256, lock_item);
+        let target_by_run = bound_evidence(
+            snapshot, &target, &source, &proven.lock_sha256, lock_item,
+            "cryptomap:cargo-lockfile",
+        );
+        let manifest_target_by_run = bound_evidence(
+            snapshot, &target, &manifest_source, &proven.manifest_sha256, manifest_item,
+            "cryptomap:cargo-manifest",
+        );
         let mut supporting = BTreeSet::new();
         for (run, root_evidence) in &root_by_run {
             if let Some(target_evidence) = target_by_run.get(run) {
@@ -127,9 +141,17 @@ pub fn project_cargo_direct_edges(
                 supporting.extend(target_evidence.iter().cloned());
             }
         }
-        if supporting.len() < 2 {
+        let mut manifest_supporting = BTreeSet::new();
+        for (run, root_evidence) in &manifest_root_by_run {
+            if let Some(target_evidence) = manifest_target_by_run.get(run) {
+                manifest_supporting.extend(root_evidence.iter().cloned());
+                manifest_supporting.extend(target_evidence.iter().cloned());
+            }
+        }
+        if supporting.len() < 2 || manifest_supporting.len() < 2 {
             return Err(UnboundEvidence);
         }
+        supporting.extend(manifest_supporting);
         let id = RelationshipId::from_endpoints(RelationshipKind::DependsOn, &root, &target)
             .map_err(|_| UnboundEvidence)?;
         additions.push(Relationship {
