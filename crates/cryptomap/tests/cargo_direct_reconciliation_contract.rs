@@ -130,8 +130,11 @@ fn out_of_budget_file_and_combined_limit_are_denied() {
         Err(CargoReconciliationError::UnauthorizedSource)
     );
     let scope = fixture.scope(true, true, 4096);
+    let budget = MANIFEST.len() + LOCK.len() - 1;
     let limits = RawLimits {
-        total_bytes: MANIFEST.len() + LOCK.len() - 1,
+        total_bytes: budget,
+        record_bytes: budget,
+        field_bytes: 128,
         ..RawLimits::default()
     };
     assert_eq!(
