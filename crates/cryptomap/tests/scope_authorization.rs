@@ -308,3 +308,54 @@ fn logical_authorizations_are_exact_and_nonexpanding() {
             .is_err()
     );
 }
+
+#[test]
+fn authorized_reader_never_exposes_more_than_budget() {
+    use std::io::Read;
+    let fixture = Fixture::new();
+    let root = FileRoot::open(fixture.dir()).unwrap();
+    let handle = root.authorize("Cargo.lock", 4).unwrap();
+    assert!(matches!(handle.open_read(), Err(ScopeError::ResourceLimit)));
+    let handle = root.authorize("Cargo.lock", 16).unwrap();
+    let mut reader = handle.open_read().unwrap();
+    let mut actual = Vec::new();
+    reader.read_to_end(&mut actual).unwrap();
+    assert_eq!(actual, b"safe-file");
+    assert_eq!(reader.read(&mut [0; 4]).unwrap(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn root_no_follow_denies_symlinked_parent_component() {
+    use std::os::unix::fs::symlink;
+    let fixture = Fixture::new();
+    let outside = fixture.root.join("unapproved");
+    fs::create_dir_all(outside.join("nested")).unwrap();
+    symlink(&outside, fixture.root.join("alias")).unwrap();
+    assert!(FileRoot::open(fixture.root.join("alias").join("nested")).is_err());
+    assert!(FileRoot::open(fixture.root.join("alias")).is_err());
+    let root = FileRoot::open(fixture.dir()).unwrap();
+    assert_eq!(
+        root.authorize("Cargo.lock", 1024)
+            .unwrap()
+            .read_bounded()
+            .unwrap(),
+        b"safe-file"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn swapping_authorized_regular_file_for_fifo_cannot_hang_open() {
+    use std::process::Command;
+    let fixture = Fixture::new();
+    let root = FileRoot::open(fixture.dir()).unwrap();
+    let authorization = root.authorize("Cargo.lock", 1024).unwrap();
+    fs::remove_file(fixture.dir().join("Cargo.lock")).unwrap();
+    let fifo = fixture.dir().join("Cargo.lock");
+    let status = Command::new("mkfifo").arg(&fifo).status().unwrap();
+    assert!(status.success());
+    // Any OS open after inspect() must use nonblocking + metadata validation.
+    // The ordinary static case also proves FIFO is never interpreted as a file.
+    assert!(authorization.open_read().is_err());
+}

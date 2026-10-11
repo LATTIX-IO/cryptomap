@@ -5,8 +5,8 @@ This module adds caller-approved collection scope to the FOSS-318 collector exte
 ## Trust boundary
 
 - The **host** authorizes which exact source files, certificate-store names, telemetry streams, and TLS destinations may be used. A collector's `CollectorDescriptor` is descriptive and **never grants access**.
-- Approved file sources use `FileRoot` and `AuthorizedFile`: a caller opens the directory root once, a relative path is checked when added and opened, and the file is opened using `cap-std` / `cap-fs-ext` rooted handles. Parent components are opened without following symlinks, and the final file has `FollowSymlinks::No`. Absolute paths, `..`, wildcards, junction/symlink redirection, and root escapes are rejected.
-- File reads have caller-provided hard byte budgets (up to 64 MiB). The library returns a sanitized typed error without echoing untrusted paths or source contents. There is no recursive discovery, directory listing, script execution, or write interface.
+- Approved file sources use `FileRoot` and `AuthorizedFile`: the caller anchors at the filesystem volume root and opens each root-path component with no-follow handles. Relative paths are checked when granted and used, through `cap-std` / `cap-fs-ext` rooted handles. Parent components are opened without following symlinks, and the final file has `FollowSymlinks::No`. Absolute paths, `..`, wildcards, junction/symlink redirection, and root escapes are rejected.
+- File reads have caller-provided hard byte budgets (up to 64 MiB). The final file is opened without following links and in Unix nonblocking mode; the opened handle must be a regular file within the budget. `open_read` returns an opaque bounded reader, not a raw File. The library returns a sanitized typed error without echoing untrusted paths or source contents. There is no recursive discovery, directory listing, script execution, or write interface.
 - Approved `NetworkTarget` has an exact DNS name or IP literal, port, explicit optional SNI, and caller-pinned IP addresses. IP literals can only be pinned to that same address. DNS names **require** an approved IP set supplied by the host; the library does not resolve DNS. `AuthorizedEndpoint::connect` checks both IP and port before dialing with a bounded timeout. There are no redirects, wildcard hosts, implicit discovered ports, or CIDR sweeps.
 - `CollectionScope::validate_request` and `collect_scoped` check that every requested item has been granted by the host. Collector options do not create grants. Logical certificate-store/telemetry grants only designate approved IDs; access permissions and actual collection remain the responsibility of their future FOSS-323/FOSS-326 implementations.
 
@@ -59,3 +59,11 @@ Negative tests cover traversal, wildcard/device paths, file size limits, externa
 - FOSS-322..326: actual reference collectors must use these read/connect handles and document platform-specific permission checks.
 - FOSS-327/FOSS-328: checkpoint reauthorization and exact diagnostic/partial-coverage aggregation.
 - Production isolation of adversarial third-party plugins must be implemented by their host OS sandbox—not by trusting an in-process Rust trait.
+
+## FOSS-319 root and FIFO hardening
+
+The root opener now anchors to the OS filesystem root and descends through no-follow directory handles, instead of performing an ambient full-path check/open sequence. Intermediate symlink components are refused.
+
+Each file open rechecks relative paths and parents, requests no-follow plus Unix nonblocking behavior, verifies the opened file handle is a regular file, and caps bytes. The public AuthorizedReader does not expose the underlying file descriptor. Concurrent file content mutation remains possible; collectors requiring stable identity should hash the bounded read.
+
+This capability API does not confine untrusted in-process plugins; the host must provide an OS sandbox for malicious third-party code. New tests cover symlinked ancestors, FIFO substitution and read limits.
