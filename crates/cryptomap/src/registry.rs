@@ -209,16 +209,19 @@ impl Registry {
                        family: &str,
                        rule: &str,
                        source: &str| {
-            assert!(out.register(Mapping {
-                namespace,
-                kind,
-                alias: alias.into(),
-                canonical: canonical.into(),
-                family: family.into(),
-                rule: rule.into(),
-                source: source.into(),
-            })
-            .is_ok(), "static built-in mapping contains no collisions");
+            assert!(
+                out.register(Mapping {
+                    namespace,
+                    kind,
+                    alias: alias.into(),
+                    canonical: canonical.into(),
+                    family: family.into(),
+                    rule: rule.into(),
+                    source: source.into(),
+                })
+                .is_ok(),
+                "static built-in mapping contains no collisions"
+            );
         };
         for alias in ["0x1301", "TLS_AES_128_GCM_SHA256"] {
             add(
