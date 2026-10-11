@@ -173,6 +173,15 @@ fn prove(
     ) {
         return Err(UnsupportedProfile);
     }
+    // Top-level npm lock identity, when present, cannot contradict the
+    // package table root: otherwise the apparent root may be substituted.
+    if obj.get("name").is_some_and(|value| value.as_str() != Some(&manifest.name))
+        || obj
+            .get("version")
+            .is_some_and(|value| value.as_str() != Some(&manifest.version))
+    {
+        return Err(UnresolvedDependency);
+    }
     let root = obj
         .get("packages")
         .and_then(Value::as_object)
@@ -213,8 +222,22 @@ fn prove(
         return Err(UnsupportedProfile);
     }
     let mut direct = Vec::with_capacity(manifest.deps.len());
+    let package_table = obj
+        .get("packages")
+        .and_then(Value::as_object)
+        .ok_or(InvalidSource)?;
     for (name, version) in &manifest.deps {
         let path = format!("node_modules/{name}");
+        let package = package_table
+            .get(&path)
+            .and_then(Value::as_object)
+            .ok_or(UnresolvedDependency)?;
+        if package
+            .get("name")
+            .is_some_and(|value| value.as_str() != Some(name.as_str()))
+        {
+            return Err(UnresolvedDependency);
+        }
         let matches: Vec<_> = installed
             .iter()
             .filter(|package| package.path == path)
