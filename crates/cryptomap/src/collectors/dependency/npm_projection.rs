@@ -10,6 +10,23 @@ use crate::{
     RelationshipId, RelationshipKind, raw::RawLimits, scope::CollectionScope,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use sha2::{Digest, Sha256};
+
+fn role_event(
+    tag: &str, prefix: &str, item: &str, name: &str, version: &str, role: &str,
+) -> Result<String, NpmReconciliationError> {
+    let fields = serde_json::to_vec(&(tag, item, name, version, role))
+        .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    Ok(format!("{prefix}{:x}", Sha256::digest(fields)))
+}
+
+fn lock_event(item: &str, path: &str, version: &str)
+    -> Result<String, NpmReconciliationError> {
+    let fields = serde_json::to_vec(&("cryptomap:npm-dependency:v1", item, path, version))
+        .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    Ok(format!("npm:v1:{:x}", Sha256::digest(fields)))
+}
+
 
 fn bound_evidence(
     snapshot: &InventorySnapshot,
@@ -18,12 +35,15 @@ fn bound_evidence(
     sha256: &str,
     source_item: &str,
     collector_id: &str,
+    collector_version: &str,
+    expected_event: &str,
 ) -> BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> {
     let mut per_run: BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> = BTreeMap::new();
     for observation in snapshot.observations.values() {
         if observation.asset != *asset
             || observation.property != "dependency:presence"
             || observation.value != "declared"
+            || observation.context.as_deref() != Some(expected_event)
         {
             continue;
         }
@@ -33,6 +53,7 @@ fn bound_evidence(
         if evidence.source != source
             || evidence.source_sha256.as_deref() != Some(sha256)
             || evidence.collector.as_str() != collector_id
+            || evidence.collector_version != collector_version
             || evidence.kind != EvidenceKind::Direct
             || evidence.confidence != Confidence::Confirmed
         {
@@ -104,6 +125,11 @@ pub fn project_npm_direct_edges(
         Ok(id)
     };
     let root = id_for(&proven.root_name, &proven.root_version)?;
+    let root_lock_event = lock_event(lock_item, "npm:root", &proven.root_version)?;
+    let root_manifest_event = role_event(
+        "cryptomap:npm-manifest:v1", "npm-manifest:v1:", manifest_item,
+        &proven.root_name, &proven.root_version, "root",
+    )?;
     let source = format!("Dependency:{lock_item}");
     let root_by_run = bound_evidence(
         snapshot,
@@ -112,6 +138,8 @@ pub fn project_npm_direct_edges(
         &proven.lock_sha256,
         lock_item,
         "cryptomap:npm-lockfile",
+        "0.2.0",
+        &root_lock_event,
     );
     let manifest_source = format!("Dependency:{manifest_item}");
     let manifest_root_by_run = bound_evidence(
@@ -121,6 +149,8 @@ pub fn project_npm_direct_edges(
         &proven.manifest_sha256,
         manifest_item,
         "cryptomap:npm-manifest",
+        "0.1.0",
+        &root_manifest_event,
     );
     if root_by_run.is_empty() || manifest_root_by_run.is_empty() {
         return Err(UnboundEvidence);
@@ -131,6 +161,13 @@ pub fn project_npm_direct_edges(
     let mut additions = Vec::new();
     for dependency in &proven.direct {
         let target = id_for(&dependency.name, &dependency.version)?;
+        let target_lock_event = lock_event(
+            lock_item, &format!("node_modules/{}", dependency.name), &dependency.version,
+        )?;
+        let target_manifest_event = role_event(
+            "cryptomap:npm-manifest:v1", "npm-manifest:v1:", manifest_item,
+            &dependency.name, &dependency.version, "direct",
+        )?;
         if target == root {
             return Err(UnresolvedDependency);
         }
@@ -141,6 +178,8 @@ pub fn project_npm_direct_edges(
             &proven.lock_sha256,
             lock_item,
             "cryptomap:npm-lockfile",
+            "0.2.0",
+            &target_lock_event,
         );
         let manifest_target_by_run = bound_evidence(
             snapshot,
@@ -149,6 +188,8 @@ pub fn project_npm_direct_edges(
             &proven.manifest_sha256,
             manifest_item,
             "cryptomap:npm-manifest",
+            "0.1.0",
+            &target_manifest_event,
         );
         let mut supporting = BTreeSet::new();
         for (run, root_evidence) in &root_by_run {
