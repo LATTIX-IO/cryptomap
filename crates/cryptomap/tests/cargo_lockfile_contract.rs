@@ -179,7 +179,10 @@ fn duplicate_package_in_one_file_isolated_from_successful_sibling() {
     let duplicate = "version = 4\n[[package]]\nname = \"same\"\nversion = \"1\"\n[[package]]\nname = \"same\"\nversion = \"1\"\n";
     let fixture = Fixture::new(&[("Cargo.lock", VALID), ("duplicate.lock", duplicate)]);
     let scope = fixture.scope(
-        &[("cargo:valid", "Cargo.lock"), ("cargo:duplicate", "duplicate.lock")],
+        &[
+            ("cargo:valid", "Cargo.lock"),
+            ("cargo:duplicate", "duplicate.lock"),
+        ],
         "tenant-a",
     );
     let collector = CargoLockfileCollector::new(&scope, "2026-10-11T12:00:00Z");
