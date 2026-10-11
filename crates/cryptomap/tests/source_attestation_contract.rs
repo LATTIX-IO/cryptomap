@@ -2,7 +2,6 @@
 //! Test the existing public InventoryBuilder and verified snapshot import APIs.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::*;
-use std::collections::BTreeSet;
 
 const WHEN: &str = "2026-10-11T12:00:00Z";
 fn run(name: &str, requested: &[&str]) -> CollectionRun {
