@@ -6,8 +6,7 @@ use cryptomap::{
     batch::BatchLimits,
     collector::{
         COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode, CollectionRequest,
-        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor,
-        RequestedSource,
+        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor, RequestedSource,
     },
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
@@ -104,7 +103,12 @@ impl Collector for MockCollector {
         match self.behavior {
             Behavior::Certificate => {
                 for source in sources {
-                    sink.emit(self.fact(request, source, &format!("cert:{}", source.item), certificate()))?;
+                    sink.emit(self.fact(
+                        request,
+                        source,
+                        &format!("cert:{}", source.item),
+                        certificate(),
+                    ))?;
                     sink.cover(&source.item, CoverageState::InspectedObserved)?;
                 }
             }
@@ -120,10 +124,9 @@ impl Collector for MockCollector {
                         state: cryptomap::ProtocolState::Negotiated,
                     },
                 );
-                protocol.attributes.insert(
-                    "cryptomap:relation-kind".into(),
-                    "uses_certificate".into(),
-                );
+                protocol
+                    .attributes
+                    .insert("cryptomap:relation-kind".into(), "uses_certificate".into());
                 protocol.attributes.insert(
                     "cryptomap:relation-target-event".into(),
                     "certificate".into(),
@@ -194,7 +197,9 @@ impl Fixture {
     fn new(tenant: &str, run: &str, collector: &str, items: &[&str]) -> Self {
         let mut scope = CollectionScope::new(CollectionScopeId::new(tenant).unwrap());
         for item in items {
-            scope.grant_logical(RawSourceKind::Telemetry, *item).unwrap();
+            scope
+                .grant_logical(RawSourceKind::Telemetry, *item)
+                .unwrap();
         }
         Self {
             scope,
@@ -256,7 +261,10 @@ fn third_party_collector_uses_existing_canonical_evidence_and_coverage() {
     assert_eq!(snapshot.evidence.len(), 1);
     assert_eq!(snapshot.runs.len(), 1);
     assert_eq!(snapshot.coverage_records.len(), 1);
-    assert_eq!(snapshot.coverage["stream:a"], CoverageState::InspectedObserved);
+    assert_eq!(
+        snapshot.coverage["stream:a"],
+        CoverageState::InspectedObserved
+    );
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
 #[test]
@@ -319,7 +327,12 @@ fn batch_output_is_deterministic_under_collector_order_permutation() {
 }
 #[test]
 fn failed_and_partial_sources_keep_original_evidence_and_coverage() {
-    let partial = Fixture::new("tenant-1", "run-a", "partner-partial", &["stream:a", "stream:b"]);
+    let partial = Fixture::new(
+        "tenant-1",
+        "run-a",
+        "partner-partial",
+        &["stream:a", "stream:b"],
+    );
     let complete = Fixture::new("tenant-1", "run-b", "partner-ok", &["stream:c"]);
     let first = partial.mock(Behavior::Partial);
     let second = complete.mock(Behavior::Certificate);
@@ -332,7 +345,11 @@ fn failed_and_partial_sources_keep_original_evidence_and_coverage() {
     assert_eq!(snap.runs.len(), 2);
     assert_eq!(snap.evidence.len(), 3);
     assert_eq!(snap.coverage_records.len(), 3);
-    assert!(snap.coverage_records.iter().any(|r| r.state == CoverageState::Partial));
+    assert!(
+        snap.coverage_records
+            .iter()
+            .any(|r| r.state == CoverageState::Partial)
+    );
     snap.verify(InventoryLimits::default()).unwrap();
 }
 #[test]
@@ -342,20 +359,26 @@ fn all_invalid_batch_authorities_fail_before_any_collector_execution() {
     let foreign = Fixture::new("tenant-2", "run-b", "partner-b", &["stream:b"]);
     let a = first.mock(Behavior::Certificate);
     let b = foreign.mock(Behavior::Certificate);
-    assert!(matches!(collect_normalized_batch(
-        vec![first.invocation(&a), foreign.invocation(&b)],
-        BatchLimits::default(),
-        &CancellationToken::default(),
-    ), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        collect_normalized_batch(
+            vec![first.invocation(&a), foreign.invocation(&b)],
+            BatchLimits::default(),
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
     assert_eq!(a.count(), 0);
     assert_eq!(b.count(), 0);
     let duplicate = Fixture::new("tenant-1", "run-a", "partner-b", &["stream:b"]);
     let c = duplicate.mock(Behavior::Certificate);
-    assert!(matches!(collect_normalized_batch(
-        vec![first.invocation(&a), duplicate.invocation(&c)],
-        BatchLimits::default(),
-        &CancellationToken::default(),
-    ), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        collect_normalized_batch(
+            vec![first.invocation(&a), duplicate.invocation(&c)],
+            BatchLimits::default(),
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::InvalidOutcome)
+    ));
     assert_eq!(a.count(), 0);
     assert_eq!(c.count(), 0);
     let other = Fixture::new("tenant-1", "run-b", "partner-b", &["stream:b"]);
@@ -364,11 +387,14 @@ fn all_invalid_batch_authorities_fail_before_any_collector_execution() {
         sources: 1,
         ..BatchLimits::default()
     };
-    assert!(matches!(collect_normalized_batch(
-        vec![first.invocation(&a), other.invocation(&d)],
-        cap,
-        &CancellationToken::default(),
-    ), Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))));
+    assert!(matches!(
+        collect_normalized_batch(
+            vec![first.invocation(&a), other.invocation(&d)],
+            cap,
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))
+    ));
     assert_eq!(a.count(), 0);
     assert_eq!(d.count(), 0);
 }
@@ -377,19 +403,22 @@ fn forged_collector_descriptor_or_ungranted_source_never_executes() {
     let fixture = Fixture::new("tenant-1", "run-a", "host-pinned", &["stream:a"]);
     let mut forged = fixture.mock(Behavior::Certificate);
     forged.descriptor.version = "2.0".into();
-    assert!(matches!(collect_normalized(
-        fixture.invocation(&forged),
-        &CancellationToken::default(),
-    ), Err(PipelineError::InvalidOutcome)));
+    assert!(matches!(
+        collect_normalized(fixture.invocation(&forged), &CancellationToken::default(),),
+        Err(PipelineError::InvalidOutcome)
+    ));
     assert_eq!(forged.count(), 0);
 
     let mut scope_fixture = Fixture::new("tenant-1", "run-b", "host-pinned", &["stream:a"]);
     scope_fixture.sources[0].item = "stream:ungranted".into();
     let good = scope_fixture.mock(Behavior::Certificate);
-    assert!(matches!(collect_normalized(
-        scope_fixture.invocation(&good),
-        &CancellationToken::default(),
-    ), Err(PipelineError::Scope(ScopeError::OutOfScope))));
+    assert!(matches!(
+        collect_normalized(
+            scope_fixture.invocation(&good),
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
     assert_eq!(good.count(), 0);
 }
 #[test]
@@ -401,10 +430,13 @@ fn forged_emission_and_conflicting_replay_rejected_by_same_sink() {
     ] {
         let fixture = Fixture::new("tenant-1", "run-a", "partner", &["stream:a"]);
         let collector = fixture.mock(behavior);
-        assert!(matches!(collect_normalized(
-            fixture.invocation(&collector),
-            &CancellationToken::default(),
-        ), Err(PipelineError::Scope(ScopeError::Collection(_)))));
+        assert!(matches!(
+            collect_normalized(
+                fixture.invocation(&collector),
+                &CancellationToken::default(),
+            ),
+            Err(PipelineError::Scope(ScopeError::Collection(_)))
+        ));
         assert_eq!(collector.count(), 1);
     }
 }
@@ -436,10 +468,13 @@ fn cooperative_cancel_mid_run_does_not_claim_complete_coverage() {
 fn fatal_collector_error_yields_no_normalized_snapshot() {
     let fixture = Fixture::new("tenant-1", "run-a", "partner", &["stream:a"]);
     let collector = fixture.mock(Behavior::Fatal);
-    assert!(matches!(collect_normalized(
-        fixture.invocation(&collector),
-        &CancellationToken::default(),
-    ), Err(PipelineError::Scope(ScopeError::Collection(_)))));
+    assert!(matches!(
+        collect_normalized(
+            fixture.invocation(&collector),
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::Scope(ScopeError::Collection(_)))
+    ));
     assert_eq!(collector.count(), 1);
 }
 
