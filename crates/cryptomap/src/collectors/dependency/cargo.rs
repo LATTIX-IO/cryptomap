@@ -41,7 +41,9 @@ struct PendingPackage {
 impl PendingPackage {
     fn finish(self) -> Result<LockedPackage, CollectorDiagnosticCode> {
         let name = self.name.ok_or(CollectorDiagnosticCode::MalformedSource)?;
-        let version = self.version.ok_or(CollectorDiagnosticCode::MalformedSource)?;
+        let version = self
+            .version
+            .ok_or(CollectorDiagnosticCode::MalformedSource)?;
         Ok(LockedPackage {
             name,
             version,
