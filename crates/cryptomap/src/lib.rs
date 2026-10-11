@@ -1114,3 +1114,53 @@ mod provenance_window_unit_tests {
         assert!(validate_observation_window(&inverted, "2026-10-11T12:01:00Z").is_err());
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod source_attestation_unit_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn run() -> CollectionRun {
+        CollectionRun {
+            id: CollectionRunId::new("unit-run").unwrap(),
+            collector: CollectorId::new("unit-collector").unwrap(),
+            collector_version: "1.0".into(),
+            scope: CollectionScopeId::new("unit-tenant").unwrap(),
+            requested: BTreeSet::from(["source:with:colons".into()]),
+            started_at: "2026-10-11T11:59:00Z".into(),
+            ended_at: "2026-10-11T12:01:00Z".into(),
+            completeness: RunCompleteness::Partial,
+        }
+    }
+
+    #[test]
+    fn precise_kind_prefix_retains_complete_source_name() {
+        let r = run();
+        assert_eq!(
+            typed_evidence_item(&r, "Telemetry:source:with:colons").unwrap(),
+            Some("source:with:colons")
+        );
+    }
+
+    #[test]
+    fn typed_unknown_source_never_borrows_a_suffix_or_prefix() {
+        let r = run();
+        assert!(matches!(
+            typed_evidence_item(&r, "Telemetry:with:colons"),
+            Err(InventoryError::InvalidMetadata)
+        ));
+        assert!(matches!(
+            typed_evidence_item(&r, "Telemetry:source:with:colons:extra"),
+            Err(InventoryError::InvalidMetadata)
+        ));
+    }
+
+    #[test]
+    fn legacy_unprefixed_source_uses_version_two_compatibility() {
+        assert_eq!(
+            typed_evidence_item(&run(), "old-opaque-evidence-label").unwrap(),
+            None
+        );
+    }
+}
