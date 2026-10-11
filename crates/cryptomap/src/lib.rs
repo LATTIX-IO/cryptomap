@@ -6,11 +6,14 @@
 
 pub mod collector;
 pub mod coverage;
+pub mod filesystem_scope;
 pub mod identity;
 pub mod metadata;
+pub mod network_scope;
 pub mod privacy;
 pub mod query;
 pub mod raw;
+pub mod scope;
 pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
 mod diff;
 mod strict_json;
