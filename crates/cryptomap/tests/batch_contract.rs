@@ -580,22 +580,34 @@ fn matching_profile_and_certificate_without_explicit_assertion_create_no_edge() 
 
 #[test]
 fn reinspection_with_fresh_run_ids_has_stable_coverage_and_confirmed_evidence_removal() {
-    let before = Fixture::new("tenant-a", "old-run", "collector-telemetry",
-        &[(RawSourceKind::Telemetry, "shared")]);
-    let after = Fixture::new("tenant-a", "new-run", "collector-telemetry",
-        &[(RawSourceKind::Telemetry, "shared")]);
-    let previous = normalize_batch(vec![
-        before.input(before.outcome(
+    let before = Fixture::new(
+        "tenant-a",
+        "old-run",
+        "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")],
+    );
+    let after = Fixture::new(
+        "tenant-a",
+        "new-run",
+        "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")],
+    );
+    let previous = normalize_batch(
+        vec![before.input(before.outcome(
             vec![before.observation("event", "shared", cert())],
             state("shared", CoverageState::InspectedObserved),
-        ))
-    ], BatchLimits::default()).unwrap();
-    let current = normalize_batch(vec![
-        after.input(after.outcome(
+        ))],
+        BatchLimits::default(),
+    )
+    .unwrap();
+    let current = normalize_batch(
+        vec![after.input(after.outcome(
             vec![after.observation("event", "shared", cert())],
             state("shared", CoverageState::InspectedObserved),
-        ))
-    ], BatchLimits::default()).unwrap();
+        ))],
+        BatchLimits::default(),
+    )
+    .unwrap();
     let changes = previous.diff(&current);
     assert!(changes.coverage_changed.is_empty());
     assert!(changes.evidence_tentative_removed.is_empty());
@@ -608,19 +620,31 @@ fn reinspection_with_fresh_run_ids_has_stable_coverage_and_confirmed_evidence_re
 
 #[test]
 fn partial_reinspection_does_not_confirm_missing_prior_evidence() {
-    let before = Fixture::new("tenant-a", "old-run", "collector-telemetry",
-        &[(RawSourceKind::Telemetry, "shared")]);
-    let after = Fixture::new("tenant-a", "new-run", "collector-telemetry",
-        &[(RawSourceKind::Telemetry, "shared")]);
-    let old = normalize_batch(vec![
-        before.input(before.outcome(
+    let before = Fixture::new(
+        "tenant-a",
+        "old-run",
+        "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")],
+    );
+    let after = Fixture::new(
+        "tenant-a",
+        "new-run",
+        "collector-telemetry",
+        &[(RawSourceKind::Telemetry, "shared")],
+    );
+    let old = normalize_batch(
+        vec![before.input(before.outcome(
             vec![before.observation("event", "shared", cert())],
             state("shared", CoverageState::InspectedObserved),
-        ))
-    ], BatchLimits::default()).unwrap();
-    let new = normalize_batch(vec![
-        after.input(after.outcome(vec![], state("shared", CoverageState::Failed))),
-    ], BatchLimits::default()).unwrap();
+        ))],
+        BatchLimits::default(),
+    )
+    .unwrap();
+    let new = normalize_batch(
+        vec![after.input(after.outcome(vec![], state("shared", CoverageState::Failed)))],
+        BatchLimits::default(),
+    )
+    .unwrap();
     let diff = old.diff(&new);
     assert_eq!(diff.evidence_tentative_removed.len(), 1);
     assert!(diff.evidence_removed.is_empty());
