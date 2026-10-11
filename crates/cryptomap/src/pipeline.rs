@@ -144,9 +144,15 @@ fn source_site(raw: &RawObservation) -> Result<String, InventoryError> {
 /// replaces) upstream source redaction and RawObservation validation.
 fn nonsecret_configuration(property: &str) -> Result<(), InventoryError> {
     let label = property.to_ascii_lowercase().replace('-', "_");
-    if label
+    let parts: Vec<&str> = label
         .split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|part| {
+        .filter(|part| !part.is_empty())
+        .collect();
+    let credential_pair = parts.windows(2).any(|pair| {
+        matches!(pair, ["api" | "access" | "secret" | "private", "key"])
+    });
+    if credential_pair
+        || parts.iter().copied().any(|part| {
             matches!(
                 part,
                 "password"
