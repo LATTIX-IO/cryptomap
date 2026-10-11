@@ -164,7 +164,7 @@ impl Collector for MockCollector {
             Behavior::Fatal => return Err(InventoryError::InvalidMetadata),
             Behavior::ConflictingReplay => {
                 let source = sources[0];
-                let original = self.fact(request, source, "repeated", certificate());
+                let original = self.fact(request, source, "private:raw:event-identifier", certificate());
                 let mut changed = original.clone();
                 changed.fact = RawFactKind::Certificate {
                     fingerprint_sha256: "cd".repeat(32),
@@ -441,4 +441,60 @@ fn fatal_collector_error_yields_no_normalized_snapshot() {
         &CancellationToken::default(),
     ), Err(PipelineError::Scope(ScopeError::Collection(_)))));
     assert_eq!(collector.count(), 1);
+}
+
+#[test]
+fn public_pipeline_and_scope_debug_messages_redact_untrusted_event_ids() {
+    let fixture = Fixture::new("tenant-1", "run-secure", "partner", &["stream:a"]);
+    let collector = fixture.mock(Behavior::ConflictingReplay);
+    let err = collect_normalized(
+        fixture.invocation(&collector),
+        &CancellationToken::default(),
+    ).unwrap_err();
+    assert!(matches!(err, PipelineError::Scope(ScopeError::Collection(_))));
+    assert!(!format!("{err:?}").contains("private:raw:event-identifier"));
+    assert!(!err.to_string().contains("private:raw:event-identifier"));
+}
+#[test]
+fn aggregate_run_quota_rejects_entire_batch_before_first_collector() {
+    let first = Fixture::new("tenant-1", "run-a", "partner-a", &["stream:a"]);
+    let second = Fixture::new("tenant-1", "run-b", "partner-b", &["stream:b"]);
+    let a = first.mock(Behavior::Certificate);
+    let b = second.mock(Behavior::Certificate);
+    let limits = BatchLimits {
+        runs: 1,
+        ..BatchLimits::default()
+    };
+    assert!(matches!(
+        collect_normalized_batch(
+            vec![first.invocation(&a), second.invocation(&b)],
+            limits,
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::Inventory(InventoryError::LimitExceeded(_)))
+    ));
+    assert_eq!(a.count(), 0);
+    assert_eq!(b.count(), 0);
+}
+#[test]
+fn pre_cancelled_batch_never_invokes_any_collector() {
+    let first = Fixture::new("tenant-1", "run-a", "partner-a", &["stream:a"]);
+    let second = Fixture::new("tenant-1", "run-b", "partner-b", &["stream:b"]);
+    let a = first.mock(Behavior::Certificate);
+    let b = second.mock(Behavior::Certificate);
+    let cancel = CancellationToken::default();
+    cancel.cancel();
+    let snapshot = collect_normalized_batch(
+        vec![first.invocation(&a), second.invocation(&b)],
+        BatchLimits::default(),
+        &cancel,
+    ).unwrap();
+    assert_eq!(a.count(), 0);
+    assert_eq!(b.count(), 0);
+    assert!(snapshot.assets.is_empty());
+    assert_eq!(snapshot.coverage_records.len(), 2);
+    assert!(snapshot.coverage_records.iter().all(|r| {
+        r.state == CoverageState::NotInspected
+    }));
+    snapshot.verify(InventoryLimits::default()).unwrap();
 }
