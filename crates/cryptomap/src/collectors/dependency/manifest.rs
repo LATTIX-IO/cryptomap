@@ -66,10 +66,10 @@ pub struct CargoDirectReconciliation {
 }
 
 #[derive(Default)]
-struct Manifest {
-    root_name: Option<String>,
-    root_version: Option<String>,
-    direct: BTreeMap<String, String>,
+pub(super) struct Manifest {
+    pub(super) root_name: Option<String>,
+    pub(super) root_version: Option<String>,
+    pub(super) direct: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy)]
@@ -87,7 +87,7 @@ fn name_ok(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
-fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReconciliationError> {
+pub(super) fn parse_manifest(input: &[u8], limits: RawLimits) -> Result<Manifest, CargoReconciliationError> {
     use CargoReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     if input.len() > limits.total_bytes {
         return Err(ResourceLimit);
