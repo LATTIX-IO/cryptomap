@@ -160,10 +160,12 @@ fn fractional_evidence_outside_same_second_is_rejected_exactly() {
     r.started_at = "2026-10-11T12:00:00.250Z".into();
     r.ended_at = "2026-10-11T12:00:00.750Z".into();
     builder.add_run(r).unwrap();
-    builder.add_evidence(evidence(
-        "fractional-run",
-        "2026-10-11T12:00:00.7500000000001Z",
-    )).unwrap();
+    builder
+        .add_evidence(evidence(
+            "fractional-run",
+            "2026-10-11T12:00:00.7500000000001Z",
+        ))
+        .unwrap();
     assert!(matches!(
         builder.finalize(InventoryLimits::default()),
         Err(InventoryError::InvalidTimestamp)
@@ -183,7 +185,9 @@ fn fractional_inclusive_bounds_and_timezone_offsets_are_comparable() {
         r.ended_at = "2026-10-11T12:00:00.750Z".into();
         let mut builder = InventoryBuilder::new();
         builder.add_run(r).unwrap();
-        builder.add_evidence(evidence("fractional-run", time)).unwrap();
+        builder
+            .add_evidence(evidence("fractional-run", time))
+            .unwrap();
         let snap = builder.finalize(InventoryLimits::default()).unwrap();
         snap.verify(InventoryLimits::default()).unwrap();
     }
@@ -208,15 +212,11 @@ fn snapshot_import_rejects_fractionally_forged_evidence() {
     let run = tampered.runs.values_mut().next().unwrap();
     run.started_at = "2026-10-11T12:00:00.500Z".into();
     run.ended_at = "2026-10-11T12:00:00.900Z".into();
-    tampered.evidence.values_mut().next().unwrap().observed_at =
-        "2026-10-11T12:00:00.400Z".into();
+    tampered.evidence.values_mut().next().unwrap().observed_at = "2026-10-11T12:00:00.400Z".into();
     assert!(matches!(
         tampered.verify(InventoryLimits::default()),
         Err(InventoryError::InvalidTimestamp)
     ));
     let wire = serde_json::to_string(&tampered).unwrap();
-    assert!(InventorySnapshot::from_json_verified(
-        &wire,
-        InventoryLimits::default()
-    ).is_err());
+    assert!(InventorySnapshot::from_json_verified(&wire, InventoryLimits::default()).is_err());
 }
