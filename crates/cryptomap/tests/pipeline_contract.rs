@@ -234,3 +234,93 @@ fn identity_context_cannot_cross_an_authorized_scope() {
         Err(PipelineError::InvalidOutcome)
     ));
 }
+
+#[test]
+fn partial_collection_keeps_unrelated_successful_evidence() {
+    let (mut scope, identity, registry) = setup();
+    scope
+        .grant_logical(RawSourceKind::Certificate, "store:denied")
+        .unwrap();
+    let mut data = outcome(vec![raw("event-1", "0x1301")]);
+    data.descriptor.capabilities.sources.insert(RawSourceKind::Certificate);
+    data.coverage
+        .insert("store:denied".into(), CoverageState::Failed);
+    data.status = CollectionStatus::Partial;
+    let sources = vec![
+        source(),
+        RequestedSource {
+            kind: RawSourceKind::Certificate,
+            item: "store:denied".into(),
+        },
+    ];
+    let snapshot = normalize(
+        PipelineInput {
+            scope: &scope,
+            identity: &identity,
+            registry: &registry,
+            sources: &sources,
+            raw_limits: RawLimits::default(),
+            inventory_limits: InventoryLimits::default(),
+            started_at: "2026-10-11T11:59:00Z",
+            ended_at: "2026-10-11T12:01:00Z",
+        },
+        data,
+    )
+    .unwrap();
+    assert_eq!(snapshot.assets.len(), 1);
+    assert_eq!(snapshot.evidence.len(), 1);
+    assert_eq!(snapshot.coverage.get("store:denied"), Some(&CoverageState::Failed));
+    assert_eq!(snapshot.runs.values().next().unwrap().completeness,
+        cryptomap::coverage::RunCompleteness::Partial);
+}
+
+#[test]
+fn dependency_presence_does_not_infer_algorithm_execution() {
+    use cryptomap::AssetKind;
+    use std::fs;
+    let temp = std::env::temp_dir()
+        .join(format!("cryptomap-pipeline-dependency-{}", std::process::id()));
+    fs::create_dir_all(&temp).unwrap();
+    fs::write(temp.join("Cargo.lock"), b"fixture").unwrap();
+    let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-1").unwrap());
+    scope.grant_file(RawSourceKind::Dependency, "lockfile-1", &temp, "Cargo.lock", 1024)
+        .unwrap();
+    let mut data = outcome(vec![raw("dependency-1", "0x1301")]);
+    data.descriptor.capabilities.sources = BTreeSet::from([RawSourceKind::Dependency]);
+    data.observations[0].source.kind = RawSourceKind::Dependency;
+    data.observations[0].source.item = "lockfile-1".into();
+    data.observations[0].attributes.clear();
+    data.observations[0].fact = RawFactKind::Dependency {
+        ecosystem: "cargo".into(),
+        name: "ring".into(),
+        version: "0.17.0".into(),
+    };
+    data.coverage = BTreeMap::from([("lockfile-1".into(), CoverageState::InspectedObserved)]);
+    let sources = [RequestedSource {
+        kind: RawSourceKind::Dependency,
+        item: "lockfile-1".into(),
+    }];
+    let identity = IdentityContext::new("tenant-1").unwrap();
+    let registry = Registry::builtin();
+    let snapshot = normalize(
+        PipelineInput {
+            scope: &scope,
+            identity: &identity,
+            registry: &registry,
+            sources: &sources,
+            raw_limits: RawLimits::default(),
+            inventory_limits: InventoryLimits::default(),
+            started_at: "2026-10-11T11:59:00Z",
+            ended_at: "2026-10-11T12:01:00Z",
+        },
+        data,
+    )
+    .unwrap();
+    assert!(snapshot.assets.values().all(|asset|
+        matches!(asset.kind, AssetKind::Library { .. })
+    ));
+    assert!(snapshot.observations.values().all(|obs|
+        obs.property == "dependency:presence" && obs.value == "declared"
+    ));
+    fs::remove_dir_all(temp).unwrap();
+}
