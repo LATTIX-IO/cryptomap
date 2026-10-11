@@ -146,7 +146,10 @@ fn contradictory_top_level_root_and_installed_package_identity_are_rejected() {
     for lock in [top_level, aliased] {
         let fixture = Fixture::new(MANIFEST, &lock);
         let scope = fixture.scope(true, true, 4096);
-        assert_eq!(prove(&scope), Err(NpmReconciliationError::UnresolvedDependency));
+        assert_eq!(
+            prove(&scope),
+            Err(NpmReconciliationError::UnresolvedDependency)
+        );
     }
 }
 
