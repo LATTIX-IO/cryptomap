@@ -210,8 +210,10 @@ fn cancellation_and_file_budget_fail_closed() {
         .unwrap();
     // Granting a handle records its budget; a read of the oversized file
     // must fail without exposing file contents.
-    assert!(denied
-        .open_file(RawSourceKind::Dependency, "npm:lock")
-        .and_then(|file| file.read_bounded())
-        .is_err());
+    assert!(
+        denied
+            .open_file(RawSourceKind::Dependency, "npm:lock")
+            .and_then(|file| file.read_bounded())
+            .is_err()
+    );
 }
