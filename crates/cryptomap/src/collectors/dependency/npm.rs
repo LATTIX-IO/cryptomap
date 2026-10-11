@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 const COLLECTOR_ID: &str = "cryptomap:npm-lockfile";
-const COLLECTOR_VERSION: &str = "0.1.0";
+const COLLECTOR_VERSION: &str = "0.2.0";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct LockedPackage {
@@ -78,6 +78,26 @@ pub(super) fn parse_lock(
     let mut unsupported = false;
     for (path, detail) in packages {
         if path.is_empty() {
+            // npm package-lock's root is not inside node_modules, but it is
+            // a separately attestable package identity when both fields are
+            // present and valid under our deliberately narrow profile.
+            let root = detail.as_object().ok_or(MalformedSource)?;
+            match (root.get("name"), root.get("version")) {
+                (Some(Value::String(name)), Some(Value::String(version)))
+                    if super::npm_manifest::package_name(name)
+                        && super::npm_manifest::numeric_version(version)
+                        && name.len() <= limits.field_bytes
+                        && version.len() <= limits.field_bytes =>
+                {
+                    found.push(LockedPackage {
+                        path: "npm:root".into(),
+                        name: name.clone(),
+                        version: version.clone(),
+                    });
+                }
+                (None, None) => {}
+                _ => unsupported = true,
+            }
             continue;
         }
         // Workspace/local-link records need additional semantics and must
@@ -113,6 +133,11 @@ pub(super) fn parse_lock(
             name: name.to_owned(),
             version: resolved.to_owned(),
         });
+    }
+    // The root consumes a real observation slot; reject before any fact is
+    // emitted, even if the legacy installed-package count was acceptable.
+    if found.len() > limits.observations {
+        return Err(ResourceLimit);
     }
     Ok((found, unsupported))
 }
@@ -281,6 +306,35 @@ mod tests {
     use super::*;
     fn limits() -> RawLimits {
         RawLimits::default()
+    }
+
+    #[test]
+    fn validated_root_identity_is_an_observation_and_charges_the_budget() {
+        let lock = br#"{"lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0"},"node_modules/ring":{"version":"1.2.3"}}}"#;
+        let (packages, partial) = parse_lock(lock, RawLimits::default()).unwrap();
+        assert!(!partial);
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages[0].path, "npm:root");
+        assert_eq!(packages[0].name, "app");
+        assert_eq!(packages[0].version, "1.0.0");
+        assert_eq!(
+            parse_lock(
+                lock,
+                RawLimits {
+                    observations: 1,
+                    ..RawLimits::default()
+                }
+            ),
+            Err(CollectorDiagnosticCode::ResourceLimit)
+        );
+    }
+
+    #[test]
+    fn partial_root_does_not_claim_complete_inspection() {
+        let lock = br#"{"lockfileVersion":3,"packages":{"":{"name":"app"},"node_modules/ring":{"version":"1.2.3"}}}"#;
+        let (packages, partial) = parse_lock(lock, RawLimits::default()).unwrap();
+        assert!(partial);
+        assert_eq!(packages.len(), 1);
     }
 
     #[test]
