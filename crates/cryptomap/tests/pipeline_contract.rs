@@ -83,11 +83,15 @@ fn normalize_fixture(
     registry: &Registry,
     data: CollectionOutcome,
 ) -> Result<cryptomap::InventorySnapshot, PipelineError> {
+    let expected_descriptor = descriptor();
+    let expected_run = CollectionRunId::new("run-a").unwrap();
     normalize(
         PipelineInput {
             scope,
             identity,
             registry,
+            expected_descriptor: &expected_descriptor,
+            expected_run: &expected_run,
             sources: &[source()],
             raw_limits: RawLimits::default(),
             inventory_limits: InventoryLimits::default(),
@@ -256,11 +260,15 @@ fn partial_collection_keeps_unrelated_successful_evidence() {
             item: "store:denied".into(),
         },
     ];
+    let expected_descriptor = data.descriptor.clone();
+    let expected_run = CollectionRunId::new("run-a").unwrap();
     let snapshot = normalize(
         PipelineInput {
             scope: &scope,
             identity: &identity,
             registry: &registry,
+            expected_descriptor: &expected_descriptor,
+            expected_run: &expected_run,
             sources: &sources,
             raw_limits: RawLimits::default(),
             inventory_limits: InventoryLimits::default(),
@@ -319,11 +327,15 @@ fn dependency_presence_does_not_infer_algorithm_execution() {
     }];
     let identity = IdentityContext::new("tenant-1").unwrap();
     let registry = Registry::builtin();
+    let expected_descriptor = data.descriptor.clone();
+    let expected_run = CollectionRunId::new("run-a").unwrap();
     let snapshot = normalize(
         PipelineInput {
             scope: &scope,
             identity: &identity,
             registry: &registry,
+            expected_descriptor: &expected_descriptor,
+            expected_run: &expected_run,
             sources: &sources,
             raw_limits: RawLimits::default(),
             inventory_limits: InventoryLimits::default(),
@@ -346,4 +358,37 @@ fn dependency_presence_does_not_infer_algorithm_execution() {
             .all(|obs| obs.property == "dependency:presence" && obs.value == "declared")
     );
     fs::remove_dir_all(temp).unwrap();
+}
+
+#[test]
+fn forged_run_and_collector_provenance_are_rejected() {
+    let (scope, identity, registry) = setup();
+    let mut forged_run = outcome(vec![raw("event", "0x1301")]);
+    forged_run.run = CollectionRunId::new("forged-run").unwrap();
+    forged_run.observations[0].run = forged_run.run.clone();
+    assert!(matches!(
+        normalize_fixture(&scope, &identity, &registry, forged_run),
+        Err(PipelineError::InvalidOutcome)
+    ));
+
+    let mut forged_collector = outcome(vec![raw("event", "0x1301")]);
+    forged_collector.descriptor.id = CollectorId::new("rogue-collector").unwrap();
+    forged_collector.observations[0].collector = forged_collector.descriptor.id.clone();
+    assert!(matches!(
+        normalize_fixture(&scope, &identity, &registry, forged_collector),
+        Err(PipelineError::InvalidOutcome)
+    ));
+}
+
+#[test]
+fn absent_location_and_explicit_zero_remain_distinct_assets() {
+    let (scope, identity, registry) = setup();
+    let a = raw("no-offset", "0x1301");
+    let mut b = raw("zero-offset", "0x1301");
+    b.source.offset = Some(0);
+    let snap = normalize_fixture(
+        &scope, &identity, &registry,
+        outcome(vec![a, b]),
+    ).unwrap();
+    assert_eq!(snap.assets.len(), 2);
 }
