@@ -75,10 +75,16 @@ fn numeric_version(version: &str) -> bool {
 }
 
 fn package_name(name: &str) -> bool {
+    // npm's complete package name is bounded even if raw field_bytes permits
+    // longer metadata; root and dependency paths must use valid names.
+    if name.len() > 214 {
+        return false;
+    }
     fn segment(s: &str) -> bool {
         !s.is_empty()
             && s != "."
             && s != ".."
+            && s.bytes().next().is_some_and(|b| b != b'.' && b != b'_')
             && s.bytes().all(|b| {
                 b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.')
             })
@@ -234,6 +240,15 @@ fn prove(
             .get(&path)
             .and_then(Value::as_object)
             .ok_or(UnresolvedDependency)?;
+        // Declared direct production pins cannot rely on dev-only, optional,
+        // linked or bundled records. Malformed flags never default to false.
+        for flag in ["dev", "optional", "devOptional", "peer", "link", "inBundle"] {
+            match package.get(flag) {
+                Some(Value::Bool(false)) | None => {}
+                Some(Value::Bool(true)) => return Err(UnsupportedProfile),
+                Some(_) => return Err(InvalidSource),
+            }
+        }
         if package
             .get("name")
             .is_some_and(|value| value.as_str() != Some(name.as_str()))
@@ -347,6 +362,28 @@ mod tests {
             br#"{"lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0","dependencies":{"@scope/ring":"1.2.3"}},"node_modules/@scope/ring":{"version":"1.2.3","link":true}}}"#.as_slice(),
         ] {
             assert!(prove(&manifest, lock, RawLimits::default()).is_err());
+        }
+    }
+
+    #[test]
+    fn package_names_have_npm_bounds_and_safe_leading_chars() {
+        assert!(package_name("ring"));
+        assert!(package_name("@scope/ring"));
+        for invalid in [".foo", "_foo", "@scope/.foo", "@_scope/pkg", "../bad"] {
+            assert!(!package_name(invalid));
+        }
+        assert!(!package_name(&"a".repeat(215)));
+    }
+
+    #[test]
+    fn dev_optional_and_other_classification_flags_cannot_prove_production() {
+        let manifest = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
+        for flag in ["dev", "optional", "devOptional", "peer", "link", "inBundle"] {
+            let mut document: Value = serde_json::from_slice(LOCK).unwrap();
+            document["packages"]["node_modules/@scope/ring"][flag] = Value::Bool(true);
+            let encoded = serde_json::to_vec(&document).unwrap();
+            assert_eq!(prove(&manifest, &encoded, RawLimits::default()),
+                Err(NpmReconciliationError::UnsupportedProfile));
         }
     }
 
