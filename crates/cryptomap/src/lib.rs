@@ -18,6 +18,7 @@ pub mod query;
 pub mod raw;
 pub mod registry;
 pub mod scope;
+pub mod stream;
 pub use privacy::{RedactedAssetSummary, RedactedInventoryReport, RedactedRelation};
 mod diff;
 mod strict_json;
