@@ -49,29 +49,25 @@ fn checked_snapshot(rows: &[(&str, &str)]) -> Result<InventorySnapshot, Inventor
 
 #[test]
 fn same_tenant_multiple_runs_and_permutations_are_valid() {
-    let forward = checked_snapshot(&[
-        ("run-one", "tenant-a"),
-        ("run-two", "tenant-a"),
-    ]).unwrap();
-    let backward = checked_snapshot(&[
-        ("run-two", "tenant-a"),
-        ("run-one", "tenant-a"),
-    ]).unwrap();
+    let forward = checked_snapshot(&[("run-one", "tenant-a"), ("run-two", "tenant-a")]).unwrap();
+    let backward = checked_snapshot(&[("run-two", "tenant-a"), ("run-one", "tenant-a")]).unwrap();
     assert_eq!(forward.id, backward.id);
     assert_eq!(forward, backward);
     assert_eq!(forward.runs.len(), 2);
     assert_eq!(forward.evidence.len(), 2);
     assert_eq!(forward.coverage_records.len(), 2);
-    assert!(forward.coverage_records.iter().all(|x| x.state == CoverageState::Partial));
+    assert!(
+        forward
+            .coverage_records
+            .iter()
+            .all(|x| x.state == CoverageState::Partial)
+    );
     forward.verify(InventoryLimits::default()).unwrap();
 }
 
 #[test]
 fn mixed_tenant_runs_cannot_finalize_even_with_individually_valid_evidence() {
-    let error = checked_snapshot(&[
-        ("run-one", "tenant-a"),
-        ("run-two", "tenant-b"),
-    ]).unwrap_err();
+    let error = checked_snapshot(&[("run-one", "tenant-a"), ("run-two", "tenant-b")]).unwrap_err();
     assert!(matches!(error, InventoryError::InvalidMetadata));
     assert!(!format!("{error:?}").contains("tenant-a"));
     assert!(!format!("{error:?}").contains("tenant-b"));
@@ -90,10 +86,7 @@ fn mixed_tenants_are_rejected_even_when_no_evidence_exists() {
 
 #[test]
 fn imported_snapshot_cannot_launder_foreign_tenant_by_rehashing() {
-    let original = checked_snapshot(&[
-        ("run-one", "tenant-a"),
-        ("run-two", "tenant-a"),
-    ]).unwrap();
+    let original = checked_snapshot(&[("run-one", "tenant-a"), ("run-two", "tenant-a")]).unwrap();
     let mut tampered = original.clone();
     tampered.runs.values_mut().last().unwrap().scope =
         CollectionScopeId::new("foreign-tenant").unwrap();
@@ -103,10 +96,7 @@ fn imported_snapshot_cannot_launder_foreign_tenant_by_rehashing() {
     ));
     let json = serde_json::to_string(&tampered).unwrap();
     assert!(matches!(
-        InventorySnapshot::from_json_verified(
-            &json,
-            InventoryLimits::default(),
-        ),
+        InventorySnapshot::from_json_verified(&json, InventoryLimits::default(),),
         Err(InventoryError::InvalidMetadata)
     ));
     original.verify(InventoryLimits::default()).unwrap();
@@ -114,10 +104,7 @@ fn imported_snapshot_cannot_launder_foreign_tenant_by_rehashing() {
 
 #[test]
 fn an_explicitly_single_tenant_snapshot_round_trips_through_verified_import() {
-    let snap = checked_snapshot(&[
-        ("run-a", "tenant-a"),
-        ("run-b", "tenant-a"),
-    ]).unwrap();
+    let snap = checked_snapshot(&[("run-a", "tenant-a"), ("run-b", "tenant-a")]).unwrap();
     let json = serde_json::to_string(&snap).unwrap();
     assert_eq!(
         InventorySnapshot::from_json_verified(&json, InventoryLimits::default()).unwrap(),
