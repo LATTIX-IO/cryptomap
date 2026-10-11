@@ -405,7 +405,10 @@ fn partial_source_with_observations_preserves_both_facts_and_partial_status() {
     let snap = normalize_fixture(&scope, &identity, &registry, data).unwrap();
     assert_eq!(snap.assets.len(), 1);
     assert_eq!(snap.evidence.len(), 1);
-    assert_eq!(snap.coverage.get("stream:test"), Some(&CoverageState::Partial));
+    assert_eq!(
+        snap.coverage.get("stream:test"),
+        Some(&CoverageState::Partial)
+    );
     assert_eq!(
         snap.runs.values().next().unwrap().completeness,
         cryptomap::coverage::RunCompleteness::Failed
@@ -417,7 +420,8 @@ fn partial_source_with_observations_preserves_both_facts_and_partial_status() {
 fn failed_source_with_observations_is_rejected() {
     let (scope, identity, registry) = setup();
     let mut data = outcome(vec![raw("failed-one", "0x1301")]);
-    data.coverage.insert("stream:test".into(), CoverageState::Failed);
+    data.coverage
+        .insert("stream:test".into(), CoverageState::Failed);
     data.status = CollectionStatus::Failed;
     assert!(matches!(
         normalize_fixture(&scope, &identity, &registry, data),
@@ -439,16 +443,28 @@ fn conflicting_location_encoding_does_not_collapse_sources() {
     // collide, even when source IDs share delimiters.
     // Test the exact tuple semantics with separately authorized sources.
     let mut mixed_scope = CollectionScope::new(CollectionScopeId::new("tenant-1").unwrap());
-    mixed_scope.grant_logical(RawSourceKind::Telemetry, "a:1").unwrap();
-    mixed_scope.grant_logical(RawSourceKind::Telemetry, "a").unwrap();
+    mixed_scope
+        .grant_logical(RawSourceKind::Telemetry, "a:1")
+        .unwrap();
+    mixed_scope
+        .grant_logical(RawSourceKind::Telemetry, "a")
+        .unwrap();
     let sources = [
-        RequestedSource { kind: RawSourceKind::Telemetry, item: "a:1".into() },
-        RequestedSource { kind: RawSourceKind::Telemetry, item: "a".into() },
+        RequestedSource {
+            kind: RawSourceKind::Telemetry,
+            item: "a:1".into(),
+        },
+        RequestedSource {
+            kind: RawSourceKind::Telemetry,
+            item: "a".into(),
+        },
     ];
     let mut data = outcome(vec![colon, plain]);
     data.coverage.clear();
-    data.coverage.insert("a:1".into(), CoverageState::InspectedObserved);
-    data.coverage.insert("a".into(), CoverageState::InspectedObserved);
+    data.coverage
+        .insert("a:1".into(), CoverageState::InspectedObserved);
+    data.coverage
+        .insert("a".into(), CoverageState::InspectedObserved);
     let expected_descriptor = descriptor();
     let expected_run = CollectionRunId::new("run-a").unwrap();
     let result = normalize(
@@ -465,7 +481,8 @@ fn conflicting_location_encoding_does_not_collapse_sources() {
             ended_at: "2026-10-11T12:01:00Z",
         },
         data,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.assets.len(), 2);
     drop(scope);
 }
