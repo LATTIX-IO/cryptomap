@@ -108,7 +108,11 @@ impl StreamIntake {
         limits.validate(&request)?;
         let sink = CollectionSink::new(descriptor.clone(), request.clone())?;
         Ok(Self {
-            sink, request, descriptor, cancel, limits,
+            sink,
+            request,
+            descriptor,
+            cancel,
+            limits,
             pending: BTreeMap::new(),
             pending_bytes: 0,
             observed: BTreeSet::new(),
@@ -143,9 +147,11 @@ impl StreamIntake {
         if raw.run != self.request.run
             || raw.collector != self.descriptor.id
             || raw.collector_version != self.descriptor.version
-            || !self.request.sources.iter().any(|s| {
-                s.item == raw.source.item && s.kind == raw.source.kind
-            })
+            || !self
+                .request
+                .sources
+                .iter()
+                .any(|s| s.item == raw.source.item && s.kind == raw.source.kind)
             || self.covered.contains(&raw.source.item)
         {
             return Err(InventoryError::InvalidMetadata.into());
@@ -160,7 +166,9 @@ impl StreamIntake {
         if bytes > self.limits.bytes {
             return Err(InventoryError::LimitExceeded("stream single record").into());
         }
-        let total = self.pending_bytes.checked_add(bytes)
+        let total = self
+            .pending_bytes
+            .checked_add(bytes)
             .ok_or(InventoryError::LimitExceeded("stream byte overflow"))?;
         if self.pending.len() >= self.limits.records || total > self.limits.bytes {
             return Err(StreamError::Backpressure);
@@ -255,17 +263,46 @@ mod tests {
     #[test]
     fn window_limits_reject_unbounded_or_disabled_configuration() {
         let request = request();
-        assert!(WindowLimits { records: 0, bytes: 1 }.validate(&request).is_err());
-        assert!(WindowLimits { records: 1, bytes: 0 }.validate(&request).is_err());
-        assert!(WindowLimits {
-            records: request.limits.observations + 1, bytes: 1,
-        }.validate(&request).is_err());
-        assert!(WindowLimits {
-            records: 1, bytes: request.limits.total_bytes + 1,
-        }.validate(&request).is_err());
-        assert!(WindowLimits {
-            records: 1, bytes: 4096,
-        }.validate(&request).is_ok());
+        assert!(
+            WindowLimits {
+                records: 0,
+                bytes: 1
+            }
+            .validate(&request)
+            .is_err()
+        );
+        assert!(
+            WindowLimits {
+                records: 1,
+                bytes: 0
+            }
+            .validate(&request)
+            .is_err()
+        );
+        assert!(
+            WindowLimits {
+                records: request.limits.observations + 1,
+                bytes: 1,
+            }
+            .validate(&request)
+            .is_err()
+        );
+        assert!(
+            WindowLimits {
+                records: 1,
+                bytes: request.limits.total_bytes + 1,
+            }
+            .validate(&request)
+            .is_err()
+        );
+        assert!(
+            WindowLimits {
+                records: 1,
+                bytes: 4096,
+            }
+            .validate(&request)
+            .is_ok()
+        );
     }
 
     #[test]
