@@ -1076,9 +1076,7 @@ impl InventorySnapshot {
         limits: InventoryLimits,
     ) -> Result<(), InventoryError> {
         self.verify(limits)?;
-        if self.runs.is_empty()
-            || self.runs.values().any(|run| &run.scope != expected_scope)
-        {
+        if self.runs.is_empty() || self.runs.values().any(|run| &run.scope != expected_scope) {
             return Err(InventoryError::InvalidMetadata);
         }
         Ok(())
