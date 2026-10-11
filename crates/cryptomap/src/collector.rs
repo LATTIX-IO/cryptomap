@@ -5,7 +5,7 @@
 //! provide operating-system-enforced filesystem/network authorization.
 use crate::{
     CollectionRunId, CollectorId, CoverageState, InventoryError,
-    raw::{RAW_CONTRACT_VERSION, RawLimits, RawObservation, RawSourceKind},
+    raw::{RawLimits, RawObservation, RawSourceKind},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -362,11 +362,8 @@ pub fn collect<C: Collector + ?Sized>(
         }
         return Ok(sink.finish());
     }
-    let result = collector.collect(&request, &mut sink, cancel);
-    if let Err(error) = result {
-        // Fail closed: callers receive the error rather than a misleading
-        // complete status. FOSS-328 will add typed partial-error aggregation.
-        return Err(error);
-    }
+    // Fail closed on fatal collector failure rather than inventing coverage.
+    // FOSS-328 will introduce explicit partial-error aggregation.
+    collector.collect(&request, &mut sink, cancel)?;
     Ok(sink.finish())
 }
