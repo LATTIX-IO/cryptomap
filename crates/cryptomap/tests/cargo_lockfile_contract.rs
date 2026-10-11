@@ -41,13 +41,7 @@ impl Fixture {
         let mut scope = CollectionScope::new(CollectionScopeId::new(tenant).unwrap());
         for (id, path) in items {
             scope
-                .grant_file(
-                    RawSourceKind::Dependency,
-                    *id,
-                    &self.root,
-                    path,
-                    32 * 1024,
-                )
+                .grant_file(RawSourceKind::Dependency, *id, &self.root, path, 32 * 1024)
                 .unwrap();
         }
         scope
@@ -83,10 +77,20 @@ fn cargo_packages_are_evidence_backed_without_algorithm_use_inference() {
     let scope = fixture.scope(&[("cargo:lock", "Cargo.lock")], "tenant-a");
     let collector = CargoLockfileCollector::new(&scope, "2026-10-11T12:00:00Z");
     let cancel = CancellationToken::default();
-    let one = collect_scoped(&scope, &collector, request("run-1", &["cargo:lock"]), &cancel)
-        .unwrap();
-    let two = collect_scoped(&scope, &collector, request("run-1", &["cargo:lock"]), &cancel)
-        .unwrap();
+    let one = collect_scoped(
+        &scope,
+        &collector,
+        request("run-1", &["cargo:lock"]),
+        &cancel,
+    )
+    .unwrap();
+    let two = collect_scoped(
+        &scope,
+        &collector,
+        request("run-1", &["cargo:lock"]),
+        &cancel,
+    )
+    .unwrap();
     assert_eq!(one, two);
     assert_eq!(one.status, CollectionStatus::Complete);
     assert_eq!(one.coverage["cargo:lock"], CoverageState::InspectedObserved);
@@ -101,9 +105,7 @@ fn cargo_packages_are_evidence_backed_without_algorithm_use_inference() {
         .find(|observation| matches!(&observation.fact, RawFactKind::Dependency { name, .. } if name == "ring"))
         .unwrap();
     assert_eq!(
-        ring.attributes
-            .get("cargo:source-sha256")
-            .map(String::len),
+        ring.attributes.get("cargo:source-sha256").map(String::len),
         Some(64)
     );
     assert!(!format!("{ring:?}").contains("example.invalid"));
@@ -135,10 +137,12 @@ fn cargo_packages_are_evidence_backed_without_algorithm_use_inference() {
     assert_eq!(snapshot.assets.len(), 2);
     assert_eq!(snapshot.observations.len(), 2);
     assert_eq!(snapshot.evidence.len(), 2);
-    assert!(snapshot
-        .assets
-        .values()
-        .all(|asset| matches!(asset.kind, AssetKind::Library { .. })));
+    assert!(
+        snapshot
+            .assets
+            .values()
+            .all(|asset| matches!(asset.kind, AssetKind::Library { .. }))
+    );
     snapshot
         .verify_for_scope(scope.id(), InventoryLimits::default())
         .unwrap();
@@ -175,13 +179,15 @@ fn unauthorized_file_and_size_limit_cannot_establish_success_coverage() {
     let fixture = Fixture::new(&[("Cargo.lock", VALID)]);
     let scope = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
     let collector = CargoLockfileCollector::new(&scope, "2026-10-11T12:00:00Z");
-    assert!(collect_scoped(
-        &scope,
-        &collector,
-        request("run-3", &["cargo:lock"]),
-        &CancellationToken::default(),
-    )
-    .is_err());
+    assert!(
+        collect_scoped(
+            &scope,
+            &collector,
+            request("run-3", &["cargo:lock"]),
+            &CancellationToken::default(),
+        )
+        .is_err()
+    );
 
     let mut small = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
     small
@@ -193,10 +199,12 @@ fn unauthorized_file_and_size_limit_cannot_establish_success_coverage() {
             8,
         )
         .unwrap();
-    assert!(small
-        .open_file(RawSourceKind::Dependency, "cargo:lock")
-        .and_then(|file| file.read_bounded())
-        .is_err());
+    assert!(
+        small
+            .open_file(RawSourceKind::Dependency, "cargo:lock")
+            .and_then(|file| file.read_bounded())
+            .is_err()
+    );
     let collector = CargoLockfileCollector::new(&small, "2026-10-11T12:00:00Z");
     let outcome = collect_scoped(
         &small,
