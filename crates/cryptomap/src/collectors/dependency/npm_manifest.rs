@@ -83,8 +83,8 @@ fn package_name(name: &str) -> bool {
                 b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.')
             })
     }
-    if name.starts_with('@') {
-        name[1..]
+    if let Some(scoped) = name.strip_prefix('@') {
+        scoped
             .split_once('/')
             .is_some_and(|(scope, pkg)| segment(scope) && segment(pkg))
     } else {
