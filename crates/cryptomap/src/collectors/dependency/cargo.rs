@@ -52,6 +52,23 @@ impl PendingPackage {
     }
 }
 
+fn append_package(
+    pending: PendingPackage,
+    packages: &mut Vec<LockedPackage>,
+    identities: &mut BTreeSet<(String, String, Option<String>)>,
+) -> Result<(), CollectorDiagnosticCode> {
+    let package = pending.finish()?;
+    if !identities.insert((
+        package.name.clone(),
+        package.version.clone(),
+        package.source_digest.clone(),
+    )) {
+        return Err(CollectorDiagnosticCode::MalformedSource);
+    }
+    packages.push(package);
+    Ok(())
+}
+
 fn quoted(input: &str, limit: usize) -> Result<&str, CollectorDiagnosticCode> {
     let inside = input
         .strip_prefix('"')
@@ -79,6 +96,7 @@ fn parse_lock(
     let mut version = None;
     let mut current: Option<PendingPackage> = None;
     let mut packages = Vec::new();
+    let mut identities = BTreeSet::new();
     let mut dependencies = false;
     let mut seen_package = false;
     for raw in input.lines() {
@@ -103,7 +121,7 @@ fn parse_lock(
                 return Err(MalformedSource);
             }
             if let Some(previous) = current.take() {
-                packages.push(previous.finish()?);
+                append_package(previous, &mut packages, &mut identities)?;
             }
             if packages.len() >= limits.observations {
                 return Err(ResourceLimit);
@@ -156,7 +174,7 @@ fn parse_lock(
         return Err(MalformedSource);
     }
     if let Some(last) = current {
-        packages.push(last.finish()?);
+        append_package(last, &mut packages, &mut identities)?;
     }
     if !seen_package {
         return Err(MalformedSource);
@@ -370,6 +388,22 @@ mod tests {
         ] {
             assert!(parse_lock(input, RawLimits::default()).is_err());
         }
+    }
+
+    #[test]
+    fn duplicate_package_identity_rejected_before_emission() {
+        let duplicated = b"version = 4\n[[package]]\nname = \"ring\"\nversion = \"1\"\n[[package]]\nname = \"ring\"\nversion = \"1\"\n";
+        assert_eq!(
+            parse_lock(duplicated, RawLimits::default()),
+            Err(CollectorDiagnosticCode::MalformedSource)
+        );
+        let distinct_sources = b"version = 4\n[[package]]\nname = \"ring\"\nversion = \"1\"\nsource = \"registry+https://a.invalid\"\n[[package]]\nname = \"ring\"\nversion = \"1\"\nsource = \"registry+https://b.invalid\"\n";
+        assert_eq!(
+            parse_lock(distinct_sources, RawLimits::default())
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
