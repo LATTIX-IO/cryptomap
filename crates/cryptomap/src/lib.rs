@@ -5,6 +5,9 @@
 #![warn(missing_docs)]
 
 pub mod collector;
+pub mod filesystem_scope;
+pub mod network_scope;
+pub mod scope;
 pub mod coverage;
 pub mod identity;
 pub mod metadata;
