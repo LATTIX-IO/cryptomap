@@ -2,3 +2,4 @@
 pub mod cargo;
 pub mod manifest;
 pub mod npm;
+pub mod projection;
