@@ -762,13 +762,13 @@ impl InventoryBuilder {
                 .get(&evidence.run)
                 .ok_or(InventoryError::InvalidMetadata)?;
             if let Some(item) = typed_evidence_item(run, &evidence.source)? {
-                // A Failed run declares no reliable observations, regardless
-                // of a contradictory positive item coverage assertion.
-                if matches!(run.completeness, RunCompleteness::Failed) {
-                    return Err(InventoryError::InvalidMetadata);
-                }
+                // A Failed run may still retain legitimate partially
+                // inspected source evidence. It cannot claim a fully
+                // inspected source (which contradicts Failed completeness).
                 match observed_coverage.get(&(run.id.clone(), item.to_owned())) {
-                    Some(CoverageState::InspectedObserved | CoverageState::Partial) => {}
+                    Some(CoverageState::Partial) => {}
+                    Some(CoverageState::InspectedObserved)
+                        if !matches!(run.completeness, RunCompleteness::Failed) => {}
                     _ => return Err(InventoryError::InvalidMetadata),
                 }
             }
