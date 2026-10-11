@@ -382,8 +382,10 @@ mod tests {
             let mut document: Value = serde_json::from_slice(LOCK).unwrap();
             document["packages"]["node_modules/@scope/ring"][flag] = Value::Bool(true);
             let encoded = serde_json::to_vec(&document).unwrap();
-            assert_eq!(prove(&manifest, &encoded, RawLimits::default()),
-                Err(NpmReconciliationError::UnsupportedProfile));
+            assert_eq!(
+                prove(&manifest, &encoded, RawLimits::default()),
+                Err(NpmReconciliationError::UnsupportedProfile)
+            );
         }
     }
 
