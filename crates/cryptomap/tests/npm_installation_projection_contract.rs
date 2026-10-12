@@ -1969,7 +1969,6 @@ fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation()
     std::fs::remove_dir_all(&location).unwrap();
 }
 
-
 #[test]
 fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     use cap_std::{ambient_authority, fs::Dir};
@@ -2016,8 +2015,7 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
             InventoryLimits::default(),
         )
         .unwrap();
-    publish_immutable_npm_generation_slot(&dir, &current, "stageA", "slotA", 256 * 1024)
-        .unwrap();
+    publish_immutable_npm_generation_slot(&dir, &current, "stageA", "slotA", 256 * 1024).unwrap();
 
     let limits = NpmRecoveryLimits {
         max_bytes: 256 * 1024,
@@ -2039,7 +2037,15 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     }
     assert!(target.current().unwrap().is_none());
 
-    for invalid in ["", ".", "../slotA", "a/b", "slotA\0", "slotA ", "not-present"] {
+    for invalid in [
+        "",
+        ".",
+        "../slotA",
+        "a/b",
+        "slotA\0",
+        "slotA ",
+        "not-present",
+    ] {
         assert_eq!(
             restore_immutable_npm_generation_slot(
                 &dir, invalid, &target, &anchor, &scope, None, limits,
@@ -2064,14 +2070,18 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
         ),
         Err(NpmReconciliationError::UnauthorizedSource)
     );
-    let wrong_anchor = NpmTrustedRecoveryAnchor::new(
-        snapshot.id.clone(),
-        format!("sha256:{}", "0".repeat(64)),
-    )
-    .unwrap();
+    let wrong_anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), format!("sha256:{}", "0".repeat(64)))
+            .unwrap();
     assert_eq!(
         restore_immutable_npm_generation_slot(
-            &dir, "slotA", &target, &wrong_anchor, &scope, None, limits,
+            &dir,
+            "slotA",
+            &target,
+            &wrong_anchor,
+            &scope,
+            None,
+            limits,
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
@@ -2097,7 +2107,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     std::fs::create_dir(location.join("directory")).unwrap();
     assert_eq!(
         restore_immutable_npm_generation_slot(
-            &dir, "directory", &target, &anchor, &scope, Some(1), limits,
+            &dir,
+            "directory",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
@@ -2106,7 +2122,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
         std::os::unix::fs::symlink("slotA", location.join("redirect")).unwrap();
         assert_eq!(
             restore_immutable_npm_generation_slot(
-                &dir, "redirect", &target, &anchor, &scope, Some(1), limits,
+                &dir,
+            "redirect",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
             ),
             Err(NpmReconciliationError::UnboundEvidence)
         );
@@ -2116,7 +2138,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     std::fs::write(location.join("overlimit"), too_large).unwrap();
     assert_eq!(
         restore_immutable_npm_generation_slot(
-            &dir, "overlimit", &target, &anchor, &scope, Some(1), limits,
+            &dir,
+            "overlimit",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
         ),
         Err(NpmReconciliationError::ResourceLimit)
     );
@@ -2124,7 +2152,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     std::fs::write(location.join("corrupt"), b"not a framed recovery").unwrap();
     assert_eq!(
         restore_immutable_npm_generation_slot(
-            &dir, "corrupt", &target, &anchor, &scope, Some(1), limits,
+            &dir,
+            "corrupt",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
