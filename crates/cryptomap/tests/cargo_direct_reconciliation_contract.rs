@@ -162,7 +162,6 @@ fn tampered_lock_or_unsupported_manifest_cannot_fabricate_direct_edge() {
     );
 }
 
-
 #[test]
 fn version_only_inline_cargo_pins_reconcile_through_exact_source_grants() {
     let baseline_fixture = Fixture::new(MANIFEST, LOCK);
@@ -175,10 +174,7 @@ fn version_only_inline_cargo_pins_reconcile_through_exact_source_grants() {
     )
     .unwrap();
 
-    let inline = MANIFEST.replace(
-        "ring = \"=0.17.12\"",
-        "ring = { version = \"=0.17.12\" }",
-    );
+    let inline = MANIFEST.replace("ring = \"=0.17.12\"", "ring = { version = \"=0.17.12\" }");
     let fixture = Fixture::new(&inline, LOCK);
     let scope = fixture.scope(true, true, 4096);
     let exact =
