@@ -1339,7 +1339,7 @@ fn pinned_recovery_requires_external_snapshot_and_checkpoint_anchor() {
     use cryptomap::collectors::dependency::{
         npm_generation::NpmGenerationStore,
         npm_generation_codec::{
-            NpmTrustedRecoveryAnchor, encode_npm_generation, restore_npm_generation_pinned,
+            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation, restore_npm_generation_pinned,
         },
     };
     let fixture = Fixture::new(MANIFEST, LOCK);
@@ -1383,9 +1383,11 @@ fn pinned_recovery_requires_external_snapshot_and_checkpoint_anchor() {
             pin,
             authorized,
             None,
-            bytes.len(),
-            RawLimits::default(),
-            InventoryLimits::default(),
+            NpmRecoveryLimits {
+                max_bytes: bytes.len(),
+                raw: RawLimits::default(),
+                inventory: InventoryLimits::default(),
+            },
         )
     };
     let forged =
@@ -1423,7 +1425,7 @@ fn pinned_recovery_blocks_valid_older_generation_when_files_are_rolled_back() {
     use cryptomap::collectors::dependency::{
         npm_generation::NpmGenerationStore,
         npm_generation_codec::{
-            NpmTrustedRecoveryAnchor, encode_npm_generation, restore_npm_generation,
+            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation, restore_npm_generation,
             restore_npm_generation_pinned,
         },
     };
@@ -1507,9 +1509,11 @@ fn pinned_recovery_blocks_valid_older_generation_when_files_are_rolled_back() {
             &anchor,
             &old_scope,
             None,
-            256 * 1024,
-            RawLimits::default(),
-            InventoryLimits::default(),
+            NpmRecoveryLimits {
+                max_bytes: 256 * 1024,
+                raw: RawLimits::default(),
+                inventory: InventoryLimits::default(),
+            },
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
@@ -1521,9 +1525,11 @@ fn pinned_recovery_blocks_valid_older_generation_when_files_are_rolled_back() {
         &anchor,
         &new_scope,
         None,
-        256 * 1024,
-        RawLimits::default(),
-        InventoryLimits::default(),
+        NpmRecoveryLimits {
+            max_bytes: 256 * 1024,
+            raw: RawLimits::default(),
+            inventory: InventoryLimits::default(),
+        },
     )
     .unwrap();
     assert_eq!(current.snapshot(), &new_snapshot);
