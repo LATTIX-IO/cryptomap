@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// Holding an `Arc` returned by the store preserves the same generation even
 /// while a writer publishes a replacement.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct NpmVerifiedGeneration {
     sequence: u64,
     snapshot: Arc<InventorySnapshot>,
