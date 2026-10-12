@@ -1,0 +1,11 @@
+version = 4
+[[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = [
+ "ring",
+]
+[[package]]
+name = "ring"
+version = "0.17.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
