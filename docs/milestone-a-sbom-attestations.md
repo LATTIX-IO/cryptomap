@@ -30,4 +30,4 @@ Critical acceptance:
 
 ## Remaining release approval
 
-Before crates.io v0.1 alpha publication: validate the exact registry name and organization ownership, choose/freeze the version and changelog, explicitly approve a separate change from publish = false, validate the actual registry dry-run/credentials, perform a protected manual release dispatch, then independently install the published registry crate and verify docs.rs plus the signed artifact records. No current CI can test that last registry-distributed installation before a first publication.
+Before publishing the distinct `0.1.1-alpha.1` candidate (the registry already contains `cryptomap 0.1.0`): validate the exact registry name and organization ownership, choose/freeze the version and changelog, explicitly approve a separate change from publish = false, validate the actual registry dry-run/credentials, perform a protected manual release dispatch, then independently install the published registry crate and verify docs.rs plus the signed artifact records. No current CI can test that last registry-distributed installation before a first publication.

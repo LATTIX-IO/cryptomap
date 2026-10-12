@@ -6,6 +6,8 @@ The project follows Semantic Versioning once its public API reaches a stable con
 
 ## [Unreleased]
 
+**Milestone A candidate:** `0.1.1-alpha.1` (not yet published). The independent crates.io `cryptomap 0.1.0` index entry predates this build and cannot be overwritten; publisher ownership is not established by repository metadata.
+
 ### Added
 
 - A packaged third-party custom collector compatibility smoke test with vendored, offline and locked dependencies.

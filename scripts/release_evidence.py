@@ -208,6 +208,8 @@ def inspect(archive: Path, commit: str) -> dict:
         raise ValueError("invalid crate metadata")
     if root != f"cryptomap-{version}":
         raise ValueError("archive root/version mismatch")
+    if archive.name != f"{root}.crate":
+        raise ValueError("archive filename/version mismatch")
     # The release candidate remains explicitly unpublishable until approved.
     if pkg.get("publish") is not False:
         raise ValueError("prematurely enabled publication")

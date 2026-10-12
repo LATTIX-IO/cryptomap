@@ -4,7 +4,7 @@
 
 | Contract | Current implementation | Compatibility policy |
 |---|---|---|
-| Cargo package | `cryptomap` 0.1.0, unpublished | No stability guarantee prior to a stable release; document every public breaking change |
+| Cargo package | SDK candidate `0.1.1-alpha.1`, unpublished; registry `0.1.0` exists | No stability guarantee prior to a stable release; document every public breaking change |
 | Cargo MSRV | Rust 1.85, Edition 2024 | CI checks stable, Rust 1.85 and Windows; changes to MSRV need release notes |
 | Canonical asset identity | `asset:v2` | An identity-rule change must be versioned and golden-vector checked; never silently reinterpret old IDs |
 | Snapshot JSON schema | `schema_version = 2` | Verify imports and reject unknown schema; no unreviewed widening/loosening of source/tenant verification |

@@ -13,7 +13,7 @@ ROOT = "cryptomap-0.1.0"
 MANIFEST = b'[package]\nname="cryptomap"\nversion="0.1.0"\npublish=false\n'
 
 
-def archive_at(path: Path, changes=None):
+def archive_at(path: Path, changes=None, root=ROOT):
     """Build a synthetic release archive with replaceable fixture members."""
     entries = {
         "Cargo.toml": MANIFEST,
@@ -24,7 +24,7 @@ def archive_at(path: Path, changes=None):
     entries.update(changes or {})
     with tarfile.open(path, "w:gz") as archive:
         for rel, data in entries.items():
-            info = tarfile.TarInfo(f"{ROOT}/{rel}")
+            info = tarfile.TarInfo(f"{root}/{rel}")
             info.size = len(data)
             archive.addfile(info, io.BytesIO(data))
 
@@ -46,6 +46,27 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(len(a["sha256"]), 64)
         self.assertFalse(a["publish_enabled"])
         self.assertEqual(len(a["files"]), 4)
+
+    def test_accept_distinct_alpha_archive_name_and_version(self):
+        """A prerelease candidate is valid when archive, root and manifest agree."""
+        version = "0.1.1-alpha.1"
+        self.path = self.path.with_name(f"cryptomap-{version}.crate")
+        archive_at(
+            self.path,
+            {"Cargo.toml": MANIFEST.replace(b"0.1.0", version.encode())},
+            root=f"cryptomap-{version}",
+        )
+        self.assertEqual(inspect(self.path, SHA)["version"], version)
+
+    def test_reject_archive_filename_or_version_drift(self):
+        """Never attach evidence to a mislabeled or mismatched candidate."""
+        archive_at(self.path, {"Cargo.toml": MANIFEST.replace(b"0.1.0", b"0.1.1-alpha.1")})
+        with self.assertRaisesRegex(ValueError, "archive root/version mismatch"):
+            inspect(self.path, SHA)
+        self.path = self.path.with_name("incorrect-filename.crate")
+        archive_at(self.path)
+        with self.assertRaisesRegex(ValueError, "archive filename/version mismatch"):
+            inspect(self.path, SHA)
 
     def test_reject_enabled_publication(self):
         """Fail prepublication evidence when publication is enabled."""
