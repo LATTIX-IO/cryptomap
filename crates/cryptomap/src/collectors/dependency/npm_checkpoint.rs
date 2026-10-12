@@ -317,28 +317,30 @@ pub fn plan_npm_incremental(
     {
         return Err(UnboundEvidence);
     }
-    let manifest_bytes = scope
-        .open_file(
-            crate::raw::RawSourceKind::Dependency,
-            &checkpoint.manifest_item,
-        )
-        .and_then(|file| file.read_bounded())
+    let manifest_file = scope
+        .open_file(crate::raw::RawSourceKind::Dependency, &checkpoint.manifest_item)
         .map_err(|_| UnauthorizedSource)?;
-    let lock_bytes = scope
+    let (manifest_sha256, manifest_bytes) = manifest_file
+        .sha256_bounded(raw_limits.total_bytes)
+        .map_err(|error| match error {
+            crate::scope::ScopeError::ResourceLimit => ResourceLimit,
+            _ => UnauthorizedSource,
+        })?;
+    let remaining = raw_limits
+        .total_bytes
+        .checked_sub(manifest_bytes)
+        .ok_or(ResourceLimit)?;
+    let lock_file = scope
         .open_file(crate::raw::RawSourceKind::Dependency, &checkpoint.lock_item)
-        .and_then(|file| file.read_bounded())
         .map_err(|_| UnauthorizedSource)?;
-    if manifest_bytes
-        .len()
-        .checked_add(lock_bytes.len())
-        .ok_or(ResourceLimit)?
-        > raw_limits.total_bytes
-    {
-        return Err(ResourceLimit);
-    }
-    let manifest_changed =
-        format!("{:x}", Sha256::digest(&manifest_bytes)) != checkpoint.manifest_sha256;
-    let lock_changed = format!("{:x}", Sha256::digest(&lock_bytes)) != checkpoint.lock_sha256;
+    let (lock_sha256, _lock_bytes) = lock_file
+        .sha256_bounded(remaining)
+        .map_err(|error| match error {
+            crate::scope::ScopeError::ResourceLimit => ResourceLimit,
+            _ => UnauthorizedSource,
+        })?;
+    let manifest_changed = manifest_sha256 != checkpoint.manifest_sha256;
+    let lock_changed = lock_sha256 != checkpoint.lock_sha256;
     if manifest_changed || lock_changed {
         return Ok(NpmIncrementalPlan::Recollect {
             manifest_changed,
