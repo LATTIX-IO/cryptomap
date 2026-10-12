@@ -6,7 +6,7 @@ Package-lock v2/v3 package root entries may legitimately include optional `licen
 
 ## Implementation
 
-Modify `npm_manifest.rs::prove` only within the `packages[""]` root object:
+Modify `npm_manifest.rs::prove` and `npm.rs::parse_lock` within the `packages[""]` root object. The independent lock-only collector must reject malformed recognized license metadata rather than reporting clean coverage:
 
 - Allow optional `license`, validated as a nonempty trimmed string with the existing bounded `string_field`/safe-text checks.
 - Do not emit it as a cryptographic observation, authorize a new source, assert SPDX/compliance truth or compare it to `package.json` (which does not currently support full license semantics).
@@ -17,7 +17,7 @@ Modify `npm_manifest.rs::prove` only within the `packages[""]` root object:
 ## Test-driven acceptance
 
 1. Unit: optional root license `MIT`, `Apache-2.0`, `UNLICENSED`, and compound strings retain the exact baseline direct package proof.
-2. Security: duplicate license, malformed types, empty, whitespace, oversized field, and unknown script field fail closed; no partial proof escapes.
+2. Security: duplicate license, malformed types, empty, whitespace, oversized field, and unknown script field fail closed; no partial proof escapes. Lock-only parsing rejects malformed license as `MalformedSource` or oversized license as `ResourceLimit`, before source facts are emitted.
 3. Integration: host-granted npm package.json and package-lock v3 with root license produce identical path-scoped canonical transitive graph and valid immutable snapshot; revoked manifest grant rejects; malformed license source fails.
 4. Historical Cargo/npm collectors and security suite remain passing.
 5. Exact-final-head Linux rustfmt/locked check/Clippy -D warnings/workspace tests/docs/package/RustSec audit/deny/SemVer, Windows, Rust 1.85, independent code/security review and zero actionable threads required before merge.
