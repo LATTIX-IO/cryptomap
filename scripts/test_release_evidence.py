@@ -1,4 +1,5 @@
 """Adversarial and regression tests for release evidence inspection."""
+import gzip
 import io
 import tarfile
 import tempfile
@@ -175,6 +176,33 @@ class EvidenceTests(unittest.TestCase):
             archive.addfile(info, io.BytesIO(b"x"))
         self.assertLess(self.path.stat().st_size, MAX_ARCHIVE)
         with self.assertRaisesRegex(ValueError, "decompressed tar stream budget"):
+            inspect(self.path, SHA)
+
+    def test_reject_invalid_header_after_valid_required_entries(self):
+        """Do not treat a corrupted noninitial tar header as valid EOF."""
+        archive_at(self.path)
+        with gzip.open(self.path, "rb") as stream:
+            data = bytearray(stream.read())
+        with tarfile.open(self.path, "r:gz") as tar:
+            last_end = max(member.offset_data + ((member.size + 511) // 512) * 512 for member in tar)
+        # Inject a 512-byte nonzero header with a deliberately invalid checksum
+        # at the first EOF marker; tarfile would otherwise silently stop here.
+        data[last_end:last_end + 512] = b"A" * 512
+        with gzip.open(self.path, "wb") as stream:
+            stream.write(data)
+        with self.assertRaisesRegex(ValueError, "canonical tar terminator"):
+            inspect(self.path, SHA)
+
+    def test_reject_truncated_eof_padding_after_valid_files(self):
+        """A single or missing zero block cannot certify a complete crate."""
+        archive_at(self.path)
+        with gzip.open(self.path, "rb") as stream:
+            data = stream.read()
+        with tarfile.open(self.path, "r:gz") as tar:
+            end = max(member.offset_data + ((member.size + 511) // 512) * 512 for member in tar)
+        with gzip.open(self.path, "wb") as stream:
+            stream.write(data[:end + 512])
+        with self.assertRaisesRegex(ValueError, "canonical tar terminator"):
             inspect(self.path, SHA)
 
     def test_reject_wrong_commit(self):
