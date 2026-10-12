@@ -4,8 +4,7 @@
 //! simple names. Published slots are created atomically with hard links, never
 //! overwritten. The host owns directory exclusivity and durable directory sync.
 use super::{
-    npm_generation::NpmVerifiedGeneration,
-    npm_generation_frame::write_framed_npm_generation,
+    npm_generation::NpmVerifiedGeneration, npm_generation_frame::write_framed_npm_generation,
     npm_manifest::NpmReconciliationError,
 };
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
@@ -15,7 +14,9 @@ use std::io::Write;
 fn valid_slot_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 96
-        && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
 /// Remove a temporary candidate on both error and successful publication.
@@ -59,10 +60,7 @@ pub fn publish_immutable_npm_generation_slot(
     max_payload_bytes: usize,
 ) -> Result<usize, NpmReconciliationError> {
     use NpmReconciliationError::{ResourceLimit, UnboundEvidence};
-    if !valid_slot_name(staging_name)
-        || !valid_slot_name(slot_name)
-        || staging_name == slot_name
-    {
+    if !valid_slot_name(staging_name) || !valid_slot_name(slot_name) || staging_name == slot_name {
         return Err(UnboundEvidence);
     }
     // Fail oversized serialization before creating even a staging entry.
@@ -97,7 +95,9 @@ mod tests {
 
     #[test]
     fn names_are_basenames_only_without_ambiguous_or_special_characters() {
-        for name in ["", ".", "..", "../a", "a/b", "a\\b", "a.b", "a:b", " bad", "bad ", "a\n", "a\0"] {
+        for name in [
+            "", ".", "..", "../a", "a/b", "a\\b", "a.b", "a:b", " bad", "bad ", "a\n", "a\0",
+        ] {
             assert!(!valid_slot_name(name), "{name:?}");
         }
         assert!(!valid_slot_name(&"a".repeat(97)));
