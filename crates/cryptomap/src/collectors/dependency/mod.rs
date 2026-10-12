@@ -7,4 +7,5 @@ pub mod npm_manifest;
 pub mod npm_manifest_collector;
 pub mod npm_projection;
 pub mod npm_transitive;
+pub mod npm_installation_projection;
 pub mod projection;
