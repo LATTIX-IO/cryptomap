@@ -10,21 +10,21 @@ checks. An unkeyed checkpoint SHA-256 is not anti-rollback protection.
 
 ## New optional API
 
-\`NpmTrustedRecoveryAnchor::new(snapshot_id, checkpoint_fingerprint)\` validates
+`NpmTrustedRecoveryAnchor::new(snapshot_id, checkpoint_fingerprint)` validates
 the syntax of a lower-case SHA-256 checkpoint fingerprint and binds a canonical
 snapshot ID to that exact source-bound checkpoint. The anchor is **not**
 serialized inside the untrusted recovery bundle and has no built-in file loading.
 
-\`restore_npm_generation_pinned(store, bytes, trusted, scope, expected_sequence,
-limits: NpmRecoveryLimits)\` first decodes the same strict,
+`restore_npm_generation_pinned(store, bytes, trusted, scope, expected_sequence,
+limits: NpmRecoveryLimits)` first decodes the same strict,
 versioned and byte-bounded JSON contract as FOSS-322.13. It rejects a bundle if
 either its canonical snapshot identity, checkpoint snapshot identity or exact
 checkpoint fingerprint differs from the independent trusted anchor. Only then
-does it call the prior \`NpmGenerationStore::publish\`, which still checks
+does it call the prior `NpmGenerationStore::publish`, which still checks
 actual host-granted manifest/lock bytes, independently persisted collector
 evidence, canonical graph and CAS publication.
 
-The old \`restore_npm_generation\` remains available for consumers without a
+The typed `NpmRecoveryLimits { max_bytes, raw, inventory }` groups source, inventory, and bundle byte ceilings. The old `restore_npm_generation` remains available for consumers without a
 rollback-resistant external trust anchor. It is not an anti-rollback API.
 
 ## Security boundary
@@ -63,4 +63,4 @@ execution. Parent FOSS-322 remains In Progress.
 
 ## Branch and validation handoff
 
-This increment is developed on its own feature branch and must remain unmerged while FOSS-322.13 PR #32 is open. After #32 is squash-merged, verify that this PR contains only the new trusted-anchor code, run the exact final-head matrix against the new main baseline, resolve review findings and only then merge. No trusted-anchor claims depend on an unprotected, in-process sequence counter.
+This increment is developed on its own feature branch based on FOSS-322.13 PR #32's verified squash commit. The PR contains only the trusted-anchor code, regressions, and specification. Merge only after final-head quality, cross-platform, security, and review gates pass. No trusted-anchor claims depend on an unprotected, in-process sequence counter.
