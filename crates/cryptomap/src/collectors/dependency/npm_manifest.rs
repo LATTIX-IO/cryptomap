@@ -216,9 +216,16 @@ fn prove(
         .ok_or(InvalidSource)?;
     if root
         .keys()
-        .any(|key| !matches!(key.as_str(), "name" | "version" | "dependencies"))
+        .any(|key| !matches!(key.as_str(), "name" | "version" | "dependencies" | "license"))
     {
         return Err(UnsupportedProfile);
+    }
+    // A source-hashed root license declaration is inert package metadata, not
+    // a dependency, authorization grant or cryptographic runtime-use signal.
+    // Do not allow malformed, empty, oversized or non-string declarations.
+    if root.contains_key("license") && string_field(root, "license", limits.field_bytes)?.is_empty()
+    {
+        return Err(InvalidSource);
     }
     if string_field(root, "name", limits.field_bytes)? != manifest.name
         || string_field(root, "version", limits.field_bytes)? != manifest.version
