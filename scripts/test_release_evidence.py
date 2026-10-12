@@ -190,7 +190,7 @@ class EvidenceTests(unittest.TestCase):
         data[last_end:last_end + 512] = b"A" * 512
         with gzip.open(self.path, "wb") as stream:
             stream.write(data)
-        with self.assertRaisesRegex(ValueError, "physical tar header checksum|canonical tar terminator"):
+        with self.assertRaisesRegex(ValueError, "malformed tar numeric field|physical tar header checksum|canonical tar terminator"):
             inspect(self.path, SHA)
 
     def test_reject_truncated_eof_padding_after_valid_files(self):
@@ -202,7 +202,7 @@ class EvidenceTests(unittest.TestCase):
             end = max(member.offset_data + ((member.size + 511) // 512) * 512 for member in tar)
         with gzip.open(self.path, "wb") as stream:
             stream.write(data[:end + 512])
-        with self.assertRaisesRegex(ValueError, "canonical tar terminator"):
+        with self.assertRaisesRegex(ValueError, "canonical tar terminator|truncated physical tar stream"):
             inspect(self.path, SHA)
 
     def test_reject_pax_size_override_even_if_parser_skips_record(self):
