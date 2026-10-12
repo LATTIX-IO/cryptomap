@@ -63,7 +63,7 @@ The clean-room script extracts the actual `.crate`, builds a new unrelated consu
 1. Confirm full CI, security review and the package-consumer gate at the exact candidate SHA. Review public API, supported profiles and source privacy against the actual packaged contents.
 2. Check availability/ownership of the exact `cryptomap` crate name immediately before publishing. It is **not** verified by CI.
 3. Update CHANGELOG and version; record SemVer/schema/collector compatibility, irreversible crates.io package digest, Git commit and release notes.
-4. Obtain deliberate release authorization and check crates.io token/trusted publishing configuration. Release workflow now additionally requires repository variable `CRYPTOMAP_RELEASE_ENABLED=true`. The crate itself remains `publish = false`.
+4. Obtain deliberate release authorization and check crates.io token/trusted publishing configuration. Release-plz publishing additionally requires a manual `workflow_dispatch` on `main` and repository variable `CRYPTOMAP_RELEASE_ENABLED=true`; ordinary merges cannot publish. The crate itself remains `publish = false`.
 5. In a separate, reviewed release PR, change only the intentional publication settings and release metadata, validate `cargo publish --dry-run -p cryptomap --locked`, then confirm publishing manually through a protected workflow.
 6. After publication, test installation of the **registry-distributed** version in a fresh project, verify docs.rs/GitHub release/SBOM/provenance and revoke/rotate credentials when applicable. The current clean-room gate tests a locally produced archive, *not* the crates.io registry.
 
