@@ -190,7 +190,7 @@ class EvidenceTests(unittest.TestCase):
         data[last_end:last_end + 512] = b"A" * 512
         with gzip.open(self.path, "wb") as stream:
             stream.write(data)
-        with self.assertRaisesRegex(ValueError, "canonical tar terminator"):
+        with self.assertRaisesRegex(ValueError, "physical tar header checksum|canonical tar terminator"):
             inspect(self.path, SHA)
 
     def test_reject_truncated_eof_padding_after_valid_files(self):
@@ -204,6 +204,17 @@ class EvidenceTests(unittest.TestCase):
             stream.write(data[:end + 512])
         with self.assertRaisesRegex(ValueError, "canonical tar terminator"):
             inspect(self.path, SHA)
+
+    def test_reject_pax_size_override_even_if_parser_skips_record(self):
+        """A PAX size override must never hide a physical member from audit."""
+        with tarfile.open(self.path, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+            info = tarfile.TarInfo(f"{ROOT}/sneaky")
+            info.pax_headers = {"size": "-1"}
+            info.size = 1
+            archive.addfile(info, io.BytesIO(b"x"))
+        from release_evidence import audit_physical_tar_layout
+        with self.assertRaisesRegex(ValueError, "PAX size/link override"):
+            audit_physical_tar_layout(self.path, 1)
 
     def test_reject_wrong_commit(self):
         """Require a full source commit in release evidence."""
