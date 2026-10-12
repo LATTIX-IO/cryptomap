@@ -131,7 +131,13 @@ class SoftwareSbomTests(unittest.TestCase):
         self.write(doc)
         with self.assertRaisesRegex(ValueError, "differs from Cargo.lock"):
             self.check()
-        self.lock.write_text(lock_fixture().replace('version = "1.0.0"', 'version = "2.0.0"', 1), encoding="utf-8")
+        self.lock.write_text(
+            lock_fixture().replace(
+                'name = "cap-fs-ext"\nversion = "1.0.0"',
+                'name = "cap-fs-ext"\nversion = "2.0.0"',
+            ),
+            encoding="utf-8",
+        )
         self.write(sample())
         with self.assertRaisesRegex(ValueError, "differs from Cargo.lock"):
             self.check()
