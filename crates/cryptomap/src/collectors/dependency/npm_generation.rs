@@ -83,9 +83,7 @@ impl NpmGenerationStore {
     /// The reader must use the snapshot and checkpoint from this same returned
     /// value, not combine fields from two separate `current()` calls.
     /// A poisoned lock fails closed rather than returning an unverified pair.
-    pub fn current(
-        &self,
-    ) -> Result<Option<Arc<NpmVerifiedGeneration>>, NpmReconciliationError> {
+    pub fn current(&self) -> Result<Option<Arc<NpmVerifiedGeneration>>, NpmReconciliationError> {
         let guard = self
             .current
             .lock()
@@ -142,7 +140,6 @@ impl NpmGenerationStore {
     }
 }
 
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -164,9 +161,7 @@ mod tests {
                 "invalid pair: {manifest:?}, {lock:?}"
             );
         }
-        assert!(
-            NpmGenerationStore::new(&scope, &"a".repeat(513), "npm:lock").is_err()
-        );
+        assert!(NpmGenerationStore::new(&scope, &"a".repeat(513), "npm:lock").is_err());
         let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
         assert!(store.current().unwrap().is_none());
     }
