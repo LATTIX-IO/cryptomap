@@ -2030,7 +2030,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
         };
         assert_eq!(
             restore_immutable_npm_generation_slot(
-                &dir, "slotA", &target, &anchor, &scope, None, invalid_limits,
+                &dir,
+                "slotA",
+                &target,
+                &anchor,
+                &scope,
+                None,
+                invalid_limits,
             ),
             Err(NpmReconciliationError::ResourceLimit),
         );
@@ -2059,7 +2065,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     let foreign_scope = fixture.scope("tenant-b", true, "npm:lock");
     assert_eq!(
         restore_immutable_npm_generation_slot(
-            &dir, "slotA", &target, &anchor, &foreign_scope, None, limits,
+            &dir,
+            "slotA",
+            &target,
+            &anchor,
+            &foreign_scope,
+            None,
+            limits,
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
@@ -2123,12 +2135,12 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
         assert_eq!(
             restore_immutable_npm_generation_slot(
                 &dir,
-            "redirect",
-            &target,
-            &anchor,
-            &scope,
-            Some(1),
-            limits,
+                "redirect",
+                &target,
+                &anchor,
+                &scope,
+                Some(1),
+                limits,
             ),
             Err(NpmReconciliationError::UnboundEvidence)
         );
