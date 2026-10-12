@@ -75,7 +75,10 @@ fn index_lock_evidence(
                 && snapshot
                     .runs
                     .get(&coverage.run)
-                    .is_some_and(|run| run.requested.contains(lock_item))
+                    .is_some_and(|run| {
+                        matches!(run.completeness, crate::RunCompleteness::Complete)
+                            && run.requested.contains(lock_item)
+                    })
         })
         .map(|record| record.run.clone())
         .collect();
