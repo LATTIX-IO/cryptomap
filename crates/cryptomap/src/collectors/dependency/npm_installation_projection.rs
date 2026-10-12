@@ -292,3 +292,40 @@ pub fn project_npm_transitive_edges(
         .map_err(|_| UnboundEvidence)?;
     Ok(output)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_valid_identity_components_fit_hashed_use_site_without_collisions() {
+        let path = format!(
+            "{}node_modules/leaf",
+            "node_modules/a/".repeat(44),
+        );
+        assert!(path.len() > 600);
+        let source = format!("npm:{}", "s".repeat(1496));
+        let tenant = IdentityContext::new("tenant-a").unwrap();
+        let node = NpmInstalledNode {
+            path: path.clone(),
+            name: "leaf".into(),
+            version: "1.0.0".into(),
+        };
+        let one = path_asset(&node, &source, &tenant).unwrap();
+        assert_eq!(one.extensions["npm:install-path"], path);
+        assert_eq!(one.extensions["npm:lock-item"], source);
+        assert_eq!(one, path_asset(&node, &source, &tenant).unwrap());
+        let changed_path = NpmInstalledNode {
+            path: format!("node_modules/leaf/{}", node.path),
+            ..node.clone()
+        };
+        assert_ne!(one.id, path_asset(&changed_path, &source, &tenant).unwrap().id);
+        assert_ne!(one.id, path_asset(&node, "npm:other", &tenant).unwrap().id);
+        assert_ne!(
+            one.id,
+            path_asset(&node, &source, &IdentityContext::new("tenant-b").unwrap())
+                .unwrap().id,
+        );
+    }
+}
