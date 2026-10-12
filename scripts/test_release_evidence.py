@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from release_evidence import MAX_ARCHIVE, MAX_ENTRIES, inspect
+from release_evidence import MAX_ARCHIVE, MAX_ENTRIES, MAX_TAR_STREAM, inspect
 
 SHA = "a" * 40
 ROOT = "cryptomap-0.1.0"
@@ -144,6 +144,38 @@ class EvidenceTests(unittest.TestCase):
                 archive.addfile(info, io.BytesIO(b"x"))
             with self.assertRaisesRegex(ValueError, "unsafe archive"):
                 inspect(self.path, SHA)
+
+    def test_reject_required_readme_or_license_as_directory(self):
+        """Required documentation and licenses must be actual regular files."""
+        for missing in ("README.md", "LICENSE-MIT", "LICENSE-APACHE"):
+            with tarfile.open(self.path, "w:gz") as archive:
+                for rel, data in (
+                    ("Cargo.toml", MANIFEST),
+                    ("README.md", b"readme"),
+                    ("LICENSE-MIT", b"MIT"),
+                    ("LICENSE-APACHE", b"Apache"),
+                ):
+                    name = f"{ROOT}/{rel}"
+                    info = tarfile.TarInfo(name)
+                    if rel == missing:
+                        info.type = tarfile.DIRTYPE
+                        archive.addfile(info)
+                    else:
+                        info.size = len(data)
+                        archive.addfile(info, io.BytesIO(data))
+            with self.assertRaisesRegex(ValueError, "missing release-critical"):
+                inspect(self.path, SHA)
+
+    def test_reject_large_pax_header_before_tarfile_materialization(self):
+        """Cap PAX metadata decompression even before the first member yields."""
+        with tarfile.open(self.path, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+            info = tarfile.TarInfo(f"{ROOT}/file")
+            info.pax_headers = {"comment": "A" * (MAX_TAR_STREAM + 1)}
+            info.size = 1
+            archive.addfile(info, io.BytesIO(b"x"))
+        self.assertLess(self.path.stat().st_size, MAX_ARCHIVE)
+        with self.assertRaisesRegex(ValueError, "decompressed tar stream budget"):
+            inspect(self.path, SHA)
 
     def test_reject_wrong_commit(self):
         """Require a full source commit in release evidence."""
