@@ -26,38 +26,51 @@ def inspect(archive: Path, commit: str) -> dict:
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     entries = []
     names = set()
+    files = set()
     manifest = None
     expanded = 0
-    with tarfile.open(archive, "r:gz") as tar:
-        members = tar.getmembers()
-        if not members or len(members) > MAX_ENTRIES:
-            raise ValueError("invalid member count")
-        root = members[0].name.split("/", 1)[0]
-        if not re.fullmatch(r"cryptomap-[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", root):
-            raise ValueError("unexpected package root")
-        for member in members:
+    root = None
+    count = 0
+    # Stream headers: never call getmembers(), which eagerly materializes
+    # untrusted metadata before MAX_ENTRIES / expanded-size checks.
+    with tarfile.open(archive, "r|gz") as tar:
+        for member in tar:
+            count += 1
+            if count > MAX_ENTRIES:
+                raise ValueError("archive member budget exceeded")
             name = member.name
+            if root is None:
+                root = name.split("/", 1)[0]
+                if not re.fullmatch(r"cryptomap-[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", root):
+                    raise ValueError("unexpected package root")
             path = PurePosixPath(name)
             if (
                 path.is_absolute()
                 or ".." in path.parts
                 or len(path.parts) < 2
                 or path.parts[0] != root
+                or path.as_posix() != name.rstrip("/")
                 or not (member.isfile() or member.isdir())
                 or member.issym()
                 or member.islnk()
             ):
                 raise ValueError("unsafe archive entry")
             rel = "/".join(path.parts[1:])
+            # Track directories and files alike; file/directory collisions and
+            # file-as-parent paths are ambiguous at extraction time.
+            if rel in names or any("/".join(path.parts[1:i]) in files for i in range(2, len(path.parts))):
+                raise ValueError("duplicate or overlapping packaged path")
+            if member.isfile() and any(existing.startswith(rel + "/") for existing in names):
+                raise ValueError("file shadows packaged directory")
+            names.add(rel)
             if any(part in BAD_PARTS or part.startswith(".env") for part in path.parts[1:]):
                 raise ValueError("forbidden packaged directory or file")
             if member.isfile() and (path.suffix.lower() in BAD_SUFFIXES):
                 raise ValueError("potential secret-bearing packaged filename")
             if member.isfile():
-                if rel in names:
-                    raise ValueError("duplicate packaged path")
-                names.add(rel)
+                files.add(rel)
                 expanded += member.size
+                # Reject declared sizes before consuming or seeking past data.
                 if expanded > MAX_ARCHIVE:
                     raise ValueError("expanded archive budget exceeded")
                 if rel == "Cargo.toml":
@@ -68,6 +81,8 @@ def inspect(archive: Path, commit: str) -> dict:
                         raise ValueError("missing manifest contents")
                     manifest = tomllib.loads(stream.read().decode("utf-8"))
                 entries.append({"path": rel, "size": member.size})
+    if count == 0:
+        raise ValueError("empty archive")
     if not REQUIRED <= names or manifest is None:
         raise ValueError("missing release-critical package files")
     pkg = manifest.get("package", {})
