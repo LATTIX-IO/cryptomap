@@ -77,8 +77,13 @@ pub fn read_framed_npm_generation<R: Read>(
         return Err(UnboundEvidence);
     }
     let mut trailing = [0u8; 1];
-    if reader.read(&mut trailing).map_err(|_| UnboundEvidence)? != 0 {
-        return Err(UnboundEvidence);
+    loop {
+        match reader.read(&mut trailing) {
+            Ok(0) => break,
+            Ok(_) => return Err(UnboundEvidence),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(UnboundEvidence),
+        }
     }
     Ok(body)
 }
@@ -160,6 +165,31 @@ mod tests {
             read_framed_npm_generation(&mut Cursor::new(modified), 10),
             Err(NpmReconciliationError::ResourceLimit)
         );
+    }
+
+    struct InterruptedAtEof {
+        inner: Cursor<Vec<u8>>,
+        interrupted: bool,
+    }
+
+    impl Read for InterruptedAtEof {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted && self.inner.position() == self.inner.get_ref().len() as u64 {
+                self.interrupted = true;
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
+            }
+            self.inner.read(buffer)
+        }
+    }
+
+    #[test]
+    fn interrupted_trailing_probe_retries_and_accepts_valid_eof() {
+        let mut input = InterruptedAtEof {
+            inner: Cursor::new(frame(b"{}")),
+            interrupted: false,
+        };
+        assert_eq!(read_framed_npm_generation(&mut input, 2).unwrap(), b"{}");
+        assert!(input.interrupted);
     }
 
     struct BrokenReader;
