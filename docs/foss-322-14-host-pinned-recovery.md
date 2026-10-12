@@ -16,7 +16,7 @@ snapshot ID to that exact source-bound checkpoint. The anchor is **not**
 serialized inside the untrusted recovery bundle and has no built-in file loading.
 
 \`restore_npm_generation_pinned(store, bytes, trusted, scope, expected_sequence,
-max_bytes, raw_limits, inventory_limits)\` first decodes the same strict,
+limits: NpmRecoveryLimits)\` first decodes the same strict,
 versioned and byte-bounded JSON contract as FOSS-322.13. It rejects a bundle if
 either its canonical snapshot identity, checkpoint snapshot identity or exact
 checkpoint fingerprint differs from the independent trusted anchor. Only then
