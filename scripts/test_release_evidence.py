@@ -63,8 +63,7 @@ class EvidenceTests(unittest.TestCase):
             inspect(self.path, SHA)
 
     def test_reject_symlink(self):
-        archive_at(self.path)
-        with tarfile.open(self.path, "a") as archive:
+        with tarfile.open(self.path, "w:gz") as archive:
             info = tarfile.TarInfo(f"{ROOT}/redirect")
             info.type = tarfile.SYMTYPE
             info.linkname = "../../outside"
