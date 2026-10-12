@@ -63,13 +63,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 EOF
-cargo run --offline --manifest-path "$scratch/consumer/Cargo.toml"
+# Generate the dependency source only from the REVIEWED workspace Cargo.lock.
+# The subsequent external builds use an empty Cargo home with a single
+# vendored registry source, not the CI runner's warmed cache or network.
+mkdir -p "$scratch/cargo-home"
+cargo vendor --locked --versioned-dirs "$scratch/vendor" > "$scratch/cargo-home/config.toml"
+CARGO_HOME="$scratch/cargo-home" cargo generate-lockfile --offline \
+    --manifest-path "$scratch/consumer/Cargo.toml"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$scratch/consumer/Cargo.toml"
 
 # Exercise the packaged example on fixture bytes copied into explicitly
 # approved source filenames. Cargo excludes nested Cargo.toml subpackages.
 mkdir -p "$scratch/input"
 cp "$package/examples/fixtures/manifest.fixture" "$scratch/input/Cargo.toml"
 cp "$package/examples/fixtures/lock.fixture" "$scratch/input/Cargo.lock"
-cargo run --offline --manifest-path "$package/Cargo.toml" \
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" \
     --example cargo_scoped_inventory -- \
-    "$scratch/input" "2026-10-12T12:00:00Z"
+    "$scratch/input" "2026-10-12T12:00:00Z" "packaged-scope" "packaged-run"
