@@ -369,8 +369,7 @@ mod tests {
             );
         }
         let mut oversized: Value = serde_json::from_slice(baseline).unwrap();
-        oversized["packages"][""]["license"] =
-            Value::String("A".repeat(limits().field_bytes + 1));
+        oversized["packages"][""]["license"] = Value::String("A".repeat(limits().field_bytes + 1));
         assert_eq!(
             parse_lock(&serde_json::to_vec(&oversized).unwrap(), limits()),
             Err(CollectorDiagnosticCode::ResourceLimit)
