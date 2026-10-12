@@ -247,3 +247,109 @@ pub fn verify_npm_checkpoint(
     }
     Ok(())
 }
+
+/// A bounded, advisory decision about reusing one canonical npm snapshot.
+///
+/// Only ReuseVerified authorizes the caller to skip a new collector run;
+/// it is issued after current source and canonical evidence revalidation.
+/// Recollect never carries trusted new graph evidence or permits cache reuse.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NpmIncrementalPlan {
+    /// Current files and complete canonical graph still match the checkpoint.
+    ReuseVerified {
+        /// Independently verified immutable snapshot ID.
+        snapshot_id: SnapshotId,
+    },
+    /// At least one explicitly granted file differs; recollect both source
+    /// inputs and reproject before any new checkpoint can be minted.
+    Recollect {
+        /// Manifest content digest differs from checkpoint.
+        manifest_changed: bool,
+        /// Lockfile content digest differs from checkpoint.
+        lock_changed: bool,
+    },
+}
+
+/// Inspect two exact, independently authorized source files to determine
+/// whether an existing canonical npm graph can be reused safely.
+///
+/// This is a point-in-time, fail-closed planner, not a filesystem watcher,
+/// resumable executor or permission capability. It validates scope, snapshot
+/// canonical identity and checkpoint envelope before reading either file.
+/// For changed inputs it emits only an advisory Recollect decision, never
+/// reuses stale observations. For unchanged inputs it runs the full
+/// verify_npm_checkpoint provenance check, including fresh graph projection
+/// and source-digest matching; the host may then reuse the returned snapshot
+/// identity rather than repeat collection and normalization.
+///
+/// Missing grants, oversized files, modified cache metadata, wrong tenant,
+/// unsupported profiles and invalid snapshots never produce ReuseVerified.
+/// The caller must serialize filesystem changes against subsequent use when
+/// stronger-than-point-in-time freshness is required.
+pub fn plan_npm_incremental(
+    checkpoint: &NpmProjectionCheckpoint,
+    snapshot: &InventorySnapshot,
+    scope: &CollectionScope,
+    raw_limits: RawLimits,
+    inventory_limits: InventoryLimits,
+) -> Result<NpmIncrementalPlan, NpmReconciliationError> {
+    use NpmReconciliationError::{
+        InvalidSource, ResourceLimit, UnauthorizedSource, UnboundEvidence,
+    };
+    raw_limits.validate().map_err(|_| InvalidSource)?;
+    snapshot
+        .verify_for_scope(scope.id(), inventory_limits)
+        .map_err(|_| UnboundEvidence)?;
+    if checkpoint.version != 1
+        || checkpoint.scope != scope.id().as_str()
+        || checkpoint.snapshot_id != snapshot.id
+        || checkpoint.manifest_item == checkpoint.lock_item
+        || checkpoint.fingerprint
+            != fingerprint(
+                &checkpoint.scope,
+                &checkpoint.manifest_item,
+                &checkpoint.lock_item,
+                &checkpoint.snapshot_id,
+                &checkpoint.manifest_sha256,
+                &checkpoint.lock_sha256,
+            )?
+    {
+        return Err(UnboundEvidence);
+    }
+    let manifest_bytes = scope
+        .open_file(crate::raw::RawSourceKind::Dependency, &checkpoint.manifest_item)
+        .and_then(|file| file.read_bounded())
+        .map_err(|_| UnauthorizedSource)?;
+    let lock_bytes = scope
+        .open_file(crate::raw::RawSourceKind::Dependency, &checkpoint.lock_item)
+        .and_then(|file| file.read_bounded())
+        .map_err(|_| UnauthorizedSource)?;
+    if manifest_bytes
+        .len()
+        .checked_add(lock_bytes.len())
+        .ok_or(ResourceLimit)?
+        > raw_limits.total_bytes
+    {
+        return Err(ResourceLimit);
+    }
+    let manifest_changed =
+        format!("{:x}", Sha256::digest(&manifest_bytes)) != checkpoint.manifest_sha256;
+    let lock_changed =
+        format!("{:x}", Sha256::digest(&lock_bytes)) != checkpoint.lock_sha256;
+    if manifest_changed || lock_changed {
+        return Ok(NpmIncrementalPlan::Recollect {
+            manifest_changed,
+            lock_changed,
+        });
+    }
+    // Digest equality alone never permits reuse: the snapshot must still have
+    // complete, authorized, matching independently persisted evidence and
+    // an exact, nonstale canonical source-scoped installation graph.
+    verify_npm_checkpoint(
+        checkpoint, snapshot, scope, raw_limits, inventory_limits,
+    )?;
+    Ok(NpmIncrementalPlan::ReuseVerified {
+        snapshot_id: snapshot.id.clone(),
+    })
+}
