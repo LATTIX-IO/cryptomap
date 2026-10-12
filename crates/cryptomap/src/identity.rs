@@ -192,6 +192,23 @@ pub fn derive(kind: &AssetKind, ctx: &IdentityContext) -> Result<AssetIdentity, 
             "library",
             vec![scope, fold(ecosystem)?, fold(name)?, version.clone()],
         ),
+        AssetKind::InstalledDependency {
+            ecosystem,
+            name,
+            version,
+            source_item,
+            installation_path,
+        } => (
+            "installed-dependency:v1",
+            vec![
+                scope,
+                fold(ecosystem)?,
+                fold(name)?,
+                version.clone(),
+                source_item.clone(),
+                installation_path.clone(),
+            ],
+        ),
         AssetKind::Runtime { name, version } => {
             let version = version
                 .as_deref()
