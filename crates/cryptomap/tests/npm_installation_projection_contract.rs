@@ -1968,3 +1968,213 @@ fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation()
     drop(dir);
     std::fs::remove_dir_all(&location).unwrap();
 }
+
+#[test]
+fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
+    use cap_std::{ambient_authority, fs::Dir};
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
+        npm_generation_slot::{
+            publish_immutable_npm_generation_slot, restore_immutable_npm_generation_slot,
+        },
+    };
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let location = std::env::temp_dir().join(format!(
+        "cryptomap-slot-restore-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&location).unwrap();
+    let dir = Dir::open_ambient_dir(&location, ambient_authority()).unwrap();
+
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &snapshot,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), checkpoint.fingerprint.clone()).unwrap();
+    let source = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let current = source
+        .publish(
+            checkpoint.clone(),
+            snapshot.clone(),
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    publish_immutable_npm_generation_slot(&dir, &current, "stageA", "slotA", 256 * 1024).unwrap();
+
+    let limits = NpmRecoveryLimits {
+        max_bytes: 256 * 1024,
+        raw: RawLimits::default(),
+        inventory: InventoryLimits::default(),
+    };
+    let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    for budget in [0, usize::MAX] {
+        let invalid_limits = NpmRecoveryLimits {
+            max_bytes: budget,
+            ..limits
+        };
+        assert_eq!(
+            restore_immutable_npm_generation_slot(
+                &dir,
+                "slotA",
+                &target,
+                &anchor,
+                &scope,
+                None,
+                invalid_limits,
+            ),
+            Err(NpmReconciliationError::ResourceLimit),
+        );
+    }
+    assert!(target.current().unwrap().is_none());
+
+    for invalid in [
+        "",
+        ".",
+        "../slotA",
+        "a/b",
+        "slotA\0",
+        "slotA ",
+        "not-present",
+    ] {
+        assert_eq!(
+            restore_immutable_npm_generation_slot(
+                &dir, invalid, &target, &anchor, &scope, None, limits,
+            ),
+            Err(NpmReconciliationError::UnboundEvidence),
+            "invalid slot {invalid:?}"
+        );
+    }
+    assert!(target.current().unwrap().is_none());
+
+    let foreign_scope = fixture.scope("tenant-b", true, "npm:lock");
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir,
+            "slotA",
+            &target,
+            &anchor,
+            &foreign_scope,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let denied = fixture.scope("tenant-a", false, "npm:lock");
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir, "slotA", &target, &anchor, &denied, None, limits,
+        ),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
+    let wrong_anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), format!("sha256:{}", "0".repeat(64)))
+            .unwrap();
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir,
+            "slotA",
+            &target,
+            &wrong_anchor,
+            &scope,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(target.current().unwrap().is_none());
+
+    let restored = restore_immutable_npm_generation_slot(
+        &dir, "slotA", &target, &anchor, &scope, None, limits,
+    )
+    .unwrap();
+    assert_eq!(restored.sequence(), 1);
+    assert_eq!(restored.snapshot(), &snapshot);
+    assert_eq!(restored.checkpoint(), &checkpoint);
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir, "slotA", &target, &anchor, &scope, None, limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(target.current().unwrap().unwrap().sequence(), 1);
+
+    // A different fully valid slot name must still represent a regular file
+    // opened without symlink redirection, even if the target file is valid.
+    std::fs::create_dir(location.join("directory")).unwrap();
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir,
+            "directory",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("slotA", location.join("redirect")).unwrap();
+        assert_eq!(
+            restore_immutable_npm_generation_slot(
+                &dir,
+                "redirect",
+                &target,
+                &anchor,
+                &scope,
+                Some(1),
+                limits,
+            ),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
+    }
+    // An over-budget file is rejected before JSON allocation or publication.
+    let too_large = vec![0_u8; limits.max_bytes + 49];
+    std::fs::write(location.join("overlimit"), too_large).unwrap();
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir,
+            "overlimit",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
+        ),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
+    // A valid filename with corrupted content also fails closed.
+    std::fs::write(location.join("corrupt"), b"not a framed recovery").unwrap();
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir,
+            "corrupt",
+            &target,
+            &anchor,
+            &scope,
+            Some(1),
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(target.current().unwrap().unwrap().sequence(), 1);
+    drop(dir);
+    std::fs::remove_dir_all(&location).unwrap();
+}
