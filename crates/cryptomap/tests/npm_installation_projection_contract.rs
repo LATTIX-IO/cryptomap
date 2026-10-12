@@ -2025,6 +2025,19 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
         inventory: InventoryLimits::default(),
     };
     let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    for budget in [0, usize::MAX] {
+        let invalid_limits = NpmRecoveryLimits {
+            max_bytes: budget,
+            ..limits
+        };
+        assert_eq!(
+            restore_immutable_npm_generation_slot(
+                &dir, "slotA", &target, &anchor, &scope, None, invalid_limits,
+            ),
+            Err(NpmReconciliationError::ResourceLimit),
+        );
+    }
+    assert!(target.current().unwrap().is_none());
 
     for invalid in ["", ".", "../slotA", "a/b", "slotA\0", "slotA ", "not-present"] {
         assert_eq!(
@@ -2037,6 +2050,13 @@ fn immutable_slot_recovery_rejects_untrusted_paths_and_revalidates_sources() {
     }
     assert!(target.current().unwrap().is_none());
 
+    let foreign_scope = fixture.scope("tenant-b", true, "npm:lock");
+    assert_eq!(
+        restore_immutable_npm_generation_slot(
+            &dir, "slotA", &target, &anchor, &foreign_scope, None, limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
     let denied = fixture.scope("tenant-a", false, "npm:lock");
     assert_eq!(
         restore_immutable_npm_generation_slot(
