@@ -105,9 +105,11 @@ pub fn restore_npm_generation(
     bytes: &[u8],
     scope: &CollectionScope,
     expected_sequence: Option<u64>,
-    limits: NpmRecoveryLimits,
+    max_bytes: usize,
+    raw_limits: RawLimits,
+    inventory_limits: InventoryLimits,
 ) -> Result<Arc<NpmVerifiedGeneration>, NpmReconciliationError> {
-    let bundle = decode_recovery_bundle(bytes, limits.max_bytes)?;
+    let bundle = decode_recovery_bundle(bytes, max_bytes)?;
     store.publish(
         bundle.checkpoint,
         bundle.snapshot,
@@ -216,11 +218,9 @@ pub fn restore_npm_generation_pinned(
     trusted: &NpmTrustedRecoveryAnchor,
     scope: &CollectionScope,
     expected_sequence: Option<u64>,
-    max_bytes: usize,
-    raw_limits: RawLimits,
-    inventory_limits: InventoryLimits,
+    limits: NpmRecoveryLimits,
 ) -> Result<Arc<NpmVerifiedGeneration>, NpmReconciliationError> {
-    let bundle = decode_recovery_bundle(bytes, max_bytes)?;
+    let bundle = decode_recovery_bundle(bytes, limits.max_bytes)?;
     if &bundle.snapshot.id != trusted.snapshot_id()
         || &bundle.checkpoint.snapshot_id != trusted.snapshot_id()
         || bundle.checkpoint.fingerprint != trusted.checkpoint_fingerprint()
