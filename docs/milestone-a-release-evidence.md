@@ -25,6 +25,8 @@ python3 -m unittest discover -s scripts -p 'test_release_evidence.py' -v
 python3 scripts/release_evidence.py \
   --archive target/package/cryptomap-0.1.1-alpha.1.crate \
   --commit "$(git rev-parse HEAD)" \
+  --workspace-manifest Cargo.toml \
+  --lockfile Cargo.lock \
   --output target/release-evidence/cryptomap.json
 ```
 
