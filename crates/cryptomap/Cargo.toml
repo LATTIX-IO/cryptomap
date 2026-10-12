@@ -8,6 +8,8 @@ repository.workspace = true
 homepage.workspace = true
 description = "Evidence-backed cryptographic inventory, observations, and deterministic snapshots."
 readme = "README.md"
+keywords = ["cryptography", "inventory", "cbom", "security", "pqc"]
+categories = ["cryptography", "development-tools", "data-structures"]
 
 # Guard against publishing before conformance and compatibility requirements are complete.
 publish = false
