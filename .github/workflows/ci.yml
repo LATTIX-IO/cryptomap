@@ -56,6 +56,24 @@ jobs:
       - name: Clean-room package and reference example
         run: bash scripts/verify-packaged-consumer.sh
 
+      - name: Release artifact evidence tests
+        run: python3 -m unittest discover -s scripts -p 'test_release_evidence.py' -v
+
+      - name: Inspect packaged archive and record release evidence
+        run: |
+          python3 scripts/release_evidence.py \
+            --archive "target/package/cryptomap-0.1.0.crate" \
+            --commit "$GITHUB_SHA" \
+            --output "target/release-evidence/cryptomap.json"
+
+      - name: Upload release inspection evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cryptomap-release-inspection
+          path: target/release-evidence/cryptomap.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Install supply-chain tools
         run: |
           cargo install --locked cargo-audit
