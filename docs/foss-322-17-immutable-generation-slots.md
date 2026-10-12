@@ -8,13 +8,13 @@ This follows FOSS-322.16 transport integrity framing and preserves source-bound,
 
 ## API contract
 
-\`publish_immutable_npm_generation_slot(dir, generation, staging_name, slot_name, max_payload_bytes)\`
+`publish_immutable_npm_generation_slot(dir, generation, staging_name, slot_name, max_payload_bytes)`
 
-- \`dir\` is an already-open \`cap_std::fs::Dir\`; the library does not open ambient directories.
-- \`staging_name\` and \`slot_name\` are distinct, nonempty ASCII basename tokens, 1–96 characters using only \`[A-Za-z0-9_-]\`. No dot components, delimiters, path traversal, absolute paths, symlinks or paths underneath nested directories are accepted.
+- `dir` is an already-open `cap_std::fs::Dir`; the library does not open ambient directories.
+- `staging_name` and `slot_name` are distinct, nonempty ASCII basename tokens, 1–96 characters using only `[A-Za-z0-9_-]`. No dot components, delimiters, path traversal, absolute paths, symlinks or paths underneath nested directories are accepted.
 - Full versioned frame encoding and byte budget validation happen **before** creating the staging file.
-- Stage creation uses \`create_new\` and \`FollowSymlinks::No\`. The complete frame is written, the file is \`sync_all\`ed, and the writer is closed before the commit operation.
-- \`Dir::hard_link(staging, dir, slot)\` creates the destination name only if it does not already exist. It does not overwrite any previous file or symlink. A cleanup guard best-effort unlinks the staging name on success or failure. A failed cleanup can leave an orphan staging file; it does not unpublish an existing destination.
+- Stage creation uses `create_new` and `FollowSymlinks::No`. The complete frame is written, the file is `sync_all`ed, and the writer is closed before the commit operation.
+- `Dir::hard_link(staging, dir, slot)` creates the destination name only if it does not already exist. It does not overwrite any previous file or symlink. A cleanup guard best-effort unlinks the staging name on success or failure. A failed cleanup can leave an orphan staging file; it does not unpublish an existing destination.
 - Return the framed byte count or a fail-closed error. Hosts must persist and synchronize their trusted checkpoint anchor separately.
 
 ## Security boundaries and known residual risks
