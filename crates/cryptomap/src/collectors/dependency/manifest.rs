@@ -106,9 +106,6 @@ fn exact_numeric_version(version: &str) -> bool {
     }) && components.next().is_none()
 }
 
-/// Parse a deliberately constrained Cargo.toml profile while preserving
-/// explicit failure on unsupported dependency semantics and TOML syntax.
-/// Optional package metadata never alters dependency identity or evidence.
 // Supported optional rust-version profile: 1.MINOR or 1.MINOR.PATCH only.
 // Reject pre-release, ranges, leading zeroes and integers outside u64.
 fn supported_rust_version(value: &str) -> bool {
@@ -129,6 +126,8 @@ fn supported_rust_version(value: &str) -> bool {
     }
 }
 
+/// Parse the conservative Cargo.toml profile with fail-closed extensions.
+/// Optional package metadata never alters dependency identity or evidence.
 pub(super) fn parse_manifest(
     input: &[u8],
     limits: RawLimits,
@@ -348,7 +347,6 @@ mod tests {
         assert_eq!(result.direct[0].name, "ring");
         assert_eq!(result.direct[0].version, "0.17.12");
     }
-
 
     #[test]
     fn optional_cargo_package_metadata_does_not_change_dependency_proof() {
