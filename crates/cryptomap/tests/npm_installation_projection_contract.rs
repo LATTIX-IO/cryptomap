@@ -226,8 +226,7 @@ fn extension_paths(snapshot: &InventorySnapshot) -> std::collections::BTreeSet<S
 fn validated_npm_root_metadata_preserves_source_granted_canonical_projections() {
     let baseline_fixture = Fixture::new(MANIFEST, LOCK);
     let baseline_scope = baseline_fixture.scope("tenant-a", true, "npm:lock");
-    let baseline =
-        transitive(&collect_both(&baseline_scope, "npm:lock"), &baseline_scope).unwrap();
+    let baseline = transitive(&collect_both(&baseline_scope, "npm:lock"), &baseline_scope).unwrap();
     let baseline_paths = extension_paths(&baseline);
     assert_eq!(baseline.relationships.len(), 6);
 
