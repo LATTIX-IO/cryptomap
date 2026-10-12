@@ -1,13 +1,14 @@
 //! Independent npm manifest + lockfile collection and canonical edge contracts.
 #![allow(clippy::unwrap_used)]
 use cryptomap::{
-    AssetKind, CollectionRunId, IdentityContext, InventoryLimits, InventorySnapshot, RelationshipKind,
+    AssetKind, CollectionRunId, IdentityContext, InventoryLimits, InventorySnapshot,
+    RelationshipKind,
     batch::{BatchLimits, BatchRun, normalize_batch},
     collector::{CancellationToken, CollectionRequest, Collector, RequestedSource},
     collectors::dependency::{
-        npm::NpmLockfileCollector, npm_manifest::NpmReconciliationError,
-        npm_manifest_collector::NpmManifestCollector, npm_projection::project_npm_direct_edges,
-        npm_installation_projection::project_npm_transitive_edges,
+        npm::NpmLockfileCollector, npm_installation_projection::project_npm_transitive_edges,
+        npm_manifest::NpmReconciliationError, npm_manifest_collector::NpmManifestCollector,
+        npm_projection::project_npm_direct_edges,
     },
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized},
@@ -191,18 +192,27 @@ fn project(
 }
 
 fn transitive(
-    snapshot: &InventorySnapshot, scope: &CollectionScope,
+    snapshot: &InventorySnapshot,
+    scope: &CollectionScope,
 ) -> Result<InventorySnapshot, NpmReconciliationError> {
     project_npm_transitive_edges(
-        snapshot, scope, "npm:manifest", "npm:lock",
-        RawLimits::default(), InventoryLimits::default(),
+        snapshot,
+        scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
     )
 }
 fn extension_paths(snapshot: &InventorySnapshot) -> std::collections::BTreeSet<String> {
-    snapshot.assets.values()
-        .filter(|asset| matches!(&asset.kind, AssetKind::Extension {
+    snapshot
+        .assets
+        .values()
+        .filter(|asset| {
+            matches!(&asset.kind, AssetKind::Extension {
             namespace, kind
-        } if namespace == "cryptomap:npm-install" && kind == "installed-dependency:v1"))
+        } if namespace == "cryptomap:npm-install" && kind == "installed-dependency:v1")
+        })
         .map(|asset| asset.extensions["npm:install-path"].clone())
         .collect()
 }
@@ -213,7 +223,9 @@ fn two_source_npm_transitive_edges_are_persisted_and_replay_stably() {
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let source = collect_both(&scope, "npm:lock");
     let projected = transitive(&source, &scope).unwrap();
-    projected.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    projected
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(source.assets.len(), 5);
     assert_eq!(source.evidence.len(), 8);
     assert_eq!(projected.assets.len(), 10);
@@ -230,24 +242,40 @@ fn two_source_npm_transitive_edges_are_persisted_and_replay_stably() {
         relationships: projected.relationships.len(),
         ..InventoryLimits::default()
     };
-    assert_eq!(project_npm_transitive_edges(
-        &projected, &scope, "npm:manifest", "npm:lock", RawLimits::default(), exact
-    ).unwrap(), projected);
+    assert_eq!(
+        project_npm_transitive_edges(
+            &projected,
+            &scope,
+            "npm:manifest",
+            "npm:lock",
+            RawLimits::default(),
+            exact
+        )
+        .unwrap(),
+        projected
+    );
 
     let paths = extension_paths(&projected);
-    assert_eq!(paths, std::collections::BTreeSet::from([
-        "npm:root".into(),
-        "node_modules/a".into(),
-        "node_modules/b".into(),
-        "node_modules/shared".into(),
-        "node_modules/b/node_modules/shared".into(),
-    ]));
+    assert_eq!(
+        paths,
+        std::collections::BTreeSet::from([
+            "npm:root".into(),
+            "node_modules/a".into(),
+            "node_modules/b".into(),
+            "node_modules/shared".into(),
+            "node_modules/b/node_modules/shared".into(),
+        ])
+    );
     let mut pairs = std::collections::BTreeSet::new();
     for edge in projected.relationships.values() {
-        if let (Some(a), Some(b)) =
-            (projected.assets[&edge.from].extensions.get("npm:install-path"),
-             projected.assets[&edge.to].extensions.get("npm:install-path"))
-        {
+        if let (Some(a), Some(b)) = (
+            projected.assets[&edge.from]
+                .extensions
+                .get("npm:install-path"),
+            projected.assets[&edge.to]
+                .extensions
+                .get("npm:install-path"),
+        ) {
             assert_eq!(edge.kind, RelationshipKind::DependsOn);
             assert!(edge.evidence.len() >= 2);
             for id in &edge.evidence {
@@ -259,39 +287,62 @@ fn two_source_npm_transitive_edges_are_persisted_and_replay_stably() {
             pairs.insert((a.clone(), b.clone()));
         }
     }
-    assert_eq!(pairs, std::collections::BTreeSet::from([
-        ("npm:root".into(), "node_modules/a".into()),
-        ("npm:root".into(), "node_modules/b".into()),
-        ("node_modules/a".into(), "node_modules/shared".into()),
-        ("node_modules/b".into(), "node_modules/b/node_modules/shared".into()),
-    ]));
+    assert_eq!(
+        pairs,
+        std::collections::BTreeSet::from([
+            ("npm:root".into(), "node_modules/a".into()),
+            ("npm:root".into(), "node_modules/b".into()),
+            ("node_modules/a".into(), "node_modules/shared".into()),
+            (
+                "node_modules/b".into(),
+                "node_modules/b/node_modules/shared".into()
+            ),
+        ])
+    );
     let json = serde_json::to_string(&projected).unwrap();
     assert_eq!(
         InventorySnapshot::from_json_verified_for_scope(
-            &json, scope.id(), InventoryLimits::default()
-        ).unwrap(), projected
+            &json,
+            scope.id(),
+            InventoryLimits::default()
+        )
+        .unwrap(),
+        projected
     );
 }
 
 #[test]
 fn same_name_and_version_different_install_paths_have_distinct_canonical_ids() {
-    let changed = LOCK.replace(
-        r#""shared":"2.0.0""#, r#""shared":"1.0.0""#
-    ).replace(
-        r#""node_modules/b/node_modules/shared":{"version":"2.0.0"}"#,
-        r#""node_modules/b/node_modules/shared":{"version":"1.0.0"}"#
-    );
+    let changed = LOCK
+        .replace(r#""shared":"2.0.0""#, r#""shared":"1.0.0""#)
+        .replace(
+            r#""node_modules/b/node_modules/shared":{"version":"2.0.0"}"#,
+            r#""node_modules/b/node_modules/shared":{"version":"1.0.0"}"#,
+        );
     assert_ne!(changed, LOCK);
     let fixture = Fixture::new(MANIFEST, &changed);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
-    let matching: Vec<_> = projected.assets.values().filter(|asset| {
-        asset.extensions.get("npm:name").is_some_and(|name| name == "shared")
-            && asset.extensions.get("npm:version").is_some_and(|version| version == "1.0.0")
-    }).collect();
+    let matching: Vec<_> = projected
+        .assets
+        .values()
+        .filter(|asset| {
+            asset
+                .extensions
+                .get("npm:name")
+                .is_some_and(|name| name == "shared")
+                && asset
+                    .extensions
+                    .get("npm:version")
+                    .is_some_and(|version| version == "1.0.0")
+        })
+        .collect();
     assert_eq!(matching.len(), 2);
     assert_ne!(matching[0].id, matching[1].id);
-    assert_ne!(matching[0].extensions["npm:install-path"], matching[1].extensions["npm:install-path"]);
+    assert_ne!(
+        matching[0].extensions["npm:install-path"],
+        matching[1].extensions["npm:install-path"]
+    );
     assert_eq!(projected.relationships.len(), 6);
 }
 
@@ -299,16 +350,31 @@ fn same_name_and_version_different_install_paths_have_distinct_canonical_ids() {
 fn missing_nested_lock_observation_and_cross_tenant_fail_closed() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
-    let missing = collect_both_with_root(&scope, "npm:lock", true,
-        Some("node_modules/b/node_modules/shared"));
-    missing.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
-    assert_eq!(transitive(&missing, &scope), Err(NpmReconciliationError::UnboundEvidence));
+    let missing = collect_both_with_root(
+        &scope,
+        "npm:lock",
+        true,
+        Some("node_modules/b/node_modules/shared"),
+    );
+    missing
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
+    assert_eq!(
+        transitive(&missing, &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
     let full = collect_both(&scope, "npm:lock");
     let other = fixture.scope("tenant-b", true, "npm:lock");
-    assert_eq!(transitive(&full, &other), Err(NpmReconciliationError::UnboundEvidence));
+    assert_eq!(
+        transitive(&full, &other),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
     let other_item = fixture.scope("tenant-a", true, "npm:other");
     let other_snapshot = collect_both(&other_item, "npm:other");
-    assert_eq!(transitive(&other_snapshot, &scope), Err(NpmReconciliationError::UnboundEvidence));
+    assert_eq!(
+        transitive(&other_snapshot, &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
 }
 
 #[test]
@@ -317,11 +383,18 @@ fn stale_manifest_and_lockfile_evidence_cannot_be_reused() {
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let original = collect_both(&scope, "npm:lock");
     let changed_manifest = Fixture::new(&format!("{MANIFEST} "), LOCK);
-    assert_eq!(transitive(&original, &changed_manifest.scope("tenant-a", true, "npm:lock")),
-        Err(NpmReconciliationError::UnboundEvidence));
+    assert_eq!(
+        transitive(
+            &original,
+            &changed_manifest.scope("tenant-a", true, "npm:lock")
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
     let changed_lock = Fixture::new(MANIFEST, &format!("{LOCK} "));
-    assert_eq!(transitive(&original, &changed_lock.scope("tenant-a", true, "npm:lock")),
-        Err(NpmReconciliationError::UnboundEvidence));
+    assert_eq!(
+        transitive(&original, &changed_lock.scope("tenant-a", true, "npm:lock")),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
 }
 
 #[test]
@@ -333,16 +406,30 @@ fn zero_asset_and_relationship_budgets_reject_without_partial_projection() {
         assets: original.assets.len(),
         ..InventoryLimits::default()
     };
-    assert_eq!(project_npm_transitive_edges(
-        &original, &scope, "npm:manifest", "npm:lock",
-        RawLimits::default(), insufficient
-    ), Err(NpmReconciliationError::ResourceLimit));
+    assert_eq!(
+        project_npm_transitive_edges(
+            &original,
+            &scope,
+            "npm:manifest",
+            "npm:lock",
+            RawLimits::default(),
+            insufficient
+        ),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
     let relationships = InventoryLimits {
         relationships: 2,
         ..InventoryLimits::default()
     };
-    assert_eq!(project_npm_transitive_edges(
-        &original, &scope, "npm:manifest", "npm:lock",
-        RawLimits::default(), relationships
-    ), Err(NpmReconciliationError::ResourceLimit));
+    assert_eq!(
+        project_npm_transitive_edges(
+            &original,
+            &scope,
+            "npm:manifest",
+            "npm:lock",
+            RawLimits::default(),
+            relationships
+        ),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
 }
