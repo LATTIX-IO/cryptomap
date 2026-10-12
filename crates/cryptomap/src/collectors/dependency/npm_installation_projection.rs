@@ -8,13 +8,12 @@ use super::{
     npm_transitive::{NpmInstalledNode, resolve_npm_transitive},
 };
 use crate::{
-    Asset, AssetId, AssetKind, CollectionRunId, Confidence, CoverageState, EvidenceId, EvidenceKind,
-    IdentityContext, InventoryBuilder,
-    InventoryLimits, InventorySnapshot, Relationship, RelationshipId, RelationshipKind,
-    raw::RawLimits, scope::CollectionScope,
+    Asset, AssetId, AssetKind, CollectionRunId, Confidence, CoverageState, EvidenceId,
+    EvidenceKind, IdentityContext, InventoryBuilder, InventoryLimits, InventorySnapshot,
+    Relationship, RelationshipId, RelationshipKind, raw::RawLimits, scope::CollectionScope,
 };
-use std::collections::{BTreeMap, BTreeSet};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 fn path_asset(
     node: &NpmInstalledNode,
@@ -67,22 +66,23 @@ fn index_lock_evidence(
     lock_item: &str,
     lock_sha256: &str,
 ) -> LockEvidenceIndex {
-    let valid_runs: BTreeSet<_> = snapshot.coverage_records.iter()
+    let valid_runs: BTreeSet<_> = snapshot
+        .coverage_records
+        .iter()
         .filter(|coverage| {
             coverage.source_item == lock_item
                 && coverage.state == CoverageState::InspectedObserved
-                && snapshot.runs.get(&coverage.run).is_some_and(|run| {
-                    run.requested.contains(lock_item)
-                })
+                && snapshot
+                    .runs
+                    .get(&coverage.run)
+                    .is_some_and(|run| run.requested.contains(lock_item))
         })
         .map(|record| record.run.clone())
         .collect();
     let source = format!("Dependency:{lock_item}");
     let mut index: LockEvidenceIndex = BTreeMap::new();
     for observation in snapshot.observations.values() {
-        if observation.property != "dependency:presence"
-            || observation.value != "declared"
-        {
+        if observation.property != "dependency:presence" || observation.value != "declared" {
             continue;
         }
         let Some(event) = &observation.context else {
@@ -135,7 +135,10 @@ fn evidence_for_node(
     let mut result: BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> = BTreeMap::new();
     for (asset, run, evidence) in index.get(&event).into_iter().flatten() {
         if asset == &library_id {
-            result.entry(run.clone()).or_default().insert(evidence.clone());
+            result
+                .entry(run.clone())
+                .or_default()
+                .insert(evidence.clone());
         }
     }
     if result.is_empty() {
@@ -300,10 +303,7 @@ mod tests {
 
     #[test]
     fn long_valid_identity_components_fit_hashed_use_site_without_collisions() {
-        let path = format!(
-            "{}node_modules/leaf",
-            "node_modules/a/".repeat(44),
-        );
+        let path = format!("{}node_modules/leaf", "node_modules/a/".repeat(44),);
         assert!(path.len() > 600);
         let source = format!("npm:{}", "s".repeat(1496));
         let tenant = IdentityContext::new("tenant-a").unwrap();
@@ -320,12 +320,16 @@ mod tests {
             path: format!("node_modules/leaf/{}", node.path),
             ..node.clone()
         };
-        assert_ne!(one.id, path_asset(&changed_path, &source, &tenant).unwrap().id);
+        assert_ne!(
+            one.id,
+            path_asset(&changed_path, &source, &tenant).unwrap().id
+        );
         assert_ne!(one.id, path_asset(&node, "npm:other", &tenant).unwrap().id);
         assert_ne!(
             one.id,
             path_asset(&node, &source, &IdentityContext::new("tenant-b").unwrap())
-                .unwrap().id,
+                .unwrap()
+                .id,
         );
     }
 }
