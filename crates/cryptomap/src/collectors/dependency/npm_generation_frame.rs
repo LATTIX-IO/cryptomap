@@ -119,20 +119,35 @@ mod tests {
             read_framed_npm_generation(&mut Cursor::new(&input), 2).unwrap(),
             b"{}"
         );
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(&input), 1), Err(NpmReconciliationError::ResourceLimit));
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(&input), 0), Err(NpmReconciliationError::ResourceLimit));
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(&input), 1),
+            Err(NpmReconciliationError::ResourceLimit)
+        );
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(&input), 0),
+            Err(NpmReconciliationError::ResourceLimit)
+        );
         for i in 0..input.len() {
             assert!(read_framed_npm_generation(&mut Cursor::new(&input[..i]), 10).is_err());
         }
         let mut modified = input.clone();
         *modified.last_mut().unwrap() ^= 0x01;
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(modified), 10), Err(NpmReconciliationError::UnboundEvidence));
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(modified), 10),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
         let mut modified = input.clone();
         modified[0] = b'X';
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(modified), 10), Err(NpmReconciliationError::UnboundEvidence));
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(modified), 10),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
         let mut modified = input.clone();
         modified.push(b' ');
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(modified), 10), Err(NpmReconciliationError::UnboundEvidence));
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(modified), 10),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
         let mut modified = input.clone();
         modified[8..16].copy_from_slice(&u64::MAX.to_be_bytes());
         assert_eq!(
