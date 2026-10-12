@@ -6,6 +6,7 @@ pub mod npm;
 pub mod npm_checkpoint;
 pub mod npm_generation;
 pub mod npm_generation_codec;
+pub mod npm_generation_frame;
 pub mod npm_generation_io;
 pub mod npm_installation_projection;
 pub mod npm_manifest;
