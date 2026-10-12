@@ -6,7 +6,9 @@ use cryptomap::{
     batch::{BatchLimits, BatchRun, normalize_batch},
     collector::{CancellationToken, CollectionRequest, Collector, RequestedSource},
     collectors::dependency::{
-        npm::NpmLockfileCollector, npm_installation_projection::project_npm_transitive_edges,
+        npm::NpmLockfileCollector,
+        npm_checkpoint::{checkpoint_npm_projection, verify_npm_checkpoint},
+        npm_installation_projection::project_npm_transitive_edges,
         npm_manifest::NpmReconciliationError, npm_manifest_collector::NpmManifestCollector,
         npm_projection::project_npm_direct_edges,
     },
@@ -473,5 +475,95 @@ fn zero_asset_and_relationship_budgets_reject_without_partial_projection() {
             relationships
         ),
         Err(NpmReconciliationError::ResourceLimit)
+    );
+}
+
+#[test]
+fn checkpoint_is_stable_serializable_and_revalidates_current_graph() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let input = collect_both(&scope, "npm:lock");
+    // Never checkpoint a still-unprojected source snapshot.
+    assert_eq!(
+        checkpoint_npm_projection(
+            &input, &scope, "npm:manifest", "npm:lock",
+            RawLimits::default(), InventoryLimits::default()
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let projected = transitive(&input, &scope).unwrap();
+    let make = || checkpoint_npm_projection(
+        &projected, &scope, "npm:manifest", "npm:lock",
+        RawLimits::default(), InventoryLimits::default()
+    );
+    let first = make().unwrap();
+    assert_eq!(first, make().unwrap());
+    assert_eq!(first.version, 1);
+    assert_eq!(first.scope, "tenant-a");
+    assert_eq!(first.manifest_sha256.len(), 64);
+    assert_eq!(first.lock_sha256.len(), 64);
+    assert_eq!(first.fingerprint.len(), 71);
+    assert!(!format!("{first:?}").contains("registry.example"));
+    let json = serde_json::to_string(&first).unwrap();
+    let restored: cryptomap::collectors::dependency::npm_checkpoint::NpmProjectionCheckpoint =
+        serde_json::from_str(&json).unwrap();
+    assert_eq!(restored, first);
+    verify_npm_checkpoint(
+        &restored, &projected, &scope,
+        RawLimits::default(), InventoryLimits::default()
+    ).unwrap();
+}
+
+#[test]
+fn checkpoint_rejects_source_mutation_cross_tenant_and_tampering() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected, &scope, "npm:manifest", "npm:lock",
+        RawLimits::default(), InventoryLimits::default()
+    ).unwrap();
+    let verify = |token: &_| verify_npm_checkpoint(
+        token, &projected, &scope, RawLimits::default(), InventoryLimits::default()
+    );
+    let mut forged = checkpoint.clone();
+    forged.lock_sha256 = "0".repeat(64);
+    assert_eq!(verify(&forged), Err(NpmReconciliationError::UnboundEvidence));
+    let mut forged = checkpoint.clone();
+    forged.snapshot_id = cryptomap::SnapshotId::new(
+        format!("sha256:{}", "0".repeat(64))
+    ).unwrap();
+    assert_eq!(verify(&forged), Err(NpmReconciliationError::UnboundEvidence));
+    let mut forged = checkpoint.clone();
+    forged.version = 2;
+    assert_eq!(verify(&forged), Err(NpmReconciliationError::UnboundEvidence));
+    let mut forged = checkpoint.clone();
+    forged.manifest_item = "npm:other".into();
+    assert_eq!(verify(&forged), Err(NpmReconciliationError::UnboundEvidence));
+    let other_scope = fixture.scope("tenant-b", true, "npm:lock");
+    assert_eq!(
+        verify_npm_checkpoint(
+            &checkpoint, &projected, &other_scope,
+            RawLimits::default(), InventoryLimits::default()
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let new_manifest = Fixture::new(&format!("{MANIFEST} "), LOCK);
+    assert_eq!(
+        verify_npm_checkpoint(
+            &checkpoint, &projected,
+            &new_manifest.scope("tenant-a", true, "npm:lock"),
+            RawLimits::default(), InventoryLimits::default()
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let new_lock = Fixture::new(MANIFEST, &format!("{LOCK} "));
+    assert_eq!(
+        verify_npm_checkpoint(
+            &checkpoint, &projected,
+            &new_lock.scope("tenant-a", true, "npm:lock"),
+            RawLimits::default(), InventoryLimits::default()
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
     );
 }
