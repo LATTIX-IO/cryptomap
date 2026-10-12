@@ -4,7 +4,6 @@
 //! Reject symlink/junction indirection by default, including links *inside*
 //! the root; the capability implementation also prevents escape under races.
 use crate::scope::ScopeError;
-use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use cap_fs_ext::OpenOptionsSyncExt;
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -12,6 +11,7 @@ use cap_std::{
     ambient_authority,
     fs::{Dir, OpenOptions},
 };
+use sha2::{Digest, Sha256};
 use std::{
     ffi::OsString,
     io::{self, Read},
@@ -249,7 +249,9 @@ impl AuthorizedFile<'_> {
             let chunk = buffer
                 .len()
                 .min(usize::try_from(remaining).unwrap_or(buffer.len()));
-            let n = file.read(&mut buffer[..chunk]).map_err(|_| ScopeError::Io)?;
+            let n = file
+                .read(&mut buffer[..chunk])
+                .map_err(|_| ScopeError::Io)?;
             if n == 0 {
                 break;
             }
