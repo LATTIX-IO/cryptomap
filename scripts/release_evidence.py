@@ -19,6 +19,7 @@ REQUIRED = {"Cargo.toml", "README.md", "LICENSE-APACHE", "LICENSE-MIT"}
 
 
 def inspect(archive: Path, commit: str) -> dict:
+    """Inspect a bounded, untrusted release archive without extracting it."""
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("expected a 40-character Git commit SHA")
     if not archive.is_file() or archive.stat().st_size > MAX_ARCHIVE:
@@ -112,6 +113,7 @@ def inspect(archive: Path, commit: str) -> dict:
 
 
 def main() -> None:
+    """Provide a CLI that writes sorted unsigned release inspection evidence."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--commit", required=True)
