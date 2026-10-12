@@ -12,7 +12,10 @@ use super::{
 };
 use crate::scope::CollectionScope;
 use sha2::{Digest, Sha256};
-use std::{io::{Read, Write}, sync::Arc};
+use std::{
+    io::{Read, Write},
+    sync::Arc,
+};
 
 const MAGIC: &[u8; 8] = b"CMNPGEN1";
 const HEADER_LEN: usize = 8 + 8 + 32;
@@ -28,13 +31,17 @@ pub fn write_framed_npm_generation<W: Write>(
 ) -> Result<usize, NpmReconciliationError> {
     let body = encode_npm_generation(generation, max_payload_bytes)?;
     let len = u64::try_from(body.len()).map_err(|_| NpmReconciliationError::ResourceLimit)?;
-    let total = HEADER_LEN.checked_add(body.len()).ok_or(NpmReconciliationError::ResourceLimit)?;
+    let total = HEADER_LEN
+        .checked_add(body.len())
+        .ok_or(NpmReconciliationError::ResourceLimit)?;
     let mut frame = Vec::with_capacity(total);
     frame.extend_from_slice(MAGIC);
     frame.extend_from_slice(&len.to_be_bytes());
     frame.extend_from_slice(&Sha256::digest(&body));
     frame.extend_from_slice(&body);
-    writer.write_all(&frame).map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    writer
+        .write_all(&frame)
+        .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
     Ok(total)
 }
 
@@ -56,9 +63,7 @@ pub fn read_framed_npm_generation<R: Read>(
     if &header[..MAGIC.len()] != MAGIC {
         return Err(UnboundEvidence);
     }
-    let len = u64::from_be_bytes(
-        header[8..16].try_into().map_err(|_| UnboundEvidence)?,
-    );
+    let len = u64::from_be_bytes(header[8..16].try_into().map_err(|_| UnboundEvidence)?);
     if len == 0 || len > u64::try_from(max_payload_bytes).map_err(|_| ResourceLimit)? {
         return Err(ResourceLimit);
     }
