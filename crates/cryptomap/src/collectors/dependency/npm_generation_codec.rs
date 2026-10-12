@@ -7,7 +7,7 @@ use super::{
     npm_manifest::NpmReconciliationError,
 };
 use crate::{
-    InventoryLimits, InventorySnapshot, raw::RawLimits, scope::CollectionScope,
+    InventoryLimits, InventorySnapshot, SnapshotId, raw::RawLimits, scope::CollectionScope,
     strict_json::StrictJson,
 };
 use serde::{Deserialize, Serialize};
@@ -109,6 +109,71 @@ pub fn restore_npm_generation(
     raw_limits: RawLimits,
     inventory_limits: InventoryLimits,
 ) -> Result<Arc<NpmVerifiedGeneration>, NpmReconciliationError> {
+    let bundle = decode_recovery_bundle(bytes, max_bytes)?;
+    store.publish(
+        bundle.checkpoint,
+        bundle.snapshot,
+        scope,
+        expected_sequence,
+        raw_limits,
+        inventory_limits,
+    )
+}
+
+/// A host-trusted recovery pin obtained independently of the candidate bundle.
+///
+/// The caller must protect the anchor against replacement and rollback (for
+/// example, using trusted persistent storage). A matching SHA-256 pin rejects
+/// alternate valid inventory generations, but it is not authentication if
+/// attackers can rewrite the anchor. Do not derive this value from the
+/// untrusted recovery bytes being verified.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NpmTrustedRecoveryAnchor {
+    snapshot_id: SnapshotId,
+    checkpoint_fingerprint: String,
+}
+
+impl NpmTrustedRecoveryAnchor {
+    /// Bind a trusted snapshot identity to its exact checkpoint fingerprint.
+    ///
+    /// The fingerprint must be a lowercase 64-hex-digit SHA-256 value.
+    /// Construction validates syntax, not provenance or trust.
+    pub fn new(
+        snapshot_id: SnapshotId,
+        checkpoint_fingerprint: impl Into<String>,
+    ) -> Result<Self, NpmReconciliationError> {
+        let fingerprint = checkpoint_fingerprint.into();
+        let Some(hex) = fingerprint.strip_prefix("sha256:") else {
+            return Err(NpmReconciliationError::UnboundEvidence);
+        };
+        if hex.len() != 64
+            || !hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(NpmReconciliationError::UnboundEvidence);
+        }
+        Ok(Self {
+            snapshot_id,
+            checkpoint_fingerprint: fingerprint,
+        })
+    }
+
+    /// The expected canonical snapshot identity.
+    pub fn snapshot_id(&self) -> &SnapshotId {
+        &self.snapshot_id
+    }
+
+    /// The expected source-bound checkpoint fingerprint.
+    pub fn checkpoint_fingerprint(&self) -> &str {
+        &self.checkpoint_fingerprint
+    }
+}
+
+fn decode_recovery_bundle(
+    bytes: &[u8],
+    max_bytes: usize,
+) -> Result<ImportBundle, NpmReconciliationError> {
     use NpmReconciliationError::{ResourceLimit, UnboundEvidence};
     if max_bytes == 0 || bytes.len() > max_bytes {
         return Err(ResourceLimit);
@@ -117,6 +182,38 @@ pub fn restore_npm_generation(
     let bundle: ImportBundle = serde_json::from_value(strict.0).map_err(|_| UnboundEvidence)?;
     if bundle.version != FORMAT_VERSION {
         return Err(UnboundEvidence);
+    }
+    Ok(bundle)
+}
+
+/// Recover only the exact canonical generation pinned by an independent host.
+///
+/// This strengthens recovery against stale-but-otherwise-valid bundle replay:
+/// the candidate's immutable snapshot ID and checkpoint fingerprint must both
+/// match the trusted anchor, *before* any source reauthorization or publication.
+/// The store then performs its ordinary exact-grant, canonical graph/evidence,
+/// source-freshness and generation compare-and-swap validation. A mismatch never
+/// changes the current generation.
+///
+/// The trusted anchor must be supplied by a host-owned rollback-resistant
+/// authority. This function cannot establish the authenticity or monotonicity
+/// of an anchor loaded from the same untrusted bundle or storage location.
+pub fn restore_npm_generation_pinned(
+    store: &NpmGenerationStore,
+    bytes: &[u8],
+    trusted: &NpmTrustedRecoveryAnchor,
+    scope: &CollectionScope,
+    expected_sequence: Option<u64>,
+    max_bytes: usize,
+    raw_limits: RawLimits,
+    inventory_limits: InventoryLimits,
+) -> Result<Arc<NpmVerifiedGeneration>, NpmReconciliationError> {
+    let bundle = decode_recovery_bundle(bytes, max_bytes)?;
+    if &bundle.snapshot.id != trusted.snapshot_id()
+        || &bundle.checkpoint.snapshot_id != trusted.snapshot_id()
+        || bundle.checkpoint.fingerprint != trusted.checkpoint_fingerprint()
+    {
+        return Err(NpmReconciliationError::UnboundEvidence);
     }
     store.publish(
         bundle.checkpoint,
