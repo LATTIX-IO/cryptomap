@@ -105,11 +105,9 @@ pub fn restore_npm_generation(
     bytes: &[u8],
     scope: &CollectionScope,
     expected_sequence: Option<u64>,
-    max_bytes: usize,
-    raw_limits: RawLimits,
-    inventory_limits: InventoryLimits,
+    limits: NpmRecoveryLimits,
 ) -> Result<Arc<NpmVerifiedGeneration>, NpmReconciliationError> {
-    let bundle = decode_recovery_bundle(bytes, max_bytes)?;
+    let bundle = decode_recovery_bundle(bytes, limits.max_bytes)?;
     store.publish(
         bundle.checkpoint,
         bundle.snapshot,
@@ -186,6 +184,20 @@ fn decode_recovery_bundle(
     Ok(bundle)
 }
 
+/// Resource ceilings used for source revalidation and bounded recovery.
+///
+/// Callers must choose budgets appropriate to their authorized source sizes.
+/// This type does not grant filesystem access or relax canonical validation.
+#[derive(Debug, Clone, Copy)]
+pub struct NpmRecoveryLimits {
+    /// Maximum number of bytes permitted in the serialized candidate bundle.
+    pub max_bytes: usize,
+    /// Limits for exact-grant manifest and lock reads and parsing.
+    pub raw: RawLimits,
+    /// Limits applied to canonical inventory verification and projection.
+    pub inventory: InventoryLimits,
+}
+
 /// Recover only the exact canonical generation pinned by an independent host.
 ///
 /// This strengthens recovery against stale-but-otherwise-valid bundle replay:
@@ -220,8 +232,8 @@ pub fn restore_npm_generation_pinned(
         bundle.snapshot,
         scope,
         expected_sequence,
-        raw_limits,
-        inventory_limits,
+        limits.raw,
+        limits.inventory,
     )
 }
 
