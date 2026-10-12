@@ -10,3 +10,4 @@ pub mod npm_manifest_collector;
 pub mod npm_projection;
 pub mod npm_transitive;
 pub mod projection;
+pub mod npm_generation;
