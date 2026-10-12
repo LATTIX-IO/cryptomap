@@ -83,5 +83,5 @@ Never enable publication as part of a feature-development merge. Existing releas
 - File-backed Cargo/npm consumer examples and external custom-collector smoke tests are implemented; broaden real-world profile fixtures as future scope permits.
 - Packaged archive inspection and digest evidence is implemented as a CI gate (see [release evidence](milestone-a-release-evidence.md)); this is **not** a dependency SBOM or signed provenance.
 - Lockfile-based software SPDX SBOM generation and main-only GitHub Sigstore attestations are implemented in CI; **the trusted main attestation must still pass** before claiming signed provenance (see [release SBOM and attestation gates](milestone-a-sbom-attestations.md)).
-- Compatibility-golden baseline, safety/fuzz smoke, final registry name/ownership and publishing credentials, human approval and post-publication registry verification remain.
+- Asset identity golden fixtures now run in CI; snapshot/diff golden baselines, additional robustness/fuzz smoke, verified registry ownership, publishing credentials, deliberate release approval and post-publication registry verification remain.
 - Registry name/owner and permissions confirmation followed by a deliberately approved alpha publish.
