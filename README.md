@@ -36,6 +36,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 ## Documentation and development
 
 - [Milestone A user journey, security bounds and release procedure](docs/milestone-a-release-readiness.md)
+- [Software SBOM and main-only attestation trust boundary](docs/milestone-a-sbom-attestations.md)
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)
 - [Collector author guide and clean-room consumer](docs/collector-author-guide.md)
