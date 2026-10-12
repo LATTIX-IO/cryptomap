@@ -189,8 +189,7 @@ pub(super) fn parse_manifest(
                     if matches!(decoded, "2015" | "2018" | "2021" | "2024")
                         && seen_metadata.insert(key.to_owned()) => {}
                 "rust-version"
-                    if supported_rust_version(decoded)
-                        && seen_metadata.insert(key.to_owned()) => {}
+                    if supported_rust_version(decoded) && seen_metadata.insert(key.to_owned()) => {}
                 _ => return Err(UnsupportedProfile),
             },
             Section::Dependencies => {
