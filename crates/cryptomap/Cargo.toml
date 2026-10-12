@@ -8,6 +8,8 @@ repository.workspace = true
 homepage.workspace = true
 description = "Evidence-backed cryptographic inventory, observations, and deterministic snapshots."
 readme = "README.md"
+# Include the exact documented offline fixture, including nested Cargo.lock.
+include = ["/Cargo.toml", "/src/**", "/examples/**", "/tests/**", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 keywords = ["cryptography", "inventory", "cbom", "security", "pqc"]
 categories = ["cryptography", "development-tools", "data-structures"]
 
