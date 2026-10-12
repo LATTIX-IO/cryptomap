@@ -82,6 +82,19 @@ pub(super) fn parse_lock(
             // a separately attestable package identity when both fields are
             // present and valid under our deliberately narrow profile.
             let root = detail.as_object().ok_or(MalformedSource)?;
+            // Recognized inert root metadata must be well-formed even in a
+            // lock-only scan; malformed source is not clean coverage.
+            if let Some(license) = root.get("license") {
+                let license = license.as_str().ok_or(MalformedSource)?;
+                if license.is_empty() || license.trim() != license {
+                    return Err(MalformedSource);
+                }
+                if license.len() > limits.field_bytes {
+                    return Err(ResourceLimit);
+                }
+                crate::validation::safe_text(license, limits.field_bytes)
+                    .map_err(|_| MalformedSource)?;
+            }
             match (root.get("name"), root.get("version")) {
                 (Some(Value::String(name)), Some(Value::String(version)))
                     if super::npm_manifest::package_name(name)
