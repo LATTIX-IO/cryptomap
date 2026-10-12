@@ -21,8 +21,8 @@ for expected in \
     LICENSE-MIT \
     LICENSE-APACHE \
     examples/cargo_scoped_inventory.rs \
-    examples/fixtures/cargo/Cargo.toml \
-    examples/fixtures/cargo/Cargo.lock
+    examples/fixtures/manifest.fixture \
+    examples/fixtures/lock.fixture
 do
     if [[ ! -f "$package/$expected" ]]; then
         echo "Missing packaged release artifact: $expected" >&2
@@ -65,7 +65,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 EOF
 cargo run --offline --manifest-path "$scratch/consumer/Cargo.toml"
 
-# Exercise the real-file, scope-granted reference flow from archive contents.
+# Exercise the packaged example on fixture bytes copied into explicitly
+# approved source filenames. Cargo excludes nested Cargo.toml subpackages.
+mkdir -p "$scratch/input"
+cp "$package/examples/fixtures/manifest.fixture" "$scratch/input/Cargo.toml"
+cp "$package/examples/fixtures/lock.fixture" "$scratch/input/Cargo.lock"
 cargo run --offline --manifest-path "$package/Cargo.toml" \
     --example cargo_scoped_inventory -- \
-    "$package/examples/fixtures/cargo" "2026-10-12T12:00:00Z"
+    "$scratch/input" "2026-10-12T12:00:00Z"
