@@ -1843,7 +1843,6 @@ fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     assert_eq!(target.current().unwrap().unwrap().sequence(), 1);
 }
 
-
 #[test]
 fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation() {
     use cap_std::{ambient_authority, fs::Dir};
@@ -1928,7 +1927,10 @@ fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation()
         publish_immutable_npm_generation_slot(&dir, &generation, "stageC", "occupied", 256 * 1024),
         Err(NpmReconciliationError::UnboundEvidence)
     );
-    assert_eq!(std::fs::read(location.join("occupied")).unwrap(), b"sentinel");
+    assert_eq!(
+        std::fs::read(location.join("occupied")).unwrap(),
+        b"sentinel"
+    );
     assert!(!location.join("stageC").exists());
 
     // A stage-name collision fails before any write or unlink of the
@@ -1938,7 +1940,10 @@ fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation()
         publish_immutable_npm_generation_slot(&dir, &generation, "stageD", "slotB", 256 * 1024),
         Err(NpmReconciliationError::UnboundEvidence)
     );
-    assert_eq!(std::fs::read(location.join("stageD")).unwrap(), b"occupied-stage");
+    assert_eq!(
+        std::fs::read(location.join("stageD")).unwrap(),
+        b"occupied-stage"
+    );
     assert!(!location.join("slotB").exists());
 
     let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
