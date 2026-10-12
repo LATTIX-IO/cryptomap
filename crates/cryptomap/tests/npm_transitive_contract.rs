@@ -166,6 +166,8 @@ fn file_grants_and_resource_budgets_are_enforced_before_proof() {
     assert!(resolve_npm_transitive(&scope, "npm:manifest", "npm:lock", quota).is_err());
     let bytes = RawLimits {
         total_bytes: MANIFEST.len() + LOCK.len() - 1,
+        record_bytes: 128,
+        field_bytes: 64,
         ..RawLimits::default()
     };
     assert_eq!(
