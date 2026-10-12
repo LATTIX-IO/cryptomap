@@ -11,17 +11,17 @@ This release is **not** full repository cryptographic-use discovery, vulnerabili
 From the repository root, using Rust 1.85 or later:
 
 ```shell
-cargo run --locked -p cryptomap --example cargo_scoped_inventory -- crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z
+cargo run --locked -p cryptomap --example cargo_scoped_inventory -- crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1 example-tenant example-run-1
 ```
 
 Alternatively, run inside the crate directory:
 
 ```shell
 cd crates/cryptomap
-cargo run --locked --example cargo_scoped_inventory -- examples/fixtures/cargo 2026-10-12T12:00:00Z
+cargo run --locked --example cargo_scoped_inventory -- examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1
 ```
 
-Both commands invoke the same example. The UTC timestamp is illustrative fixture metadata; integrations must supply an accurate, independently obtained RFC3339 observation time.
+Both commands invoke the same example. The UTC timestamp is illustrative fixture metadata; integrations must supply an accurate, independently obtained RFC3339 observation time and an **independently authorized tenant/scope identity and unique per-collection run prefix**. Example identifiers are not safe to reuse in production.
 
 The repository fixture uses literal `Cargo.toml` and `Cargo.lock` filenames. Cargo deliberately excludes nested Cargo projects when constructing library archives. The packaged release therefore embeds the same sample bytes as `examples/fixtures/manifest.fixture` and `examples/fixtures/lock.fixture`; the offline consumer smoke test copies them into caller-owned temporary `Cargo.toml` and `Cargo.lock` files before invoking the packaged example. This avoids relying on workspace source paths after packaging.
 
@@ -56,7 +56,7 @@ cargo package --package cryptomap --locked
 bash scripts/verify-packaged-consumer.sh
 ```
 
-The clean-room script extracts the actual `.crate`, builds a new unrelated consumer package against that extracted artifact offline, then compiles and executes the packaged end-to-end example. CI also runs dependency audit, deny policy, SemVer compatibility, Windows and Rust 1.85.
+The clean-room script extracts the actual `.crate`, builds a new unrelated consumer package against that extracted artifact using an isolated Cargo home and vendored sources pinned by the reviewed workspace lockfile, then runs it offline with a generated, locked consumer graph, then compiles and executes the packaged end-to-end example. CI also runs dependency audit, deny policy, SemVer compatibility, Windows and Rust 1.85.
 
 ## Release/approval procedure — deliberately still closed
 
