@@ -318,7 +318,10 @@ pub fn plan_npm_incremental(
         return Err(UnboundEvidence);
     }
     let manifest_bytes = scope
-        .open_file(crate::raw::RawSourceKind::Dependency, &checkpoint.manifest_item)
+        .open_file(
+            crate::raw::RawSourceKind::Dependency,
+            &checkpoint.manifest_item,
+        )
         .and_then(|file| file.read_bounded())
         .map_err(|_| UnauthorizedSource)?;
     let lock_bytes = scope
@@ -335,8 +338,7 @@ pub fn plan_npm_incremental(
     }
     let manifest_changed =
         format!("{:x}", Sha256::digest(&manifest_bytes)) != checkpoint.manifest_sha256;
-    let lock_changed =
-        format!("{:x}", Sha256::digest(&lock_bytes)) != checkpoint.lock_sha256;
+    let lock_changed = format!("{:x}", Sha256::digest(&lock_bytes)) != checkpoint.lock_sha256;
     if manifest_changed || lock_changed {
         return Ok(NpmIncrementalPlan::Recollect {
             manifest_changed,
@@ -346,9 +348,7 @@ pub fn plan_npm_incremental(
     // Digest equality alone never permits reuse: the snapshot must still have
     // complete, authorized, matching independently persisted evidence and
     // an exact, nonstale canonical source-scoped installation graph.
-    verify_npm_checkpoint(
-        checkpoint, snapshot, scope, raw_limits, inventory_limits,
-    )?;
+    verify_npm_checkpoint(checkpoint, snapshot, scope, raw_limits, inventory_limits)?;
     Ok(NpmIncrementalPlan::ReuseVerified {
         snapshot_id: snapshot.id.clone(),
     })
