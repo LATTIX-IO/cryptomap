@@ -10,10 +10,10 @@ Cryptomap does not require developers to manually fabricate dependency inventory
 
 ```sh
 cargo run --locked -p cryptomap --example cargo_scoped_inventory -- \
-  crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z
+  crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1
 ```
 
-For your own supported Cargo repository, substitute the **explicit directory containing both Cargo.toml and Cargo.lock** and provide the actual observation time in RFC3339. Unsupported manifest semantics fail closed. No Cargo build, package download, script execution, recursive scan or network request is performed by the reference example.
+For your own supported Cargo repository, substitute the **explicit directory containing both Cargo.toml and Cargo.lock** and provide the actual observation time in RFC3339, a tenant/scope identifier and a unique run prefix. Never reuse demonstration identities across independent runs. Unsupported manifest semantics fail closed. No Cargo build, package download, script execution, recursive scan or network request is performed by the reference example.
 
 The output is a verified snapshot digest plus asset, relationship and coverage counts; dependency presence **does not** establish that a cryptographic algorithm actually executes.
 
