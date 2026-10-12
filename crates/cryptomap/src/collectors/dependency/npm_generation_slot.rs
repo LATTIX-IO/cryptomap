@@ -6,9 +6,7 @@
 use super::{
     npm_generation::{NpmGenerationStore, NpmVerifiedGeneration},
     npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
-    npm_generation_frame::{
-        restore_framed_npm_generation_pinned, write_framed_npm_generation,
-    },
+    npm_generation_frame::{restore_framed_npm_generation_pinned, write_framed_npm_generation},
     npm_manifest::NpmReconciliationError,
 };
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
@@ -93,7 +91,6 @@ pub fn publish_immutable_npm_generation_slot(
     Ok(total)
 }
 
-
 /// Restore one explicitly selected immutable slot through the caller's
 /// existing directory capability and independently trusted recovery anchor.
 ///
@@ -128,7 +125,9 @@ pub fn restore_immutable_npm_generation_slot(
     let max_frame_bytes = limits.max_bytes.checked_add(48).ok_or(ResourceLimit)?;
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
-    let mut file = dir.open_with(slot_name, &options).map_err(|_| UnboundEvidence)?;
+    let mut file = dir
+        .open_with(slot_name, &options)
+        .map_err(|_| UnboundEvidence)?;
     let metadata = file.metadata().map_err(|_| UnboundEvidence)?;
     if !metadata.is_file() {
         return Err(UnboundEvidence);
@@ -136,14 +135,7 @@ pub fn restore_immutable_npm_generation_slot(
     if metadata.len() > u64::try_from(max_frame_bytes).map_err(|_| ResourceLimit)? {
         return Err(ResourceLimit);
     }
-    restore_framed_npm_generation_pinned(
-        store,
-        &mut file,
-        anchor,
-        scope,
-        expected_sequence,
-        limits,
-    )
+    restore_framed_npm_generation_pinned(store, &mut file, anchor, scope, expected_sequence, limits)
 }
 
 #[cfg(test)]
