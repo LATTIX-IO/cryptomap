@@ -141,3 +141,47 @@ impl NpmGenerationStore {
         Ok(generation)
     }
 }
+
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::coverage::CollectionScopeId;
+
+    #[test]
+    fn rejects_invalid_or_aliased_source_pairs_before_grant_use() {
+        let scope = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
+        for (manifest, lock) in [
+            ("", "npm:lock"),
+            ("npm:manifest", ""),
+            ("npm:manifest", "npm:manifest"),
+            (" npm:manifest", "npm:lock"),
+            ("npm:manifest\n", "npm:lock"),
+        ] {
+            assert!(
+                NpmGenerationStore::new(&scope, manifest, lock).is_err(),
+                "invalid pair: {manifest:?}, {lock:?}"
+            );
+        }
+        assert!(
+            NpmGenerationStore::new(&scope, &"a".repeat(513), "npm:lock").is_err()
+        );
+        let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+        assert!(store.current().unwrap().is_none());
+    }
+
+    #[test]
+    fn poisoned_store_lock_never_returns_partial_or_unverified_state() {
+        let scope = CollectionScope::new(CollectionScopeId::new("tenant-a").unwrap());
+        let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = store.current.lock().unwrap();
+            panic!("simulate writer crash while holding generation lock");
+        }));
+        assert_eq!(
+            store.current().err(),
+            Some(NpmReconciliationError::UnboundEvidence)
+        );
+    }
+}
