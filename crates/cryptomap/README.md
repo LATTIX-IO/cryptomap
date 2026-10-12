@@ -53,6 +53,6 @@ Other collectors (X.509, TLS, source/config, telemetry), the CycloneDX CBOM adap
 
 Never run an untrusted collector in-process as if a scope grant were an OS sandbox. Verify all source grants, cap byte budgets, avoid logging unredacted snapshots and credential-bearing metadata, and do not equate source hashes with signatures. The [collector skeleton](examples/collector_skeleton.rs) illustrates the third-party collector interface without real I/O.
 
-See the [release readiness and consumer guide](../../docs/milestone-a-release-readiness.md) for commands, CI expectations, limitations and release safeguards.
+See the [collector author guide](../../docs/collector-author-guide.md), [compatibility policy](../../docs/compatibility-policy.md), and [release readiness and consumer guide](../../docs/milestone-a-release-readiness.md) for commands, CI expectations, limitations and release safeguards.
 
 The package remains `publish = false` until an explicitly approved first alpha publication. The publishing workflow also requires a manual dispatch and repository opt-in. SPDX license expression: MIT OR Apache-2.0.
