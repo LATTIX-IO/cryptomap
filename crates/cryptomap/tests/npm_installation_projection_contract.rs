@@ -1339,7 +1339,8 @@ fn pinned_recovery_requires_external_snapshot_and_checkpoint_anchor() {
     use cryptomap::collectors::dependency::{
         npm_generation::NpmGenerationStore,
         npm_generation_codec::{
-            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation, restore_npm_generation_pinned,
+            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation,
+            restore_npm_generation_pinned,
         },
     };
     let fixture = Fixture::new(MANIFEST, LOCK);
@@ -1425,8 +1426,8 @@ fn pinned_recovery_blocks_valid_older_generation_when_files_are_rolled_back() {
     use cryptomap::collectors::dependency::{
         npm_generation::NpmGenerationStore,
         npm_generation_codec::{
-            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation, restore_npm_generation,
-            restore_npm_generation_pinned,
+            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation,
+            restore_npm_generation, restore_npm_generation_pinned,
         },
     };
     let old_fixture = Fixture::new(MANIFEST, LOCK);
