@@ -685,13 +685,23 @@ fn incremental_reuse_requires_current_complete_graph_and_matching_sources() {
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
     let checkpoint = checkpoint_npm_projection(
-        &projected, &scope, "npm:manifest", "npm:lock",
-        RawLimits::default(), InventoryLimits::default(),
-    ).unwrap();
-    let plan = || plan_npm_incremental(
-        &checkpoint, &projected, &scope,
-        RawLimits::default(), InventoryLimits::default(),
-    );
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let plan = || {
+        plan_npm_incremental(
+            &checkpoint,
+            &projected,
+            &scope,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+    };
     let expected = NpmIncrementalPlan::ReuseVerified {
         snapshot_id: projected.id.clone(),
     };
@@ -713,29 +723,37 @@ fn incremental_changed_files_trigger_exact_invalidation_without_cache_reuse() {
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
     let checkpoint = checkpoint_npm_projection(
-        &projected, &scope, "npm:manifest", "npm:lock",
-        RawLimits::default(), InventoryLimits::default(),
-    ).unwrap();
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
     for (manifest, lock, expected) in [
         (
             format!("{MANIFEST} "),
             LOCK.to_owned(),
             NpmIncrementalPlan::Recollect {
-                manifest_changed: true, lock_changed: false,
+                manifest_changed: true,
+                lock_changed: false,
             },
         ),
         (
             MANIFEST.to_owned(),
             format!("{LOCK} "),
             NpmIncrementalPlan::Recollect {
-                manifest_changed: false, lock_changed: true,
+                manifest_changed: false,
+                lock_changed: true,
             },
         ),
         (
             format!("{MANIFEST} "),
             format!("{LOCK} "),
             NpmIncrementalPlan::Recollect {
-                manifest_changed: true, lock_changed: true,
+                manifest_changed: true,
+                lock_changed: true,
             },
         ),
     ] {
@@ -743,16 +761,28 @@ fn incremental_changed_files_trigger_exact_invalidation_without_cache_reuse() {
         let changed_scope = changed.scope("tenant-a", true, "npm:lock");
         assert_eq!(
             plan_npm_incremental(
-                &checkpoint, &projected, &changed_scope,
-                RawLimits::default(), InventoryLimits::default()
-            ).unwrap(), expected
+                &checkpoint,
+                &projected,
+                &changed_scope,
+                RawLimits::default(),
+                InventoryLimits::default()
+            )
+            .unwrap(),
+            expected
         );
         // Invalidation itself conveys no valid new evidence and never mints
         // a new checkpoint against the old canonical snapshot.
-        assert!(checkpoint_npm_projection(
-            &projected, &changed_scope, "npm:manifest", "npm:lock",
-            RawLimits::default(), InventoryLimits::default()
-        ).is_err());
+        assert!(
+            checkpoint_npm_projection(
+                &projected,
+                &changed_scope,
+                "npm:manifest",
+                "npm:lock",
+                RawLimits::default(),
+                InventoryLimits::default()
+            )
+            .is_err()
+        );
     }
 }
 
@@ -762,17 +792,21 @@ fn incremental_plan_rejects_cache_poisoning_tenant_mismatch_and_missing_grants()
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
     let checkpoint = checkpoint_npm_projection(
-        &projected, &scope, "npm:manifest", "npm:lock",
-        RawLimits::default(), InventoryLimits::default(),
-    ).unwrap();
-    let plan = |token: &cryptomap::collectors::dependency::npm_checkpoint::NpmProjectionCheckpoint,
-                snapshot: &InventorySnapshot,
-                scoped: &CollectionScope,
-                limits: RawLimits| {
-        plan_npm_incremental(
-            token, snapshot, scoped, limits, InventoryLimits::default()
-        )
-    };
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let plan =
+        |token: &cryptomap::collectors::dependency::npm_checkpoint::NpmProjectionCheckpoint,
+         snapshot: &InventorySnapshot,
+         scoped: &CollectionScope,
+         limits: RawLimits| {
+            plan_npm_incremental(token, snapshot, scoped, limits, InventoryLimits::default())
+        };
     let mut tampered = checkpoint.clone();
     tampered.fingerprint = format!("sha256:{}", "0".repeat(64));
     assert_eq!(
@@ -786,7 +820,12 @@ fn incremental_plan_rejects_cache_poisoning_tenant_mismatch_and_missing_grants()
         Err(NpmReconciliationError::UnboundEvidence)
     );
     let mut poisoned = projected.clone();
-    poisoned.assets.values_mut().next().unwrap().extensions
+    poisoned
+        .assets
+        .values_mut()
+        .next()
+        .unwrap()
+        .extensions
         .insert("invalid:cache".into(), "poisoned".into());
     assert_eq!(
         plan(&checkpoint, &poisoned, &scope, RawLimits::default()),
