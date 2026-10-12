@@ -134,9 +134,22 @@ pub(super) fn parse_manifest(
     // actual installation. Never silently claim complete direct coverage.
     if obj
         .keys()
-        .any(|key| !matches!(key.as_str(), "name" | "version" | "dependencies"))
+        .any(|key| !matches!(key.as_str(), "name" | "version" | "dependencies" | "private" | "type"))
     {
         return Err(UnsupportedProfile);
+    }
+    // Explicitly ignore validated non-dependency project metadata. Never
+    // reinterpret these fields as evidence of runtime dependency or crypto use.
+    if obj.get("private").is_some_and(|value| !value.is_boolean()) {
+        return Err(UnsupportedProfile);
+    }
+    if let Some(module_type) = obj.get("type") {
+        let module_type = module_type.as_str().ok_or(UnsupportedProfile)?;
+        if module_type.len() > limits.field_bytes
+            || !matches!(module_type, "commonjs" | "module")
+        {
+            return Err(UnsupportedProfile);
+        }
     }
     let name = string_field(obj, "name", limits.field_bytes)?;
     let version = string_field(obj, "version", limits.field_bytes)?;
@@ -278,9 +291,10 @@ fn prove(
 /// Match an exact-pinned npm package manifest to a root-installed v2/v3 lock.
 ///
 /// Caller must separately grant both exact dependency files to the same
-/// CollectionScope. This conservative profile accepts only a root name,
-/// numeric version and exact numeric dependencies. It rejects additional
-/// package.json keys, optional/dev/peer/workspace/alias/range semantics,
+/// CollectionScope. This conservative profile accepts root name, numeric
+/// version, exact numeric dependencies, plus validated nondependency
+/// `private` (boolean) and `type` ("commonjs" or "module") metadata.
+/// It rejects other package.json keys, optional/dev/peer/workspace/alias/range semantics,
 /// mismatched root lock declarations, local links, and unsupported lockfiles.
 /// No npm process, network, implicit traversal, or algorithm use inference.
 pub fn reconcile_npm_direct(
@@ -341,6 +355,74 @@ mod tests {
                 version: "1.2.3".into(),
             }]
         );
+    }
+
+    #[test]
+    fn validated_root_metadata_does_not_change_npm_dependency_proof() {
+        let baseline = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
+        let direct = prove(&baseline, LOCK, RawLimits::default()).unwrap();
+        for (private, module_type) in [
+            (true, "commonjs"),
+            (false, "module"),
+            (true, "module"),
+            (false, "commonjs"),
+        ] {
+            let candidate = format!(
+                "{{\"name\":\"app\",\"version\":\"1.0.0\",\"private\":{private},\"type\":\"{module_type}\",\"dependencies\":{{\"@scope/ring\":\"1.2.3\"}}}}"
+            );
+            let manifest = parse_manifest(candidate.as_bytes(), RawLimits::default()).unwrap();
+            assert_eq!(manifest.name, baseline.name);
+            assert_eq!(manifest.version, baseline.version);
+            assert_eq!(manifest.deps, baseline.deps);
+            assert_eq!(prove(&manifest, LOCK, RawLimits::default()).unwrap(), direct);
+        }
+        for metadata in [r#""private":true"#, r#""type":"module""#] {
+            let candidate = format!(
+                "{{\"name\":\"app\",\"version\":\"1.0.0\",{metadata},\"dependencies\":{{\"@scope/ring\":\"1.2.3\"}}}}"
+            );
+            let manifest = parse_manifest(candidate.as_bytes(), RawLimits::default()).unwrap();
+            assert_eq!(prove(&manifest, LOCK, RawLimits::default()).unwrap(), direct);
+        }
+    }
+
+    #[test]
+    fn invalid_metadata_and_unsupported_installation_semantics_fail_closed() {
+        for metadata in [
+            r#""private":"true""#,
+            r#""private":1"#,
+            r#""private":null"#,
+            r#""private":[]"#,
+            r#""private":true,"private":false"#,
+            r#""type":true"#,
+            r#""type":null"#,
+            r#""type":"amd""#,
+            r#""type":"" "#,
+            r#""type":"MODULE""#,
+            r#""type":"module","type":"commonjs""#,
+            r#""scripts":{"postinstall":"ignored"}"#,
+            r#""devDependencies":{"other":"1.0.0"}"#,
+            r#""optionalDependencies":{"other":"1.0.0"}"#,
+            r#""peerDependencies":{"other":"1.0.0"}"#,
+            r#""workspaces":["packages/*"]"#,
+            r#""overrides":{"other":"1.0.0"}"#,
+            r#""type":"module","dependencies":{"evil":"1.0.0"}"#,
+        ] {
+            let candidate = format!(
+                "{{\"name\":\"app\",\"version\":\"1.0.0\",{metadata},\"dependencies\":{{\"@scope/ring\":\"1.2.3\"}}}}"
+            );
+            assert!(
+                parse_manifest(candidate.as_bytes(), RawLimits::default()).is_err(),
+                "unsupported metadata may not establish a direct dependency: {metadata}"
+            );
+        }
+        // Allow name and root version within budget, but deny the longer
+        // module type specifically instead of failing on an unrelated field.
+        let tiny = RawLimits {
+            field_bytes: 6,
+            ..RawLimits::default()
+        };
+        let long_type = br#"{"name":"app","version":"1.0.0","type":"commonjs","dependencies":{}}"#;
+        assert!(parse_manifest(long_type, tiny).is_err());
     }
 
     #[test]
