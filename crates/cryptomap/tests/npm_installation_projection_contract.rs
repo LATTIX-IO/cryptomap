@@ -1931,6 +1931,16 @@ fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation()
     assert_eq!(std::fs::read(location.join("occupied")).unwrap(), b"sentinel");
     assert!(!location.join("stageC").exists());
 
+    // A stage-name collision fails before any write or unlink of the
+    // existing file. Other storage tenants cannot be silently overwritten.
+    std::fs::write(location.join("stageD"), b"occupied-stage").unwrap();
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageD", "slotB", 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(std::fs::read(location.join("stageD")).unwrap(), b"occupied-stage");
+    assert!(!location.join("slotB").exists());
+
     let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
     let limits = NpmRecoveryLimits {
         max_bytes: 256 * 1024,
