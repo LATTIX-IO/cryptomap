@@ -11,9 +11,9 @@ use crate::{
     AssetId, AssetKind, InventoryLimits, InventorySnapshot, RelationshipKind, SnapshotId,
     raw::RawLimits, scope::CollectionScope,
 };
-use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Versioned checkpoint for an already projected, verified npm inventory.
 ///
