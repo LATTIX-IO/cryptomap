@@ -82,6 +82,19 @@ pub(super) fn parse_lock(
             // a separately attestable package identity when both fields are
             // present and valid under our deliberately narrow profile.
             let root = detail.as_object().ok_or(MalformedSource)?;
+            // Recognized inert root metadata must be well-formed even in a
+            // lock-only scan; malformed source is not clean coverage.
+            if let Some(license) = root.get("license") {
+                let license = license.as_str().ok_or(MalformedSource)?;
+                if license.is_empty() || license.trim() != license {
+                    return Err(MalformedSource);
+                }
+                if license.len() > limits.field_bytes {
+                    return Err(ResourceLimit);
+                }
+                crate::validation::safe_text(license, limits.field_bytes)
+                    .map_err(|_| MalformedSource)?;
+            }
             match (root.get("name"), root.get("version")) {
                 (Some(Value::String(name)), Some(Value::String(version)))
                     if super::npm_manifest::package_name(name)
@@ -325,6 +338,40 @@ mod tests {
                     ..RawLimits::default()
                 }
             ),
+            Err(CollectorDiagnosticCode::ResourceLimit)
+        );
+    }
+
+    #[test]
+    fn root_license_is_inert_but_validated_even_for_lock_only_collection() {
+        let baseline = br#"{"lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0"},"node_modules/ring":{"version":"1.2.3"}}}"#;
+        let expected = parse_lock(baseline, limits()).unwrap();
+        for license in ["MIT", "Apache-2.0", "UNLICENSED"] {
+            let mut lock: Value = serde_json::from_slice(baseline).unwrap();
+            lock["packages"][""]["license"] = Value::String(license.into());
+            let result = parse_lock(&serde_json::to_vec(&lock).unwrap(), limits()).unwrap();
+            assert_eq!(result, expected);
+        }
+        for invalid in [
+            Value::Null,
+            Value::Bool(true),
+            serde_json::json!({"type":"MIT"}),
+            serde_json::json!(["MIT"]),
+            Value::String(String::new()),
+            Value::String(" MIT".into()),
+            Value::String("MIT ".into()),
+        ] {
+            let mut lock: Value = serde_json::from_slice(baseline).unwrap();
+            lock["packages"][""]["license"] = invalid;
+            assert_eq!(
+                parse_lock(&serde_json::to_vec(&lock).unwrap(), limits()),
+                Err(CollectorDiagnosticCode::MalformedSource)
+            );
+        }
+        let mut oversized: Value = serde_json::from_slice(baseline).unwrap();
+        oversized["packages"][""]["license"] = Value::String("A".repeat(limits().field_bytes + 1));
+        assert_eq!(
+            parse_lock(&serde_json::to_vec(&oversized).unwrap(), limits()),
             Err(CollectorDiagnosticCode::ResourceLimit)
         );
     }
