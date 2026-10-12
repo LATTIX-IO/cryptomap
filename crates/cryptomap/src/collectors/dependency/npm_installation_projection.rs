@@ -1,6 +1,6 @@
 //! Canonical path-aware npm dependency edges using persisted lockfile evidence.
 //!
-//! This deliberately adds a separate InstalledDependency asset family rather
+//! This deliberately adds a namespaced, versioned Extension asset family rather
 //! than changing existing Library IDs or historic package observations.
 use super::{
     npm_manifest::{NpmReconciliationError, reconcile_npm_direct},
@@ -19,16 +19,34 @@ fn path_asset(
     source_item: &str,
     identity: &IdentityContext,
 ) -> Result<Asset, NpmReconciliationError> {
-    let kind = AssetKind::InstalledDependency {
-        ecosystem: "npm".into(),
-        name: node.name.clone(),
-        version: node.version.clone(),
-        source_item: source_item.to_owned(),
-        installation_path: node.path.clone(),
-    };
-    let id = AssetId::from_kind(&kind, identity)
+    // Schema-v2's existing Extension family avoids breaking exhaustive
+    // AssetKind matches or changing the canonical snapshot schema. The typed
+    // tuple (never a delimiter-joined string) prevents identity collisions.
+    let site = serde_json::to_string(&(
+        "npm-install:v1",
+        source_item,
+        &node.path,
+        &node.name,
+        &node.version,
+    ))
+    .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    let scoped = identity
+        .clone()
+        .with_use_site(site)
         .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
-    Ok(Asset { id, kind, extensions: BTreeMap::new() })
+    let kind = AssetKind::Extension {
+        namespace: "cryptomap:npm-install".into(),
+        kind: "installed-dependency:v1".into(),
+    };
+    let id = AssetId::from_kind(&kind, &scoped)
+        .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    let extensions = BTreeMap::from([
+        ("npm:install-path".into(), node.path.clone()),
+        ("npm:name".into(), node.name.clone()),
+        ("npm:version".into(), node.version.clone()),
+        ("npm:lock-item".into(), source_item.to_owned()),
+    ]);
+    Ok(Asset { id, kind, extensions })
 }
 
 fn evidence_for_node(
@@ -74,8 +92,8 @@ fn evidence_for_node(
 /// parent/child evidence. Missing or stale evidence rejects the entire result.
 ///
 /// Legacy Library identities and observations remain unchanged; legacy direct
-/// DependsOn relationships are preserved, while path-scoped edges only join
-/// InstalledDependency assets. No synthetic evidence, npm execution, network
+/// DependsOn relationships are preserved, while path-scoped edges join
+/// versioned npm-install Extension assets. No synthetic evidence, npm execution, network
 /// calls or runtime cryptographic-use inference occurs.
 pub fn project_npm_transitive_edges(
     snapshot: &InventorySnapshot,
