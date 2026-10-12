@@ -57,6 +57,82 @@ fn fingerprint(
     Ok(format!("sha256:{:x}", Sha256::digest(tuple)))
 }
 
+// Require *exactly* the fresh installation graph for this lock source.
+// The projection preserves preexisting relationships; without this check,
+// obsolete path-scoped assets or edges could be incorrectly checkpointed.
+fn matches_fresh_graph(
+    snapshot: &InventorySnapshot,
+    lock_item: &str,
+    proof: &NpmTransitiveProof,
+) -> bool {
+    let expected_paths: BTreeSet<&str> =
+        proof.nodes.iter().map(|node| node.path.as_str()).collect();
+    let mut installed: BTreeMap<&str, &AssetId> = BTreeMap::new();
+    for asset in snapshot.assets.values() {
+        if matches!(&asset.kind, AssetKind::Extension { namespace, kind }
+            if namespace == "cryptomap:npm-install" && kind == "installed-dependency:v1")
+            && asset.extensions.get("npm:lock-item").map(String::as_str) == Some(lock_item)
+        {
+            let Some(path) = asset.extensions.get("npm:install-path") else {
+                return false;
+            };
+            if installed.insert(path.as_str(), &asset.id).is_some() {
+                return false;
+            }
+        }
+    }
+    if installed.keys().copied().collect::<BTreeSet<_>>() != expected_paths {
+        return false;
+    }
+    let mut expected_edges = BTreeSet::new();
+    for edge in &proof.edges {
+        let (Some(from), Some(to)) =
+            (installed.get(edge.from_path.as_str()), installed.get(edge.to_path.as_str()))
+        else {
+            return false;
+        };
+        expected_edges.insert(((*from).clone(), (*to).clone()));
+    }
+    let installed_ids: BTreeSet<&AssetId> = installed.values().copied().collect();
+    let mut actual_edges = BTreeSet::new();
+    for edge in snapshot.relationships.values() {
+        if edge.kind != RelationshipKind::DependsOn {
+            continue;
+        }
+        let from = installed_ids.contains(&edge.from);
+        let to = installed_ids.contains(&edge.to);
+        if from || to {
+            if !from || !to {
+                return false;
+            }
+            actual_edges.insert((edge.from.clone(), edge.to.clone()));
+        }
+    }
+    expected_edges == actual_edges
+}
+
+// A fresh source hash must correspond to independently persisted evidence,
+// not merely to an extra read taken after a different graph was validated.
+fn source_hash_is_recorded(
+    snapshot: &InventorySnapshot,
+    item: &str,
+    digest: &str,
+    collector: &str,
+) -> bool {
+    let source = format!("Dependency:{item}");
+    snapshot.evidence.values().any(|record| {
+        record.source == source
+            && record.source_sha256.as_deref() == Some(digest)
+            && record.collector.as_str() == collector
+            && record.kind == crate::EvidenceKind::Direct
+            && record.confidence == crate::Confidence::Confirmed
+            && snapshot.runs.get(&record.run).is_some_and(|run| {
+                matches!(run.completeness, crate::RunCompleteness::Complete)
+                    && run.requested.contains(item)
+            })
+    })
+}
+
 /// Produce a checkpoint only after every canonical installed node and edge
 /// is already proven by independent scoped manifest/lockfile collection.
 ///
@@ -77,6 +153,9 @@ pub fn checkpoint_npm_projection(
     snapshot
         .verify_for_scope(scope.id(), inventory_limits)
         .map_err(|_| UnboundEvidence)?;
+    // Capture one complete proof first, then require the canonical
+    // projection and its persisted evidence to match those same digests.
+    let proof = resolve_npm_transitive(scope, manifest_item, lock_item, raw_limits)?;
     let projected = project_npm_transitive_edges(
         snapshot,
         scope,
@@ -85,10 +164,17 @@ pub fn checkpoint_npm_projection(
         raw_limits,
         inventory_limits,
     )?;
-    if projected != *snapshot {
+    if projected != *snapshot
+        || !matches_fresh_graph(snapshot, lock_item, &proof)
+        || !source_hash_is_recorded(
+            snapshot, manifest_item, &proof.manifest_sha256, "cryptomap:npm-manifest",
+        )
+        || !source_hash_is_recorded(
+            snapshot, lock_item, &proof.lock_sha256, "cryptomap:npm-lockfile",
+        )
+    {
         return Err(UnboundEvidence);
     }
-    let proof = resolve_npm_transitive(scope, manifest_item, lock_item, raw_limits)?;
     let tenant = scope.id().as_str().to_owned();
     let fingerprint = fingerprint(
         &tenant,
