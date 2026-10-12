@@ -11,7 +11,6 @@ use cryptomap::{
         npm_projection::project_npm_direct_edges,
     },
     coverage::CollectionScopeId,
-    orchestration::{ScopedInvocation, collect_normalized},
     pipeline::PipelineInput,
     raw::{RawLimits, RawSourceKind},
     registry::Registry,
@@ -222,6 +221,8 @@ fn two_source_npm_transitive_edges_are_persisted_and_replay_stably() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let source = collect_both(&scope, "npm:lock");
+    let direct_only = project(&source, &scope).unwrap();
+    assert_eq!(direct_only.relationships.len(), 2);
     let projected = transitive(&source, &scope).unwrap();
     projected
         .verify_for_scope(scope.id(), InventoryLimits::default())
