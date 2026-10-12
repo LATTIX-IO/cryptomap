@@ -4,12 +4,16 @@
 //! simple names. Published slots are created atomically with hard links, never
 //! overwritten. The host owns directory exclusivity and durable directory sync.
 use super::{
-    npm_generation::NpmVerifiedGeneration, npm_generation_frame::write_framed_npm_generation,
+    npm_generation::{NpmGenerationStore, NpmVerifiedGeneration},
+    npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
+    npm_generation_frame::{
+        restore_framed_npm_generation_pinned, write_framed_npm_generation,
+    },
     npm_manifest::NpmReconciliationError,
 };
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions};
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
 fn valid_slot_name(name: &str) -> bool {
     !name.is_empty()
@@ -87,6 +91,59 @@ pub fn publish_immutable_npm_generation_slot(
         .map_err(|_| UnboundEvidence)?;
     drop(cleanup);
     Ok(total)
+}
+
+
+/// Restore one explicitly selected immutable slot through the caller's
+/// existing directory capability and independently trusted recovery anchor.
+///
+/// The slot name is a single validated basename; no ambient path authority,
+/// directory enumeration, or symlink-following is introduced. The opened
+/// handle must refer to a regular file. Its observed length is checked
+/// against the bounded wire-frame ceiling before reading. The frame parser
+/// independently rejects truncated, oversized or trailing bytes, including
+/// changes made after the metadata check.
+///
+/// The recovered snapshot remains untrusted until the existing pinned
+/// verifier checks the anchor, live grants, persisted source evidence,
+/// canonical graph and compare-and-swap publication. The directory must be
+/// exclusively host-controlled. No on-disk file is removed or overwritten.
+pub fn restore_immutable_npm_generation_slot(
+    dir: &Dir,
+    slot_name: &str,
+    store: &NpmGenerationStore,
+    anchor: &NpmTrustedRecoveryAnchor,
+    scope: &crate::scope::CollectionScope,
+    expected_sequence: Option<u64>,
+    limits: NpmRecoveryLimits,
+) -> Result<Arc<NpmVerifiedGeneration>, NpmReconciliationError> {
+    use NpmReconciliationError::{ResourceLimit, UnboundEvidence};
+    if !valid_slot_name(slot_name) {
+        return Err(UnboundEvidence);
+    }
+    if limits.max_bytes == 0 {
+        return Err(ResourceLimit);
+    }
+    // 8-byte versioned magic, 8-byte length and 32-byte SHA-256.
+    let max_frame_bytes = limits.max_bytes.checked_add(48).ok_or(ResourceLimit)?;
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let mut file = dir.open_with(slot_name, &options).map_err(|_| UnboundEvidence)?;
+    let metadata = file.metadata().map_err(|_| UnboundEvidence)?;
+    if !metadata.is_file() {
+        return Err(UnboundEvidence);
+    }
+    if metadata.len() > u64::try_from(max_frame_bytes).map_err(|_| ResourceLimit)? {
+        return Err(ResourceLimit);
+    }
+    restore_framed_npm_generation_pinned(
+        store,
+        &mut file,
+        anchor,
+        scope,
+        expected_sequence,
+        limits,
+    )
 }
 
 #[cfg(test)]
