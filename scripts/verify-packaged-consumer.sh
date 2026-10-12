@@ -21,6 +21,7 @@ for expected in \
     LICENSE-MIT \
     LICENSE-APACHE \
     examples/cargo_scoped_inventory.rs \
+    examples/collector_skeleton.rs \
     examples/fixtures/manifest.fixture \
     examples/fixtures/lock.fixture
 do
@@ -71,7 +72,14 @@ cargo vendor --locked --versioned-dirs "$scratch/vendor" > "$scratch/cargo-home/
 CARGO_HOME="$scratch/cargo-home" cargo generate-lockfile --offline \
     --manifest-path "$scratch/consumer/Cargo.toml"
 CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
-    --manifest-path "$scratch/consumer/Cargo.toml"
+    --manifest-path "$scratch/consumer/Cargo.toml" --bin cryptomap-cleanroom-smoke
+
+# A custom collector is compiled as a THIRD-PARTY crate, not an in-tree
+# example. This checks the public trait, request, sink and coverage contracts.
+mkdir -p "$scratch/consumer/src/bin"
+cp "$package/examples/collector_skeleton.rs" "$scratch/consumer/src/bin/custom_collector.rs"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$scratch/consumer/Cargo.toml" --bin custom_collector
 
 # Exercise the packaged example on fixture bytes copied into explicitly
 # approved source filenames. Cargo excludes nested Cargo.toml subpackages.

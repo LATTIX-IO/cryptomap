@@ -8,6 +8,9 @@ The project follows Semantic Versioning once its public API reaches a stable con
 
 ### Added
 
+- A packaged third-party custom collector compatibility smoke test with vendored, offline and locked dependencies.
+- Explicit pre-1.0 schema/identity/source-evidence compatibility policy and collector author guide.
+
 - Milestone A: source-granted Cargo inventory reference example with deterministic fixture, canonical snapshot verification and negative tests.
 - Offline clean-room smoke testing against the actual packaged crate and a fresh external consumer.
 - Explicit first-release authorization switch, embedded dual licenses, crate registry metadata and release-readiness documentation.

@@ -38,6 +38,8 @@ The library distinguishes configured/present/observed cryptography, separates ev
 - [Milestone A user journey, security bounds and release procedure](docs/milestone-a-release-readiness.md)
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)
+- [Collector author guide and clean-room consumer](docs/collector-author-guide.md)
+- [Versioned compatibility and schema policy](docs/compatibility-policy.md)
 - [Contribution policy](CONTRIBUTING.md)
 - [Security disclosure](SECURITY.md)
 

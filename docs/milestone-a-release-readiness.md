@@ -71,7 +71,7 @@ Never enable publication as part of a feature-development merge. Existing releas
 
 ## Remaining work for Milestone A closure
 
-- Document the intended public API stability and compatibility/change policy (FOSS-17/18).
+- Complete public API evolution and frozen conformance fixtures as described by the initial [compatibility policy](compatibility-policy.md) (FOSS-17/18).
 - Additional clean-room custom-collector and npm consumer examples; review supported versions and real-world fixtures.
 - Release SBOM, artifact provenance, compatibility-golden baseline, safety/fuzz smoke, and protected publishing (FOSS-19/20).
 - Registry name/owner and permissions confirmation followed by a deliberately approved alpha publish.
