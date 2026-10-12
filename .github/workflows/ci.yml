@@ -43,7 +43,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --all-features --locked
+        run: cargo test --workspace --all-targets --all-features --locked
 
       - name: Documentation
         env:
@@ -52,6 +52,9 @@ jobs:
 
       - name: Verify packaged crate
         run: cargo package --package cryptomap --locked
+
+      - name: Clean-room package and reference example
+        run: bash scripts/verify-packaged-consumer.sh
 
       - name: Install supply-chain tools
         run: |
