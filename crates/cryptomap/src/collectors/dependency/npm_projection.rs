@@ -25,7 +25,11 @@ fn role_event(
     Ok(format!("{prefix}{:x}", Sha256::digest(fields)))
 }
 
-pub(super) fn lock_event(item: &str, path: &str, version: &str) -> Result<String, NpmReconciliationError> {
+pub(super) fn lock_event(
+    item: &str,
+    path: &str,
+    version: &str,
+) -> Result<String, NpmReconciliationError> {
     let fields = serde_json::to_vec(&("cryptomap:npm-dependency:v1", item, path, version))
         .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
     Ok(format!("npm:v1:{:x}", Sha256::digest(fields)))
