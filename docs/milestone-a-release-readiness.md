@@ -22,6 +22,8 @@ cargo run --locked -p cryptomap --example cargo_scoped_inventory -- crates/crypt
 
 The **second command** is the root-workspace invocation. The first command is for a working directory at `crates/cryptomap`. The UTC timestamp is illustrative fixture metadata; integrations must supply an accurate, independently obtained RFC3339 observation time.
 
+The repository fixture uses literal `Cargo.toml` and `Cargo.lock` filenames. Cargo deliberately excludes nested Cargo projects when constructing library archives. The packaged release therefore embeds the same sample bytes as `examples/fixtures/manifest.fixture` and `examples/fixtures/lock.fixture`; the offline consumer smoke test copies them into caller-owned temporary `Cargo.toml` and `Cargo.lock` files before invoking the packaged example. This avoids relying on workspace source paths after packaging.
+
 The reference example:
 1. Grants exactly the chosen directory's `Cargo.toml` and `Cargo.lock` through two independent file capabilities with a 1 MiB per-file ceiling.
 2. Runs read-only Cargo manifest/lock collectors under explicit run identifiers.
