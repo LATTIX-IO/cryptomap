@@ -15,11 +15,21 @@ mkdir -p "$scratch/unpacked" "$scratch/consumer/src"
 tar -xzf "$archive" -C "$scratch/unpacked"
 package="$(find "$scratch/unpacked" -mindepth 1 -maxdepth 1 -type d -name 'cryptomap-*' -print -quit)"
 test -n "$package"
-test -f "$package/Cargo.toml"
-test -f "$package/README.md"
-test -f "$package/examples/cargo_scoped_inventory.rs"
-test -f "$package/examples/fixtures/cargo/Cargo.toml"
-test -f "$package/examples/fixtures/cargo/Cargo.lock"
+for expected in \
+    Cargo.toml \
+    README.md \
+    LICENSE-MIT \
+    LICENSE-APACHE \
+    examples/cargo_scoped_inventory.rs \
+    examples/fixtures/cargo/Cargo.toml \
+    examples/fixtures/cargo/Cargo.lock
+do
+    if [[ ! -f "$package/$expected" ]]; then
+        echo "Missing packaged release artifact: $expected" >&2
+        find "$package" -maxdepth 4 -type f -print >&2
+        exit 1
+    fi
+done
 
 # Compile a completely separate package against the published archive contents.
 cat > "$scratch/consumer/Cargo.toml" <<EOF
