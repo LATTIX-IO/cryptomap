@@ -258,6 +258,48 @@ fn validated_npm_root_metadata_preserves_source_granted_canonical_projections() 
 }
 
 #[test]
+fn validated_npm_lock_root_license_retains_source_granted_dependency_projection() {
+    let license_lock = LOCK.replace(
+        "\"name\":\"app\",\"version\":\"1.0.0\",\"dependencies\"",
+        "\"name\":\"app\",\"version\":\"1.0.0\",\"license\":\"Apache-2.0\",\"dependencies\"",
+    );
+    assert_ne!(license_lock, LOCK);
+    let fixture = Fixture::new(MANIFEST, &license_lock);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let source = collect_both(&scope, "npm:lock");
+    let direct = project(&source, &scope).unwrap();
+    assert_eq!(direct.relationships.len(), 2);
+    let transitive_graph = transitive(&source, &scope).unwrap();
+    transitive_graph
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
+    assert_eq!(transitive_graph.relationships.len(), 6);
+    assert_eq!(
+        extension_paths(&transitive_graph),
+        std::collections::BTreeSet::from([
+            "npm:root".into(),
+            "node_modules/a".into(),
+            "node_modules/b".into(),
+            "node_modules/shared".into(),
+            "node_modules/b/node_modules/shared".into(),
+        ])
+    );
+    assert_eq!(transitive(&source, &scope).unwrap(), transitive_graph);
+
+    let denied = fixture.scope("tenant-a", false, "npm:lock");
+    assert!(transitive(&source, &denied).is_err());
+
+    let malformed = license_lock.replace(
+        "\"license\":\"Apache-2.0\"",
+        "\"license\":{\"invalid\":true}",
+    );
+    let fixture = Fixture::new(MANIFEST, &malformed);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = collect_both(&scope, "npm:lock");
+    assert!(transitive(&snapshot, &scope).is_err());
+}
+
+#[test]
 fn two_source_npm_transitive_edges_are_persisted_and_replay_stably() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
