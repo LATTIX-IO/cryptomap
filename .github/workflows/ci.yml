@@ -61,8 +61,10 @@ jobs:
 
       - name: Inspect packaged archive and record release evidence
         run: |
+          archives=(target/package/cryptomap-*.crate)
+          test "${#archives[@]}" -eq 1
           python3 scripts/release_evidence.py \
-            --archive "target/package/cryptomap-0.1.0.crate" \
+            --archive "${archives[0]}" \
             --commit "$GITHUB_SHA" \
             --output "target/release-evidence/cryptomap.json"
 
