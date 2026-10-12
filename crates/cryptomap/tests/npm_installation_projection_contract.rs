@@ -1819,11 +1819,11 @@ fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     assert!(target.current().unwrap().is_none());
     let restored = restore_framed_npm_generation_pinned(
         &target,
-            &mut std::io::Cursor::new(&framed),
-            &anchor,
-            &scope,
-            None,
-            limits,
+        &mut std::io::Cursor::new(&framed),
+        &anchor,
+        &scope,
+        None,
+        limits,
     )
     .unwrap();
     assert_eq!(restored.snapshot(), &snapshot);
