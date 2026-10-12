@@ -453,6 +453,59 @@ mod tests {
     }
 
     #[test]
+    fn validated_lock_root_license_does_not_change_dependency_proof() {
+        let manifest = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
+        let baseline = prove(&manifest, LOCK, RawLimits::default()).unwrap();
+        for license in ["MIT", "Apache-2.0", "UNLICENSED", "MIT OR Apache-2.0"] {
+            let mut lock: Value = serde_json::from_slice(LOCK).unwrap();
+            lock["packages"][""]["license"] = Value::String(license.into());
+            let bytes = serde_json::to_vec(&lock).unwrap();
+            assert_eq!(prove(&manifest, &bytes, RawLimits::default()).unwrap(), baseline);
+        }
+    }
+
+    #[test]
+    fn invalid_lock_root_license_and_unknown_fields_fail_closed() {
+        let manifest = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
+        for value in [
+            Value::Null,
+            Value::Bool(true),
+            serde_json::json!(7),
+            serde_json::json!([]),
+            serde_json::json!({"type": "MIT"}),
+            Value::String(String::new()),
+            Value::String(" MIT".into()),
+            Value::String("MIT ".into()),
+            Value::String("Apache-2.0".repeat(64)),
+        ] {
+            let mut lock: Value = serde_json::from_slice(LOCK).unwrap();
+            lock["packages"][""]["license"] = value;
+            let bytes = serde_json::to_vec(&lock).unwrap();
+            assert!(prove(&manifest, &bytes, RawLimits::default()).is_err());
+        }
+        let duplicate = std::str::from_utf8(LOCK)
+            .unwrap()
+            .replace(
+                r#""name":"app","version":"1.0.0","dependencies""#,
+                r#""name":"app","version":"1.0.0","license":"MIT","license":"GPL","dependencies""#,
+            );
+        assert_ne!(duplicate.as_bytes(), LOCK);
+        assert!(prove(&manifest, duplicate.as_bytes(), RawLimits::default()).is_err());
+
+        let mut unsupported: Value = serde_json::from_slice(LOCK).unwrap();
+        unsupported["packages"][""]["scripts"] = serde_json::json!({"postinstall": "run"});
+        assert!(prove(&manifest, &serde_json::to_vec(&unsupported).unwrap(), RawLimits::default()).is_err());
+
+        let mut oversized: Value = serde_json::from_slice(LOCK).unwrap();
+        oversized["packages"][""]["license"] = Value::String("Apache-2.0".into());
+        let tight = RawLimits {
+            field_bytes: 6,
+            ..RawLimits::default()
+        };
+        assert!(prove(&manifest, &serde_json::to_vec(&oversized).unwrap(), tight).is_err());
+    }
+
+    #[test]
     fn root_version_and_installed_package_drift_fail_closed() {
         let manifest = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
         for lock in [
