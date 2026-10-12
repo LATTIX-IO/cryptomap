@@ -1749,7 +1749,6 @@ fn bounded_generation_io_failures_do_not_publish_or_authorize_sources() {
     assert!(target.current().unwrap().is_none());
 }
 
-
 #[test]
 fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     use cryptomap::collectors::dependency::{
@@ -1794,7 +1793,12 @@ fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     let denied = fixture.scope("tenant-a", false, "npm:lock");
     assert_eq!(
         restore_framed_npm_generation_pinned(
-            &target, &mut std::io::Cursor::new(&framed), &anchor, &denied, None, limits,
+            &target,
+            &mut std::io::Cursor::new(&framed),
+            &anchor,
+            &denied,
+            None,
+            limits,
         ),
         Err(NpmReconciliationError::UnauthorizedSource)
     );
@@ -1803,13 +1807,23 @@ fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     damaged[16] ^= 0x80;
     assert_eq!(
         restore_framed_npm_generation_pinned(
-            &target, &mut std::io::Cursor::new(damaged), &anchor, &scope, None, limits,
+            &target,
+            &mut std::io::Cursor::new(damaged),
+            &anchor,
+            &scope,
+            None,
+            limits,
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
     assert!(target.current().unwrap().is_none());
     let restored = restore_framed_npm_generation_pinned(
-        &target, &mut std::io::Cursor::new(&framed), &anchor, &scope, None, limits,
+        &target,
+            &mut std::io::Cursor::new(&framed),
+            &anchor,
+            &scope,
+            None,
+            limits,
     )
     .unwrap();
     assert_eq!(restored.snapshot(), &snapshot);
@@ -1817,7 +1831,12 @@ fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     assert_eq!(restored.sequence(), 1);
     assert_eq!(
         restore_framed_npm_generation_pinned(
-            &target, &mut std::io::Cursor::new(&framed), &anchor, &scope, None, limits,
+            &target,
+            &mut std::io::Cursor::new(&framed),
+            &anchor,
+            &scope,
+            None,
+            limits,
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
