@@ -523,7 +523,7 @@ fn checkpoint_rejects_source_mutation_cross_tenant_and_tampering() {
         &projected, &scope, "npm:manifest", "npm:lock",
         RawLimits::default(), InventoryLimits::default()
     ).unwrap();
-    let verify = |token: &_| verify_npm_checkpoint(
+    let verify = |token: &cryptomap::collectors::dependency::npm_checkpoint::NpmProjectionCheckpoint| verify_npm_checkpoint(
         token, &projected, &scope, RawLimits::default(), InventoryLimits::default()
     );
     let mut forged = checkpoint.clone();
