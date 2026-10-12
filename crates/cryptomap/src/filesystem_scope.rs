@@ -11,6 +11,7 @@ use cap_std::{
     ambient_authority,
     fs::{Dir, OpenOptions},
 };
+use sha2::{Digest, Sha256};
 use std::{
     ffi::OsString,
     io::{self, Read},
@@ -229,6 +230,41 @@ impl AuthorizedFile<'_> {
             file: self.open_handle()?,
             remaining: self.max_bytes as u64,
         })
+    }
+
+    /// SHA-256 of an exact authorized source file with a caller-specific byte
+    /// budget that may be tighter than the host's file grant.
+    ///
+    /// Hashes in fixed-size buffers and reads one byte beyond the smaller
+    /// ceiling to detect overflow, even if the file grows during inspection.
+    /// Does not expose an unrestricted file handle or allocate file-sized data.
+    pub fn sha256_bounded(&self, max_bytes: usize) -> Result<(String, usize), ScopeError> {
+        let mut file = self.open_handle()?;
+        let ceiling = self.max_bytes.min(max_bytes) as u64;
+        let mut digest = Sha256::new();
+        let mut observed = 0_u64;
+        let mut buffer = [0_u8; 8192];
+        loop {
+            let remaining = ceiling.saturating_sub(observed).saturating_add(1);
+            let chunk = buffer
+                .len()
+                .min(usize::try_from(remaining).unwrap_or(buffer.len()));
+            let n = file
+                .read(&mut buffer[..chunk])
+                .map_err(|_| ScopeError::Io)?;
+            if n == 0 {
+                break;
+            }
+            observed = observed
+                .checked_add(n as u64)
+                .ok_or(ScopeError::ResourceLimit)?;
+            if observed > ceiling {
+                return Err(ScopeError::ResourceLimit);
+            }
+            digest.update(&buffer[..n]);
+        }
+        let count = usize::try_from(observed).map_err(|_| ScopeError::ResourceLimit)?;
+        Ok((format!("{:x}", digest.finalize()), count))
     }
 
     /// Read at most the approved bytes, returning ResourceLimit for overflow.

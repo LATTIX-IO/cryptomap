@@ -7,7 +7,10 @@ use cryptomap::{
     collector::{CancellationToken, CollectionRequest, Collector, RequestedSource},
     collectors::dependency::{
         npm::NpmLockfileCollector,
-        npm_checkpoint::{checkpoint_npm_projection, verify_npm_checkpoint},
+        npm_checkpoint::{
+            NpmIncrementalPlan, checkpoint_npm_projection, plan_npm_incremental,
+            verify_npm_checkpoint,
+        },
         npm_installation_projection::project_npm_transitive_edges,
         npm_manifest::NpmReconciliationError,
         npm_manifest_collector::NpmManifestCollector,
@@ -674,4 +677,204 @@ fn checkpoint_rejects_source_mutation_cross_tenant_and_tampering() {
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
+}
+
+#[test]
+fn incremental_reuse_requires_current_complete_graph_and_matching_sources() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let plan = || {
+        plan_npm_incremental(
+            &checkpoint,
+            &projected,
+            &scope,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+    };
+    let expected = NpmIncrementalPlan::ReuseVerified {
+        snapshot_id: projected.id.clone(),
+    };
+    assert_eq!(plan().unwrap(), expected);
+    assert_eq!(plan().unwrap(), expected);
+    let json = serde_json::to_string(&expected).unwrap();
+    let parsed: NpmIncrementalPlan = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, expected);
+    assert!(!json.contains("token"));
+    assert_eq!(
+        projected,
+        transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap()
+    );
+}
+
+#[test]
+fn incremental_changed_files_trigger_exact_invalidation_without_cache_reuse() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    for (manifest, lock, expected) in [
+        (
+            format!("{MANIFEST} "),
+            LOCK.to_owned(),
+            NpmIncrementalPlan::Recollect {
+                manifest_changed: true,
+                lock_changed: false,
+            },
+        ),
+        (
+            MANIFEST.to_owned(),
+            format!("{LOCK} "),
+            NpmIncrementalPlan::Recollect {
+                manifest_changed: false,
+                lock_changed: true,
+            },
+        ),
+        (
+            format!("{MANIFEST} "),
+            format!("{LOCK} "),
+            NpmIncrementalPlan::Recollect {
+                manifest_changed: true,
+                lock_changed: true,
+            },
+        ),
+    ] {
+        let changed = Fixture::new(&manifest, &lock);
+        let changed_scope = changed.scope("tenant-a", true, "npm:lock");
+        assert_eq!(
+            plan_npm_incremental(
+                &checkpoint,
+                &projected,
+                &changed_scope,
+                RawLimits::default(),
+                InventoryLimits::default()
+            )
+            .unwrap(),
+            expected
+        );
+        // Invalidation itself conveys no valid new evidence and never mints
+        // a new checkpoint against the old canonical snapshot.
+        assert!(
+            checkpoint_npm_projection(
+                &projected,
+                &changed_scope,
+                "npm:manifest",
+                "npm:lock",
+                RawLimits::default(),
+                InventoryLimits::default()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn incremental_plan_rejects_cache_poisoning_tenant_mismatch_and_missing_grants() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let plan =
+        |token: &cryptomap::collectors::dependency::npm_checkpoint::NpmProjectionCheckpoint,
+         snapshot: &InventorySnapshot,
+         scoped: &CollectionScope,
+         limits: RawLimits| {
+            plan_npm_incremental(token, snapshot, scoped, limits, InventoryLimits::default())
+        };
+    let mut tampered = checkpoint.clone();
+    tampered.fingerprint = format!("sha256:{}", "0".repeat(64));
+    assert_eq!(
+        plan(&tampered, &projected, &scope, RawLimits::default()),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let mut tampered = checkpoint.clone();
+    tampered.lock_sha256 = "0".repeat(64);
+    assert_eq!(
+        plan(&tampered, &projected, &scope, RawLimits::default()),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let mut poisoned = projected.clone();
+    poisoned
+        .assets
+        .values_mut()
+        .next()
+        .unwrap()
+        .extensions
+        .insert("invalid:cache".into(), "poisoned".into());
+    assert_eq!(
+        plan(&checkpoint, &poisoned, &scope, RawLimits::default()),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let foreign = fixture.scope("tenant-b", true, "npm:lock");
+    assert_eq!(
+        plan(&checkpoint, &projected, &foreign, RawLimits::default()),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let ungranted = fixture.scope("tenant-a", false, "npm:lock");
+    assert_eq!(
+        plan(&checkpoint, &projected, &ungranted, RawLimits::default()),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
+    let budget = RawLimits {
+        total_bytes: MANIFEST.len() + LOCK.len() - 1,
+        record_bytes: 128,
+        field_bytes: 64,
+        ..RawLimits::default()
+    };
+    assert_eq!(
+        plan(&checkpoint, &projected, &scope, budget),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
+}
+
+#[test]
+fn authorized_stream_digest_enforces_stricter_per_call_budget() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let manifest = scope
+        .open_file(RawSourceKind::Dependency, "npm:manifest")
+        .unwrap();
+    let (sha, bytes) = manifest.sha256_bounded(MANIFEST.len()).unwrap();
+    assert_eq!(bytes, MANIFEST.len());
+    assert_eq!(sha.len(), 64);
+    assert!(matches!(
+        manifest.sha256_bounded(MANIFEST.len() - 1),
+        Err(cryptomap::scope::ScopeError::ResourceLimit)
+    ));
+    let lock = scope
+        .open_file(RawSourceKind::Dependency, "npm:lock")
+        .unwrap();
+    let (sha, bytes) = lock.sha256_bounded(LOCK.len()).unwrap();
+    assert_eq!(bytes, LOCK.len());
+    assert_eq!(sha.len(), 64);
+    assert!(matches!(
+        lock.sha256_bounded(1),
+        Err(cryptomap::scope::ScopeError::ResourceLimit)
+    ));
 }
