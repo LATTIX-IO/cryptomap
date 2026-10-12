@@ -11,7 +11,7 @@ This release is **not** full repository cryptographic-use discovery, vulnerabili
 From the repository root, using Rust 1.85 or later:
 
 ```shell
-cargo run --locked -p cryptomap --example cargo_scoped_inventory -- crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1 example-tenant example-run-1
+cargo run --locked -p cryptomap --example cargo_scoped_inventory -- crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1
 ```
 
 Alternatively, run inside the crate directory:
