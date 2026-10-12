@@ -4,15 +4,17 @@
 //! than changing existing Library IDs or historic package observations.
 use super::{
     npm_manifest::{NpmReconciliationError, reconcile_npm_direct},
-    npm_projection::{bound_evidence, lock_event, project_npm_direct_edges},
+    npm_projection::{lock_event, project_npm_direct_edges},
     npm_transitive::{NpmInstalledNode, resolve_npm_transitive},
 };
 use crate::{
-    Asset, AssetId, AssetKind, CollectionRunId, EvidenceId, IdentityContext, InventoryBuilder,
+    Asset, AssetId, AssetKind, CollectionRunId, Confidence, CoverageState, EvidenceId, EvidenceKind,
+    IdentityContext, InventoryBuilder,
     InventoryLimits, InventorySnapshot, Relationship, RelationshipId, RelationshipKind,
     raw::RawLimits, scope::CollectionScope,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use sha2::{Digest, Sha256};
 
 fn path_asset(
     node: &NpmInstalledNode,
@@ -22,7 +24,7 @@ fn path_asset(
     // Schema-v2's existing Extension family avoids breaking exhaustive
     // AssetKind matches or changing the canonical snapshot schema. The typed
     // tuple (never a delimiter-joined string) prevents identity collisions.
-    let site = serde_json::to_string(&(
+    let tuple = serde_json::to_vec(&(
         "npm-install:v1",
         source_item,
         &node.path,
@@ -30,6 +32,9 @@ fn path_asset(
         &node.version,
     ))
     .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    // Hash the typed tuple so independently valid source identifiers and
+    // nested install paths cannot jointly overflow IdentityContext use_site.
+    let site = format!("npm-install:v1:{:x}", Sha256::digest(tuple));
     let scoped = identity
         .clone()
         .with_use_site(site)
@@ -53,11 +58,63 @@ fn path_asset(
     })
 }
 
-fn evidence_for_node(
+// One pass across canonical observations, then indexed path-event lookups.
+// Prevents O(nodes * observations) work on fully bounded large lockfiles.
+type LockEvidenceIndex = BTreeMap<String, Vec<(AssetId, CollectionRunId, EvidenceId)>>;
+
+fn index_lock_evidence(
     snapshot: &InventorySnapshot,
-    node: &NpmInstalledNode,
     lock_item: &str,
     lock_sha256: &str,
+) -> LockEvidenceIndex {
+    let valid_runs: BTreeSet<_> = snapshot.coverage_records.iter()
+        .filter(|coverage| {
+            coverage.source_item == lock_item
+                && coverage.state == CoverageState::InspectedObserved
+                && snapshot.runs.get(&coverage.run).is_some_and(|run| {
+                    run.requested.contains(lock_item)
+                })
+        })
+        .map(|record| record.run.clone())
+        .collect();
+    let source = format!("Dependency:{lock_item}");
+    let mut index: LockEvidenceIndex = BTreeMap::new();
+    for observation in snapshot.observations.values() {
+        if observation.property != "dependency:presence"
+            || observation.value != "declared"
+        {
+            continue;
+        }
+        let Some(event) = &observation.context else {
+            continue;
+        };
+        let Some(entry) = snapshot.evidence.get(&observation.evidence) else {
+            continue;
+        };
+        if entry.source != source
+            || entry.source_sha256.as_deref() != Some(lock_sha256)
+            || entry.collector.as_str() != "cryptomap:npm-lockfile"
+            || entry.collector_version != "0.2.0"
+            || entry.kind != EvidenceKind::Direct
+            || entry.confidence != Confidence::Confirmed
+            || !valid_runs.contains(&entry.run)
+        {
+            continue;
+        }
+        index.entry(event.clone()).or_default().push((
+            observation.asset.clone(),
+            entry.run.clone(),
+            entry.id.clone(),
+        ));
+    }
+    index
+}
+
+fn evidence_for_node(
+    snapshot: &InventorySnapshot,
+    index: &LockEvidenceIndex,
+    node: &NpmInstalledNode,
+    lock_item: &str,
     identity: &IdentityContext,
 ) -> Result<BTreeMap<CollectionRunId, BTreeSet<EvidenceId>>, NpmReconciliationError> {
     use NpmReconciliationError::UnboundEvidence;
@@ -75,15 +132,12 @@ fn evidence_for_node(
         return Err(UnboundEvidence);
     }
     let event = lock_event(lock_item, &node.path, &node.version)?;
-    let result = bound_evidence(
-        snapshot,
-        &library_id,
-        &format!("Dependency:{lock_item}"),
-        lock_sha256,
-        lock_item,
-        ("cryptomap:npm-lockfile", "0.2.0"),
-        &event,
-    );
+    let mut result: BTreeMap<CollectionRunId, BTreeSet<EvidenceId>> = BTreeMap::new();
+    for (asset, run, evidence) in index.get(&event).into_iter().flatten() {
+        if asset == &library_id {
+            result.entry(run.clone()).or_default().insert(evidence.clone());
+        }
+    }
     if result.is_empty() {
         return Err(UnboundEvidence);
     }
@@ -129,6 +183,7 @@ pub fn project_npm_transitive_edges(
         return Err(UnboundEvidence);
     }
     let identity = IdentityContext::new(scope.id().as_str()).map_err(|_| UnboundEvidence)?;
+    let evidence_index = index_lock_evidence(snapshot, lock_item, &graph.lock_sha256);
 
     let mut assets = BTreeMap::new();
     let mut by_path = BTreeMap::new();
@@ -140,7 +195,7 @@ pub fn project_npm_transitive_edges(
                 return Err(UnboundEvidence);
             }
         }
-        let per_run = evidence_for_node(snapshot, node, lock_item, &graph.lock_sha256, &identity)?;
+        let per_run = evidence_for_node(snapshot, &evidence_index, node, lock_item, &identity)?;
         evidence.insert(node.path.clone(), per_run);
         by_path.insert(node.path.clone(), asset.id.clone());
         assets.insert(asset.id.clone(), asset);
