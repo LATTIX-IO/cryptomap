@@ -132,10 +132,12 @@ pub(super) fn parse_manifest(
     let obj = json.as_object().ok_or(InvalidSource)?;
     // Optional, peer, dev, override and workspace semantics may change the
     // actual installation. Never silently claim complete direct coverage.
-    if obj
-        .keys()
-        .any(|key| !matches!(key.as_str(), "name" | "version" | "dependencies" | "private" | "type"))
-    {
+    if obj.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "name" | "version" | "dependencies" | "private" | "type"
+        )
+    }) {
         return Err(UnsupportedProfile);
     }
     // Explicitly ignore validated non-dependency project metadata. Never
@@ -145,9 +147,7 @@ pub(super) fn parse_manifest(
     }
     if let Some(module_type) = obj.get("type") {
         let module_type = module_type.as_str().ok_or(UnsupportedProfile)?;
-        if module_type.len() > limits.field_bytes
-            || !matches!(module_type, "commonjs" | "module")
-        {
+        if module_type.len() > limits.field_bytes || !matches!(module_type, "commonjs" | "module") {
             return Err(UnsupportedProfile);
         }
     }
@@ -374,14 +374,20 @@ mod tests {
             assert_eq!(manifest.name, baseline.name);
             assert_eq!(manifest.version, baseline.version);
             assert_eq!(manifest.deps, baseline.deps);
-            assert_eq!(prove(&manifest, LOCK, RawLimits::default()).unwrap(), direct);
+            assert_eq!(
+                prove(&manifest, LOCK, RawLimits::default()).unwrap(),
+                direct
+            );
         }
         for metadata in [r#""private":true"#, r#""type":"module""#] {
             let candidate = format!(
                 "{{\"name\":\"app\",\"version\":\"1.0.0\",{metadata},\"dependencies\":{{\"@scope/ring\":\"1.2.3\"}}}}"
             );
             let manifest = parse_manifest(candidate.as_bytes(), RawLimits::default()).unwrap();
-            assert_eq!(prove(&manifest, LOCK, RawLimits::default()).unwrap(), direct);
+            assert_eq!(
+                prove(&manifest, LOCK, RawLimits::default()).unwrap(),
+                direct
+            );
         }
     }
 
