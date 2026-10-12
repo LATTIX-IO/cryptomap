@@ -161,3 +161,61 @@ fn tampered_lock_or_unsupported_manifest_cannot_fabricate_direct_edge() {
         Err(CargoReconciliationError::UnresolvedDependency)
     );
 }
+
+
+#[test]
+fn version_only_inline_cargo_pins_reconcile_through_exact_source_grants() {
+    let baseline_fixture = Fixture::new(MANIFEST, LOCK);
+    let baseline_scope = baseline_fixture.scope(true, true, 4096);
+    let original = reconcile_cargo_direct(
+        &baseline_scope,
+        "cargo:manifest",
+        "cargo:lock",
+        RawLimits::default(),
+    )
+    .unwrap();
+
+    let inline = MANIFEST.replace(
+        "ring = \"=0.17.12\"",
+        "ring = { version = \"=0.17.12\" }",
+    );
+    let fixture = Fixture::new(&inline, LOCK);
+    let scope = fixture.scope(true, true, 4096);
+    let exact =
+        reconcile_cargo_direct(&scope, "cargo:manifest", "cargo:lock", RawLimits::default())
+            .unwrap();
+    assert_eq!(exact.direct, original.direct);
+    assert_eq!(exact.root_name, original.root_name);
+    assert_eq!(exact.root_version, original.root_version);
+    assert_eq!(exact.lock_sha256, original.lock_sha256);
+    assert_ne!(exact.manifest_sha256, original.manifest_sha256);
+    assert!(!format!("{exact:?}").contains("token"));
+
+    let denied = fixture.scope(false, true, 4096);
+    assert_eq!(
+        reconcile_cargo_direct(
+            &denied,
+            "cargo:manifest",
+            "cargo:lock",
+            RawLimits::default()
+        ),
+        Err(CargoReconciliationError::UnauthorizedSource)
+    );
+    // A version-only inline table cannot smuggle optional or feature behavior
+    // into unconditional direct dependency proofs.
+    let unsafe_manifest = inline.replace(
+        "version = \"=0.17.12\"",
+        "version = \"=0.17.12\", optional = true",
+    );
+    let unsafe_fixture = Fixture::new(&unsafe_manifest, LOCK);
+    let unsafe_scope = unsafe_fixture.scope(true, true, 4096);
+    assert_eq!(
+        reconcile_cargo_direct(
+            &unsafe_scope,
+            "cargo:manifest",
+            "cargo:lock",
+            RawLimits::default()
+        ),
+        Err(CargoReconciliationError::UnsupportedProfile)
+    );
+}
