@@ -74,5 +74,6 @@ Never enable publication as part of a feature-development merge. Existing releas
 - Complete public API evolution and frozen conformance fixtures as described by the initial [compatibility policy](compatibility-policy.md) (FOSS-17/18).
 - Additional clean-room custom-collector and npm consumer examples; review supported versions and real-world fixtures.
 - Packaged archive inspection and digest evidence is implemented as a CI gate (see [release evidence](milestone-a-release-evidence.md)); this is **not** a dependency SBOM or signed provenance.
-- Release SBOM, signed artifact provenance, compatibility-golden baseline, safety/fuzz smoke, and protected publishing (FOSS-19/20) remain.
+- Lockfile-based software SPDX SBOM generation and main-only GitHub Sigstore attestations are implemented in CI; **the trusted main attestation must still pass** before claiming signed provenance (see [release SBOM and attestation gates](milestone-a-sbom-attestations.md)).
+- Compatibility-golden baseline, safety/fuzz smoke, final registry name/ownership and publishing credentials, human approval and post-publication registry verification remain.
 - Registry name/owner and permissions confirmation followed by a deliberately approved alpha publish.
