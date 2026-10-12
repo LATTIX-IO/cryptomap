@@ -11,7 +11,7 @@ It returns one of two serializable decisions:
 
 ## Security and consistency
 
-The planner rejects invalid `RawLimits`, incorrectly scoped or noncanonical snapshots, unsupported/altered checkpoint metadata, modified fingerprint, source-item aliasing and tenant mismatches **before** reading new source content. File acquisition uses only two exact existing `CollectionScope` capabilities with bounded reads and checked aggregate input bytes. An ungranted file or excessive budget is an error, never a synthetic `Recollect` or `ReuseVerified` outcome.
+The planner rejects invalid `RawLimits`, incorrectly scoped or noncanonical snapshots, unsupported/altered checkpoint metadata, modified fingerprint, source-item aliasing and tenant mismatches **before** reading new source content. Source hashing uses an exact `CollectionScope` capability and the new `AuthorizedFile::sha256_bounded(max_bytes)` method, which hashes through a fixed 8-KiB buffer. Each read is capped by the **smaller of the file grant and remaining planner aggregate-byte budget**, and one byte beyond that ceiling is checked for overflow. It never reads the entire authorized file into memory before enforcing a smaller per-call limit. Aggregate-byte budget is enforced while reading, not afterward. A file growing past either limit fails closed. File acquisition never bypasses an existing rooted OS file capability. An ungranted file or excessive budget is an error, never a synthetic `Recollect` or `ReuseVerified` outcome.
 
 The checkpoint fingerprint is an unkeyed SHA-256 integrity checksum, **not a cryptographic signature**. The reuse path never relies on the checksum alone: fresh files, complete independently persisted collector evidence, exact installation assets and canonical dependencies must pass the existing full revalidator. This intentionally trades some CPU for correctness while avoiding repeated collection/normalization. A maliciously forged cache or stale/cross-tenant snapshot must never produce the reuse decision.
 
@@ -21,7 +21,7 @@ The API is not a filesystem watcher, event-driven invalidation daemon, change-st
 
 - Unit/functional contracts: two identical planner invocations yield the same `ReuseVerified` decision and snapshot ID, stable JSON serialization, and unchanged collection/reprojection.
 - Regression: changing just the manifest yields `Recollect(true,false)`, changing just the lock yields `Recollect(false,true)`, and changing both yields `Recollect(true,true)`; no stale canonical snapshot can be checkpointed afterward.
-- Security/negative: fingerprint tampering, checkpoint hash tampering, corrupted snapshot assets, foreign tenant, denied manifest file grant, invalid resource limits, and aggregate source-byte exhaustion deny reuse.
+- Security/negative: fingerprint tampering, checkpoint hash tampering, corrupted snapshot assets, foreign tenant, denied manifest file grant, invalid resource limits, aggregate source-byte exhaustion, and per-file budget tighter than a granted file limit deny reuse.
 - All prior FOSS-322.6 through .10 security, Windows and MSRV suites remain intact.
 - **Merge gates:** exact final PR-head GitHub Actions Linux formatting, locked compilation, strict Clippy, unit/integration/regression/security tests, docs/package/RustSec/dependency policy/SemVer; Windows, Rust 1.85 MSRV and resolved actionable review threads.
 
