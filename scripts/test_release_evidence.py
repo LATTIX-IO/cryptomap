@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from release_evidence import inspect
+from release_evidence import MAX_ARCHIVE, MAX_ENTRIES, inspect
 
 SHA = "a" * 40
 ROOT = "cryptomap-0.1.0"
@@ -81,6 +81,56 @@ class EvidenceTests(unittest.TestCase):
                 archive.addfile(info, io.BytesIO(body))
         with self.assertRaises(ValueError):
             inspect(self.path, SHA)
+
+    def test_reject_directory_file_collision_in_either_order(self):
+        for directory_first in (True, False):
+            with tarfile.open(self.path, "w:gz") as archive:
+                directory = tarfile.TarInfo(f"{ROOT}/collide/")
+                directory.type = tarfile.DIRTYPE
+                regular = tarfile.TarInfo(f"{ROOT}/collide")
+                regular.size = 1
+                for entry in ([directory, regular] if directory_first else [regular, directory]):
+                    if entry.isfile():
+                        archive.addfile(entry, io.BytesIO(b"x"))
+                    else:
+                        archive.addfile(entry)
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                inspect(self.path, SHA)
+
+    def test_reject_file_used_as_parent(self):
+        with tarfile.open(self.path, "w:gz") as archive:
+            for name in ("parent", "parent/child"):
+                info = tarfile.TarInfo(f"{ROOT}/{name}")
+                info.size = 1
+                archive.addfile(info, io.BytesIO(b"x"))
+        with self.assertRaisesRegex(ValueError, "overlapping"):
+            inspect(self.path, SHA)
+
+    def test_reject_too_many_entries_without_eager_materialization(self):
+        with tarfile.open(self.path, "w:gz") as archive:
+            for i in range(MAX_ENTRIES + 1):
+                info = tarfile.TarInfo(f"{ROOT}/entry-{i:05d}")
+                info.size = 0
+                archive.addfile(info, io.BytesIO())
+        with self.assertRaisesRegex(ValueError, "member budget"):
+            inspect(self.path, SHA)
+
+    def test_reject_compressed_oversized_member_before_reading(self):
+        with tarfile.open(self.path, "w:gz") as archive:
+            info = tarfile.TarInfo(f"{ROOT}/oversized")
+            info.size = MAX_ARCHIVE + 1
+            archive.addfile(info, io.BytesIO(b"\x00" * (MAX_ARCHIVE + 1)))
+        with self.assertRaisesRegex(ValueError, "expanded archive budget"):
+            inspect(self.path, SHA)
+
+    def test_reject_ambiguous_normalized_paths(self):
+        for path in (f"{ROOT}//name", f"{ROOT}/./name"):
+            with tarfile.open(self.path, "w:gz") as archive:
+                info = tarfile.TarInfo(path)
+                info.size = 1
+                archive.addfile(info, io.BytesIO(b"x"))
+            with self.assertRaisesRegex(ValueError, "unsafe archive"):
+                inspect(self.path, SHA)
 
     def test_reject_wrong_commit(self):
         archive_at(self.path)
