@@ -430,7 +430,9 @@ fn partial_lock_run_cannot_attest_canonical_transitive_installations() {
         builder.add_coverage_record(coverage.clone());
     }
     let partial = builder.finalize(InventoryLimits::default()).unwrap();
-    partial.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    partial
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(
         transitive(&partial, &scope),
         Err(NpmReconciliationError::UnboundEvidence)
