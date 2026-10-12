@@ -30,10 +30,10 @@ From the repository root:
 
 ```sh
 cargo run --locked -p cryptomap --example cargo_scoped_inventory -- \
-  crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z
+  crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1
 ```
 
-The timestamp is supplied by the host and must describe the actual observation window for nonfixture collection. This is an *explicit directory* tool, not recursive scanning. Unsupported Cargo grammar is rejected instead of implying no cryptographic dependencies.
+The timestamp, tenant/scope identifier and distinct run prefix are supplied by the host. A new run prefix is required for every independent collection; fixed example values are only for reproducible fixtures. This is an *explicit directory* tool, not recursive scanning. Unsupported Cargo grammar is rejected instead of implying no cryptographic dependencies.
 
 ## Concepts
 
