@@ -2,7 +2,7 @@
 //! Never asserts algorithm use or writes name/version-only canonical relationships.
 use super::{
     npm::parse_lock,
-    npm_manifest::{NpmReconciliationError, package_name, numeric_version, reconcile_npm_direct},
+    npm_manifest::{NpmReconciliationError, numeric_version, package_name, reconcile_npm_direct},
 };
 use crate::{
     collector::CollectorDiagnosticCode,
@@ -113,8 +113,12 @@ fn dependencies(
 ) -> Result<BTreeMap<String, String>, NpmReconciliationError> {
     use NpmReconciliationError::{InvalidSource, ResourceLimit, UnsupportedProfile};
     for key in [
-        "optionalDependencies", "peerDependencies", "devDependencies",
-        "bundleDependencies", "bundledDependencies", "peerDependenciesMeta",
+        "optionalDependencies",
+        "peerDependencies",
+        "devDependencies",
+        "bundleDependencies",
+        "bundledDependencies",
+        "peerDependenciesMeta",
     ] {
         if package.contains_key(key) {
             return Err(UnsupportedProfile);
@@ -152,13 +156,17 @@ fn validate_graph(
     nodes: &BTreeMap<String, NpmInstalledNode>,
     edges: &BTreeSet<NpmPathEdge>,
 ) -> Result<(), NpmReconciliationError> {
-    use NpmReconciliationError::{ResourceLimit, UnsupportedProfile, UnresolvedDependency};
+    use NpmReconciliationError::{ResourceLimit, UnresolvedDependency, UnsupportedProfile};
     let mut adjacency: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    let mut indegree: BTreeMap<&str, usize> =
-        nodes.keys().map(|path| (path.as_str(), 0)).collect();
+    let mut indegree: BTreeMap<&str, usize> = nodes.keys().map(|path| (path.as_str(), 0)).collect();
     for edge in edges {
-        adjacency.entry(&edge.from_path).or_default().push(&edge.to_path);
-        let degree = indegree.get_mut(edge.to_path.as_str()).ok_or(UnresolvedDependency)?;
+        adjacency
+            .entry(&edge.from_path)
+            .or_default()
+            .push(&edge.to_path);
+        let degree = indegree
+            .get_mut(edge.to_path.as_str())
+            .ok_or(UnresolvedDependency)?;
         *degree = degree.checked_add(1).ok_or(ResourceLimit)?;
     }
     let mut reachable = BTreeSet::new();
@@ -235,7 +243,10 @@ pub fn resolve_npm_transitive(
     }
     let strict: StrictJson = serde_json::from_slice(&bytes).map_err(|_| InvalidSource)?;
     let lock = strict.0.as_object().ok_or(InvalidSource)?;
-    let table = lock.get("packages").and_then(Value::as_object).ok_or(InvalidSource)?;
+    let table = lock
+        .get("packages")
+        .and_then(Value::as_object)
+        .ok_or(InvalidSource)?;
     let mut nodes = BTreeMap::new();
     let mut declared = BTreeMap::new();
     for package in packages {
@@ -261,17 +272,26 @@ pub fn resolve_npm_transitive(
             return Err(UnsupportedProfile);
         }
         let key = if path == "npm:root" { "" } else { &path };
-        let record = table.get(key).and_then(Value::as_object).ok_or(InvalidSource)?;
-        if record.get("name").is_some_and(|value| value.as_str() != Some(&name)) {
+        let record = table
+            .get(key)
+            .and_then(Value::as_object)
+            .ok_or(InvalidSource)?;
+        if record
+            .get("name")
+            .is_some_and(|value| value.as_str() != Some(&name))
+        {
             return Err(UnresolvedDependency);
         }
         let deps = dependencies(record, limits)?;
         declared.insert(path.clone(), deps);
-        nodes.insert(path.clone(), NpmInstalledNode {
-            path,
-            name,
-            version: package.version,
-        });
+        nodes.insert(
+            path.clone(),
+            NpmInstalledNode {
+                path,
+                name,
+                version: package.version,
+            },
+        );
     }
     if !nodes.contains_key("npm:root") || nodes.len() > limits.observations {
         return Err(UnresolvedDependency);
@@ -309,9 +329,12 @@ mod tests {
     #[test]
     fn path_parser_rejects_noncanonical_and_escaped_segments() {
         for invalid in [
-            "node_modules", "node_modules/../secret",
-            "lib/node_modules/ring", "node_modules/a/lib/node_modules/b",
-            "node_modules//a", "node_modules/@scope",
+            "node_modules",
+            "node_modules/../secret",
+            "lib/node_modules/ring",
+            "node_modules/a/lib/node_modules/b",
+            "node_modules//a",
+            "node_modules/@scope",
             "node_modules/a/node_modules/._bad",
             "node_modules/a\\node_modules/b",
         ] {
@@ -330,16 +353,26 @@ mod tests {
             ("node_modules/x", "x", "1.0.0"),
             ("node_modules/y", "y", "2.0.0"),
             ("node_modules/x/node_modules/y", "y", "1.0.0"),
-        ].into_iter().map(|(path, name, version)| (
-            path.to_owned(),
-            NpmInstalledNode {
-                path: path.to_owned(), name: name.to_owned(), version: version.to_owned(),
-            },
-        )).collect();
+        ]
+        .into_iter()
+        .map(|(path, name, version)| {
+            (
+                path.to_owned(),
+                NpmInstalledNode {
+                    path: path.to_owned(),
+                    name: name.to_owned(),
+                    version: version.to_owned(),
+                },
+            )
+        })
+        .collect();
         assert_eq!(
             installed_for(&nodes, "node_modules/x", "y").unwrap(),
             "node_modules/x/node_modules/y"
         );
-        assert_eq!(installed_for(&nodes, "npm:root", "y").unwrap(), "node_modules/y");
+        assert_eq!(
+            installed_for(&nodes, "npm:root", "y").unwrap(),
+            "node_modules/y"
+        );
     }
 }
