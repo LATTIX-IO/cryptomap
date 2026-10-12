@@ -13,7 +13,7 @@ Selected **candidate version**: `0.1.1-alpha.1`. The version choice is provision
 ## Completed-in-code acceptance criteria
 
 1. Root workspace package version, lockfile root and `.crate` manifest must agree exactly on `0.1.1-alpha.1`; no dependency or collector contract version is silently reinterpreted.
-2. Exact archive filename, tar root and packaged manifest version must match. Security regression cases include wrong archive label, wrong package root and prerelease acceptance.
+2. The release inspector derives one expected version from the **checked-out workspace Cargo.toml and reviewed Cargo.lock root**, and rejects any archive that does not match that version—even if its filename, tar root and embedded manifest agree with each other. Security regressions include stale self-consistent 0.1.0 archives, wrong archive labels, lockfile drift and positive prerelease acceptance.
 3. Crate stays `publish = false` through all feature, security, identity and SPDX/provenance PRs. Every CI run must pass Linux strict format/check/Clippy/tests/docs/package/offline external consumers/RustSec/deny/SemVer, Windows and Rust 1.85.
 4. Source-scoped Cargo and npm examples, frozen asset:v2 identity cases, packaging/integrity tests, reviewed software SPDX SBOM and successful main-only Sigstore attestations are required; no false CBOM, TLS, source-use or recursive scanner claims.
 5. Security reviews and all actionable issues must close on exact final-head source. Evidence links and the release decision must be captured by a maintainer.
