@@ -15,6 +15,7 @@ The project follows Semantic Versioning once its public API reaches a stable con
 - Offline clean-room smoke testing against the actual packaged crate and a fresh external consumer.
 - Explicit first-release authorization switch, embedded dual licenses, crate registry metadata and release-readiness documentation.
 - Locked software SPDX SBOM validation and protected main-only Sigstore build/SBOM attestation workflow (separate from Cryptomap's future CBOM data format).
+- Packaged read-only npm reference example, offline external consumer verification and frozen `asset:v2` identity test vectors.
 
 ### Changed
 

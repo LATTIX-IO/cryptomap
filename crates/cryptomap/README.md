@@ -24,7 +24,14 @@ snapshot.verify(InventoryLimits::default()).unwrap();
 assert!(snapshot.assets.contains_key(&id));
 ```
 
-The snippet above demonstrates the canonical model. For **actual file collection**, use the [Cargo reference example](examples/cargo_scoped_inventory.rs); it grants two exact authorized files, invokes Cargo manifest and lock collectors, normalizes their source evidence, adds proven direct dependency edges, and independently verifies the snapshot.
+The snippet above demonstrates the canonical model. For **actual file collection**, use the [Cargo reference example](examples/cargo_scoped_inventory.rs) or the [npm reference example](examples/npm_scoped_inventory.rs). Each grants exactly two independently authorized input files, invokes the relevant passive manifest/lock collectors, normalizes the original source evidence, proves direct dependency edges and independently verifies the resulting scope-bound snapshot.
+
+```sh
+cargo run --locked -p cryptomap --example npm_scoped_inventory -- \
+  crates/cryptomap/examples/fixtures/npm 2026-10-12T12:00:00Z npm-tenant npm-run-1
+```
+
+The examples do not recursively discover repositories or prove runtime cryptographic algorithm use.
 
 From the repository root:
 
@@ -53,6 +60,6 @@ Other collectors (X.509, TLS, source/config, telemetry), the CycloneDX CBOM adap
 
 Never run an untrusted collector in-process as if a scope grant were an OS sandbox. Verify all source grants, cap byte budgets, avoid logging unredacted snapshots and credential-bearing metadata, and do not equate source hashes with signatures. The [collector skeleton](examples/collector_skeleton.rs) illustrates the third-party collector interface without real I/O.
 
-See the [collector author guide](../../docs/collector-author-guide.md), [compatibility policy](../../docs/compatibility-policy.md), and [release readiness and consumer guide](../../docs/milestone-a-release-readiness.md) for commands, CI expectations, limitations and release safeguards.
+See the [collector author guide](../../docs/collector-author-guide.md), [compatibility policy](../../docs/compatibility-policy.md), [Milestone A frozen identity vectors](../../docs/milestone-a-sdk-compatibility.md), and [release readiness and consumer guide](../../docs/milestone-a-release-readiness.md) for commands, CI expectations, limitations and release safeguards.
 
 The package remains `publish = false` until an explicitly approved first alpha publication. The publishing workflow also requires a manual dispatch and repository opt-in. SPDX license expression: MIT OR Apache-2.0.
