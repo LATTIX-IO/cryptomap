@@ -476,7 +476,7 @@ mod tests {
             Value::String(String::new()),
             Value::String(" MIT".into()),
             Value::String("MIT ".into()),
-            Value::String("Apache-2.0".repeat(64)),
+            Value::String("A".repeat(RawLimits::default().field_bytes + 1)),
         ] {
             let mut lock: Value = serde_json::from_slice(LOCK).unwrap();
             lock["packages"][""]["license"] = value;
