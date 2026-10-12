@@ -61,7 +61,7 @@ def audit_physical_tar_layout(archive: Path, expected_members: int) -> None:
     def octal(field: bytes) -> int:
         if field and field[0] & 0x80:
             raise ValueError("unsupported binary tar size")
-        raw = field.strip(b" \\x00")
+        raw = field.strip(b" \x00")
         if not raw or any(byte not in b"01234567" for byte in raw):
             raise ValueError("malformed tar numeric field")
         return int(raw, 8)
