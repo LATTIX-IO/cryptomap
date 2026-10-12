@@ -214,10 +214,12 @@ fn prove(
         .and_then(|packages| packages.get(""))
         .and_then(Value::as_object)
         .ok_or(InvalidSource)?;
-    if root
-        .keys()
-        .any(|key| !matches!(key.as_str(), "name" | "version" | "dependencies" | "license"))
-    {
+    if root.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "name" | "version" | "dependencies" | "license"
+        )
+    }) {
         return Err(UnsupportedProfile);
     }
     // A source-hashed root license declaration is inert package metadata, not
@@ -460,7 +462,10 @@ mod tests {
             let mut lock: Value = serde_json::from_slice(LOCK).unwrap();
             lock["packages"][""]["license"] = Value::String(license.into());
             let bytes = serde_json::to_vec(&lock).unwrap();
-            assert_eq!(prove(&manifest, &bytes, RawLimits::default()).unwrap(), baseline);
+            assert_eq!(
+                prove(&manifest, &bytes, RawLimits::default()).unwrap(),
+                baseline
+            );
         }
     }
 
@@ -483,18 +488,23 @@ mod tests {
             let bytes = serde_json::to_vec(&lock).unwrap();
             assert!(prove(&manifest, &bytes, RawLimits::default()).is_err());
         }
-        let duplicate = std::str::from_utf8(LOCK)
-            .unwrap()
-            .replace(
-                r#""name":"app","version":"1.0.0","dependencies""#,
-                r#""name":"app","version":"1.0.0","license":"MIT","license":"GPL","dependencies""#,
-            );
+        let duplicate = std::str::from_utf8(LOCK).unwrap().replace(
+            r#""name":"app","version":"1.0.0","dependencies""#,
+            r#""name":"app","version":"1.0.0","license":"MIT","license":"GPL","dependencies""#,
+        );
         assert_ne!(duplicate.as_bytes(), LOCK);
         assert!(prove(&manifest, duplicate.as_bytes(), RawLimits::default()).is_err());
 
         let mut unsupported: Value = serde_json::from_slice(LOCK).unwrap();
         unsupported["packages"][""]["scripts"] = serde_json::json!({"postinstall": "run"});
-        assert!(prove(&manifest, &serde_json::to_vec(&unsupported).unwrap(), RawLimits::default()).is_err());
+        assert!(
+            prove(
+                &manifest,
+                &serde_json::to_vec(&unsupported).unwrap(),
+                RawLimits::default()
+            )
+            .is_err()
+        );
 
         let mut oversized: Value = serde_json::from_slice(LOCK).unwrap();
         oversized["packages"][""]["license"] = Value::String("Apache-2.0".into());
