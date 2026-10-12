@@ -66,6 +66,8 @@ jobs:
           python3 scripts/release_evidence.py \
             --archive "${archives[0]}" \
             --commit "$GITHUB_SHA" \
+            --workspace-manifest Cargo.toml \
+            --lockfile Cargo.lock \
             --output "target/release-evidence/cryptomap.json"
 
       - name: Upload release inspection evidence

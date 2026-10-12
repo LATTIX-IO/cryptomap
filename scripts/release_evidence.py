@@ -131,7 +131,31 @@ def audit_physical_tar_layout(archive: Path, expected_members: int) -> None:
             raise ValueError("tar parser skipped or invented members")
 
 
-def inspect(archive: Path, commit: str) -> dict:
+def expected_workspace_version(manifest_path: Path, lockfile_path: Path) -> str:
+    """Bind release identity to a bounded reviewed workspace and Cargo.lock."""
+    if not manifest_path.is_file() or not 0 < manifest_path.stat().st_size <= 100_000:
+        raise ValueError("missing or oversized workspace Cargo.toml")
+    if not lockfile_path.is_file() or not 0 < lockfile_path.stat().st_size <= 8 * 1024 * 1024:
+        raise ValueError("missing or oversized reviewed Cargo.lock")
+    with manifest_path.open("rb") as stream:
+        workspace = tomllib.load(stream)
+    with lockfile_path.open("rb") as stream:
+        locked = tomllib.load(stream)
+    version = workspace.get("workspace", {}).get("package", {}).get("version")
+    if not isinstance(version, str) or not re.fullmatch(
+        r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version
+    ):
+        raise ValueError("invalid workspace release version")
+    roots = [
+        package for package in locked.get("package", [])
+        if isinstance(package, dict) and package.get("name") == "cryptomap"
+    ]
+    if len(roots) != 1 or roots[0].get("version") != version:
+        raise ValueError("workspace/Cargo.lock root version mismatch")
+    return version
+
+
+def inspect(archive: Path, commit: str, expected_version: str) -> dict:
     """Inspect a bounded, untrusted release archive without extracting it."""
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("expected a 40-character Git commit SHA")
@@ -208,6 +232,10 @@ def inspect(archive: Path, commit: str) -> dict:
         raise ValueError("invalid crate metadata")
     if root != f"cryptomap-{version}":
         raise ValueError("archive root/version mismatch")
+    if version != expected_version:
+        raise ValueError("archive version differs from checked-out workspace")
+    if archive.name != f"{root}.crate":
+        raise ValueError("archive filename/version mismatch")
     # The release candidate remains explicitly unpublishable until approved.
     if pkg.get("publish") is not False:
         raise ValueError("prematurely enabled publication")
@@ -234,8 +262,11 @@ def main() -> None:
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--workspace-manifest", required=True, type=Path)
+    parser.add_argument("--lockfile", required=True, type=Path)
     args = parser.parse_args()
-    report = inspect(args.archive, args.commit)
+    approved_version = expected_workspace_version(args.workspace_manifest, args.lockfile)
+    report = inspect(args.archive, args.commit, approved_version)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(f"Verified {report['archive']} sha256={report['sha256']}")

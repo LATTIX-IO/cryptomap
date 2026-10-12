@@ -1,4 +1,4 @@
-# Milestone A — cryptomap v0.1 developer preview
+# Milestone A — cryptomap 0.1.1-alpha.1 release candidate
 
 ## Scope and product promise
 
@@ -66,11 +66,17 @@ bash scripts/verify-packaged-consumer.sh
 
 The clean-room script extracts the actual `.crate`, builds a new unrelated consumer package against that extracted artifact using an isolated Cargo home and vendored sources pinned by the reviewed workspace lockfile, then runs it offline with a generated, locked consumer graph, then compiles and executes the packaged end-to-end example. CI also runs dependency audit, deny policy, SemVer compatibility, Windows and Rust 1.85.
 
+## Registry version and ownership gate
+
+The official crates.io index already records `cryptomap 0.1.0` (published 2026-10-07T17:27:13Z, no listed dependencies, not yanked). The source and package checksum are independently inspectable at [crates.io-index/cr/yp/cryptomap](https://github.com/rust-lang/crates.io-index/blob/master/cr/yp/cryptomap). **That version cannot be republished.** This repository's library release candidate uses **`0.1.1-alpha.1`**, which still requires a fresh availability check before first publication. The sparse index does not establish who owns this crate; validate registry account ownership and publication authority with authenticated crates.io administration, not a GitHub repository name.
+
+The candidate deliberately remains `publish = false` and no registry release is authorized by merging this branch. This separates version selection and all code/security validation from the irreversible crates.io publication operation. Signed main build and SPDX attestations have been verified for the preceding version; require fresh attestation evidence at the exact candidate main SHA.
+
 ## Release/approval procedure — deliberately still closed
 
 1. Confirm full CI, security review and the package-consumer gate at the exact candidate SHA. Review public API, supported profiles and source privacy against the actual packaged contents.
-2. Check availability/ownership of the exact `cryptomap` crate name immediately before publishing. It is **not** verified by CI.
-3. Update CHANGELOG and version; record SemVer/schema/collector compatibility, irreversible crates.io package digest, Git commit and release notes.
+2. **Existing crate:** `cryptomap 0.1.0` is already registered. Confirm via authenticated crates.io access that the publishing identity owns it, and verify `0.1.1-alpha.1` is still unused. CI and sparse-index metadata cannot prove owner authority.
+3. Review the frozen `0.1.1-alpha.1` candidate, CHANGELOG, SemVer/schema/collector compatibility, exact .crate digest, trusted Git commit and release notes. Never reuse `0.1.0`.
 4. Obtain deliberate release authorization and check crates.io token/trusted publishing configuration. Release-plz publishing additionally requires a manual `workflow_dispatch` on `main` and repository variable `CRYPTOMAP_RELEASE_ENABLED=true`; ordinary merges cannot publish. The crate itself remains `publish = false`.
 5. In a separate, reviewed release PR, change only the intentional publication settings and release metadata, validate `cargo publish --dry-run -p cryptomap --locked`, then confirm publishing manually through a protected workflow.
 6. After publication, test installation of the **registry-distributed** version in a fresh project, verify docs.rs/GitHub release/SBOM/provenance and revoke/rotate credentials when applicable. The current clean-room gate tests a locally produced archive, *not* the crates.io registry.
@@ -82,6 +88,6 @@ Never enable publication as part of a feature-development merge. Existing releas
 - Initial API support matrix and the frozen `asset:v2` conformance vectors now ship in [Milestone A SDK compatibility](milestone-a-sdk-compatibility.md); future CBOM/source/TLS API and snapshot/diff conformance remain on their later milestone contracts (FOSS-17/18).
 - File-backed Cargo/npm consumer examples and external custom-collector smoke tests are implemented; broaden real-world profile fixtures as future scope permits.
 - Packaged archive inspection and digest evidence is implemented as a CI gate (see [release evidence](milestone-a-release-evidence.md)); this is **not** a dependency SBOM or signed provenance.
-- Lockfile-based software SPDX SBOM generation and main-only GitHub Sigstore attestations are implemented in CI; **the trusted main attestation must still pass** before claiming signed provenance (see [release SBOM and attestation gates](milestone-a-sbom-attestations.md)).
+- Lockfile-bound SPDX software SBOM and main-only GitHub Sigstore attestation tests passed on preceding main (run 38309725698); the **new release-candidate main SHA must pass those same gates** (see [release SBOM and attestation gates](milestone-a-sbom-attestations.md)).
 - Asset identity golden fixtures now run in CI; snapshot/diff golden baselines, additional robustness/fuzz smoke, verified registry ownership, publishing credentials, deliberate release approval and post-publication registry verification remain.
 - Registry name/owner and permissions confirmation followed by a deliberately approved alpha publish.

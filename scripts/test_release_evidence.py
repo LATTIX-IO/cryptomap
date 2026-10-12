@@ -6,14 +6,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from release_evidence import MAX_ARCHIVE, MAX_ENTRIES, MAX_TAR_STREAM, inspect
+from release_evidence import MAX_ARCHIVE, MAX_ENTRIES, MAX_TAR_STREAM, expected_workspace_version, inspect
 
 SHA = "a" * 40
 ROOT = "cryptomap-0.1.0"
 MANIFEST = b'[package]\nname="cryptomap"\nversion="0.1.0"\npublish=false\n'
 
 
-def archive_at(path: Path, changes=None):
+def archive_at(path: Path, changes=None, root=ROOT):
     """Build a synthetic release archive with replaceable fixture members."""
     entries = {
         "Cargo.toml": MANIFEST,
@@ -24,7 +24,7 @@ def archive_at(path: Path, changes=None):
     entries.update(changes or {})
     with tarfile.open(path, "w:gz") as archive:
         for rel, data in entries.items():
-            info = tarfile.TarInfo(f"{ROOT}/{rel}")
+            info = tarfile.TarInfo(f"{root}/{rel}")
             info.size = len(data)
             archive.addfile(info, io.BytesIO(data))
 
@@ -39,25 +39,86 @@ class EvidenceTests(unittest.TestCase):
     def test_deterministic_valid_package(self):
         """Identical archive bytes and commit yield identical evidence."""
         archive_at(self.path)
-        a = inspect(self.path, SHA)
-        b = inspect(self.path, SHA)
+        a = inspect(self.path, SHA, "0.1.0")
+        b = inspect(self.path, SHA, "0.1.0")
         self.assertEqual(a, b)
         self.assertEqual(a["version"], "0.1.0")
         self.assertEqual(len(a["sha256"]), 64)
         self.assertFalse(a["publish_enabled"])
         self.assertEqual(len(a["files"]), 4)
 
+    def test_accept_distinct_alpha_archive_name_and_version(self):
+        """A prerelease candidate is valid when archive, root and manifest agree."""
+        version = "0.1.1-alpha.1"
+        self.path = self.path.with_name(f"cryptomap-{version}.crate")
+        archive_at(
+            self.path,
+            {"Cargo.toml": MANIFEST.replace(b"0.1.0", version.encode())},
+            root=f"cryptomap-{version}",
+        )
+        self.assertEqual(inspect(self.path, SHA, version)["version"], version)
+
+    def test_reject_archive_filename_or_version_drift(self):
+        """Never attach evidence to a mislabeled or mismatched candidate."""
+        archive_at(self.path, {"Cargo.toml": MANIFEST.replace(b"0.1.0", b"0.1.1-alpha.1")})
+        with self.assertRaisesRegex(ValueError, "archive root/version mismatch"):
+            inspect(self.path, SHA, "0.1.0")
+        self.path = self.path.with_name("incorrect-filename.crate")
+        archive_at(self.path)
+        with self.assertRaisesRegex(ValueError, "archive filename/version mismatch"):
+            inspect(self.path, SHA, "0.1.0")
+
+    def test_reject_stale_but_internally_consistent_archive(self):
+        """Reject old 0.1.0 even when its file, tar root and manifest agree."""
+        archive_at(self.path)
+        with self.assertRaisesRegex(ValueError, "version differs from checked-out workspace"):
+            inspect(self.path, SHA, "0.1.1-alpha.1")
+
+    def test_workspace_and_lock_version_must_agree(self):
+        """A trusted workspace root and lock must select one exact SDK release."""
+        root = Path(self.temp.name)
+        workspace = root / "Cargo.toml"
+        lock = root / "Cargo.lock"
+        workspace.write_text(
+            '[workspace]\n[workspace.package]\nversion = "0.1.1-alpha.1"\n',
+            encoding="utf-8",
+        )
+        lock.write_text(
+            'version = 4\n[[package]]\nname = "cryptomap"\nversion = "0.1.1-alpha.1"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(expected_workspace_version(workspace, lock), "0.1.1-alpha.1")
+        lock.write_text(
+            'version = 4\n[[package]]\nname = "cryptomap"\nversion = "0.1.0"\n',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "root version mismatch"):
+            expected_workspace_version(workspace, lock)
+        lock.write_text(
+            'version = 4\n[[package]]\nname = "cryptomap"\nversion = "0.1.1-alpha.1"\n'
+            '[[package]]\nname = "cryptomap"\nversion = "0.1.1-alpha.1"\n',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "root version mismatch"):
+            expected_workspace_version(workspace, lock)
+        workspace.write_text(
+            '[workspace]\n[workspace.package]\nversion = "invalid"\n',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "invalid workspace release"):
+            expected_workspace_version(workspace, lock)
+
     def test_reject_enabled_publication(self):
         """Fail prepublication evidence when publication is enabled."""
         archive_at(self.path, {"Cargo.toml": MANIFEST.replace(b"false", b"true")})
         with self.assertRaisesRegex(ValueError, "premature"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_secret_filename(self):
         """Reject known high-risk secret-bearing filenames."""
         archive_at(self.path, {"secrets/.env.production": b"secret"})
         with self.assertRaises(ValueError):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_path_traversal(self):
         """Prevent parent-directory references in archive entries."""
@@ -67,7 +128,7 @@ class EvidenceTests(unittest.TestCase):
             info.size = 1
             archive.addfile(info, io.BytesIO(b"x"))
         with self.assertRaises(ValueError):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_symlink(self):
         """Reject symbolic links rather than following their targets."""
@@ -77,7 +138,7 @@ class EvidenceTests(unittest.TestCase):
             info.linkname = "../../outside"
             archive.addfile(info)
         with self.assertRaises(ValueError):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_duplicate_archive_entry(self):
         """Prevent duplicate regular-file paths from being accepted."""
@@ -89,7 +150,7 @@ class EvidenceTests(unittest.TestCase):
                 info.size = len(body)
                 archive.addfile(info, io.BytesIO(body))
         with self.assertRaises(ValueError):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_directory_file_collision_in_either_order(self):
         """Reject file-directory collisions independent of tar member order."""
@@ -105,7 +166,7 @@ class EvidenceTests(unittest.TestCase):
                     else:
                         archive.addfile(entry)
             with self.assertRaisesRegex(ValueError, "duplicate"):
-                inspect(self.path, SHA)
+                inspect(self.path, SHA, "0.1.0")
 
     def test_reject_file_used_as_parent(self):
         """Reject a regular file followed by an overlapping child path."""
@@ -115,7 +176,7 @@ class EvidenceTests(unittest.TestCase):
                 info.size = 1
                 archive.addfile(info, io.BytesIO(b"x"))
         with self.assertRaisesRegex(ValueError, "overlapping"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_too_many_entries_without_eager_materialization(self):
         """Reject member-count overflow during streaming header inspection."""
@@ -125,7 +186,7 @@ class EvidenceTests(unittest.TestCase):
                 info.size = 0
                 archive.addfile(info, io.BytesIO())
         with self.assertRaisesRegex(ValueError, "member budget"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_compressed_oversized_member_before_reading(self):
         """Reject a compressed oversized member from its declared length."""
@@ -134,7 +195,7 @@ class EvidenceTests(unittest.TestCase):
             info.size = MAX_ARCHIVE + 1
             archive.addfile(info, io.BytesIO(b"\x00" * (MAX_ARCHIVE + 1)))
         with self.assertRaisesRegex(ValueError, "expanded archive budget"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_ambiguous_normalized_paths(self):
         """Reject entries whose raw path is not already canonical."""
@@ -144,7 +205,7 @@ class EvidenceTests(unittest.TestCase):
                 info.size = 1
                 archive.addfile(info, io.BytesIO(b"x"))
             with self.assertRaisesRegex(ValueError, "unsafe archive"):
-                inspect(self.path, SHA)
+                inspect(self.path, SHA, "0.1.0")
 
     def test_reject_required_readme_or_license_as_directory(self):
         """Required documentation and licenses must be actual regular files."""
@@ -165,7 +226,7 @@ class EvidenceTests(unittest.TestCase):
                         info.size = len(data)
                         archive.addfile(info, io.BytesIO(data))
             with self.assertRaisesRegex(ValueError, "missing release-critical"):
-                inspect(self.path, SHA)
+                inspect(self.path, SHA, "0.1.0")
 
     def test_reject_large_pax_header_before_tarfile_materialization(self):
         """Cap PAX metadata decompression even before the first member yields."""
@@ -176,7 +237,7 @@ class EvidenceTests(unittest.TestCase):
             archive.addfile(info, io.BytesIO(b"x"))
         self.assertLess(self.path.stat().st_size, MAX_ARCHIVE)
         with self.assertRaisesRegex(ValueError, "decompressed tar stream budget"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_invalid_header_after_valid_required_entries(self):
         """Do not treat a corrupted noninitial tar header as valid EOF."""
@@ -191,7 +252,7 @@ class EvidenceTests(unittest.TestCase):
         with gzip.open(self.path, "wb") as stream:
             stream.write(data)
         with self.assertRaisesRegex(ValueError, "malformed tar numeric field|physical tar header checksum|canonical tar terminator"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_truncated_eof_padding_after_valid_files(self):
         """A single or missing zero block cannot certify a complete crate."""
@@ -203,7 +264,7 @@ class EvidenceTests(unittest.TestCase):
         with gzip.open(self.path, "wb") as stream:
             stream.write(data[:end + 512])
         with self.assertRaisesRegex(ValueError, "canonical tar terminator|truncated physical tar stream"):
-            inspect(self.path, SHA)
+            inspect(self.path, SHA, "0.1.0")
 
     def test_reject_pax_size_override_even_if_parser_skips_record(self):
         """A PAX size override must never hide a physical member from audit."""
@@ -220,7 +281,7 @@ class EvidenceTests(unittest.TestCase):
         """Require a full source commit in release evidence."""
         archive_at(self.path)
         with self.assertRaises(ValueError):
-            inspect(self.path, "not-a-sha")
+            inspect(self.path, "not-a-sha", "0.1.0")
 
 
 if __name__ == "__main__":

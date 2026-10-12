@@ -2,7 +2,7 @@
 
 A Rust SDK for **evidence-backed cryptographic asset inventories** and conservative, source-authorized dependency collection. Maintained by Lattix Technologies Corp.
 
-**Status:** pre-1.0 developer preview; not yet published to crates.io. The package is deliberately marked `publish = false`. APIs and supported source profiles remain subject to change.
+**Status:** pre-1.0 developer SDK candidate `0.1.1-alpha.1` (not yet published). The crates.io index already contains a separate `cryptomap 0.1.0` entry; its ownership must be verified before any publish. The current package remains `publish = false`. APIs and supported source profiles may change.
 
 ## Runnable collection from actual files
 
