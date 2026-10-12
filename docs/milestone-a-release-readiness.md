@@ -25,7 +25,15 @@ Both commands invoke the same example. The UTC timestamp is illustrative fixture
 
 The repository fixture uses literal `Cargo.toml` and `Cargo.lock` filenames. Cargo deliberately excludes nested Cargo projects when constructing library archives. The packaged release therefore embeds the same sample bytes as `examples/fixtures/manifest.fixture` and `examples/fixtures/lock.fixture`; the offline consumer smoke test copies them into caller-owned temporary `Cargo.toml` and `Cargo.lock` files before invoking the packaged example. This avoids relying on workspace source paths after packaging.
 
-The reference example:
+An equivalent npm source-granted journey is available from the repository root:
+
+```shell
+cargo run --locked -p cryptomap --example npm_scoped_inventory -- crates/cryptomap/examples/fixtures/npm 2026-10-12T12:00:00Z npm-example-tenant npm-example-run
+```
+
+It reads **only** the explicitly authorized `package.json` and `package-lock.json` files and verifies npm's strict exact-pinned, source-hashed direct dependency proof. Both Cargo and npm examples are also invoked from the packaged crate in an isolated offline consumer. Neither downloads packages nor executes scripts.
+
+The Cargo reference example:
 1. Grants exactly the chosen directory's `Cargo.toml` and `Cargo.lock` through two independent file capabilities with a 1 MiB per-file ceiling.
 2. Runs read-only Cargo manifest/lock collectors under explicit run identifiers.
 3. Normalizes both outcomes into one scope-bound canonical inventory.
@@ -71,8 +79,8 @@ Never enable publication as part of a feature-development merge. Existing releas
 
 ## Remaining work for Milestone A closure
 
-- Complete public API evolution and frozen conformance fixtures as described by the initial [compatibility policy](compatibility-policy.md) (FOSS-17/18).
-- Additional clean-room custom-collector and npm consumer examples; review supported versions and real-world fixtures.
+- Initial API support matrix and the frozen `asset:v2` conformance vectors now ship in [Milestone A SDK compatibility](milestone-a-sdk-compatibility.md); future CBOM/source/TLS API and snapshot/diff conformance remain on their later milestone contracts (FOSS-17/18).
+- File-backed Cargo/npm consumer examples and external custom-collector smoke tests are implemented; broaden real-world profile fixtures as future scope permits.
 - Packaged archive inspection and digest evidence is implemented as a CI gate (see [release evidence](milestone-a-release-evidence.md)); this is **not** a dependency SBOM or signed provenance.
 - Lockfile-based software SPDX SBOM generation and main-only GitHub Sigstore attestations are implemented in CI; **the trusted main attestation must still pass** before claiming signed provenance (see [release SBOM and attestation gates](milestone-a-sbom-attestations.md)).
 - Compatibility-golden baseline, safety/fuzz smoke, final registry name/ownership and publishing credentials, human approval and post-publication registry verification remain.

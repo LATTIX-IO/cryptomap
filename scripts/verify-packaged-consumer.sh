@@ -21,6 +21,9 @@ for expected in \
     LICENSE-MIT \
     LICENSE-APACHE \
     examples/cargo_scoped_inventory.rs \
+    examples/npm_scoped_inventory.rs \
+    examples/fixtures/npm/package.json \
+    examples/fixtures/npm/package-lock.json \
     examples/collector_skeleton.rs \
     examples/fixtures/manifest.fixture \
     examples/fixtures/lock.fixture
@@ -90,3 +93,14 @@ CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
     --manifest-path "$package/Cargo.toml" \
     --example cargo_scoped_inventory -- \
     "$scratch/input" "2026-10-12T12:00:00Z" "packaged-scope" "packaged-run"
+
+# Independently exercise the npm profile from the exact packaged crate.
+# Filesystem reads are limited to two explicit source grants; no npm command
+# or lifecycle script is run by the example.
+mkdir -p "$scratch/npm-input"
+cp "$package/examples/fixtures/npm/package.json" "$scratch/npm-input/package.json"
+cp "$package/examples/fixtures/npm/package-lock.json" "$scratch/npm-input/package-lock.json"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" \
+    --example npm_scoped_inventory -- \
+    "$scratch/npm-input" "2026-10-12T12:00:00Z" "packaged-npm-scope" "packaged-npm-run"

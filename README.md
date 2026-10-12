@@ -13,7 +13,16 @@ cargo run --locked -p cryptomap --example cargo_scoped_inventory -- \
   crates/cryptomap/examples/fixtures/cargo 2026-10-12T12:00:00Z example-tenant example-run-1
 ```
 
-For your own supported Cargo repository, substitute the **explicit directory containing both Cargo.toml and Cargo.lock** and provide the actual observation time in RFC3339, a tenant/scope identifier and a unique run prefix. Never reuse demonstration identities across independent runs. Unsupported manifest semantics fail closed. No Cargo build, package download, script execution, recursive scan or network request is performed by the reference example.
+For your own supported Cargo repository, substitute the **explicit directory containing both Cargo.toml and Cargo.lock** and provide an actual RFC3339 observation time, tenant/scope identifier and unique run prefix.
+
+A parallel npm example is available, using only approved package.json and package-lock.json files:
+
+```sh
+cargo run --locked -p cryptomap --example npm_scoped_inventory -- \
+  crates/cryptomap/examples/fixtures/npm 2026-10-12T12:00:00Z npm-example-tenant npm-example-run
+```
+
+Both file-backed examples are also compiled and run from the packaged crate in the offline clean-room consumer test. Never reuse demonstration identities across independent runs. Unsupported manifest semantics fail closed. No Cargo build, package download, script execution, recursive scan or network request is performed by the reference example.
 
 The output is a verified snapshot digest plus asset, relationship and coverage counts; dependency presence **does not** establish that a cryptographic algorithm actually executes.
 
@@ -41,6 +50,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)
 - [Collector author guide and clean-room consumer](docs/collector-author-guide.md)
 - [Versioned compatibility and schema policy](docs/compatibility-policy.md)
+- [Milestone A supported-input matrix and frozen identity vectors](docs/milestone-a-sdk-compatibility.md)
 - [Contribution policy](CONTRIBUTING.md)
 - [Security disclosure](SECURITY.md)
 
