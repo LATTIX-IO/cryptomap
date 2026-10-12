@@ -55,4 +55,4 @@ Never run an untrusted collector in-process as if a scope grant were an OS sandb
 
 See the [release readiness and consumer guide](../../docs/milestone-a-release-readiness.md) for commands, CI expectations, limitations and release safeguards.
 
-The package remains `publish = false` until an explicitly approved first alpha publication. SPDX license expression: MIT OR Apache-2.0.
+The package remains `publish = false` until an explicitly approved first alpha publication. The publishing workflow also requires a manual dispatch and repository opt-in. SPDX license expression: MIT OR Apache-2.0.
