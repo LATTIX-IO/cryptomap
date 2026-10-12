@@ -4,8 +4,8 @@
 #![allow(clippy::unwrap_used)]
 
 use cryptomap::{
-    Asset, AssetId, AssetKind, ChangeSet, CollectionScopeId, CoverageState, InventoryBuilder, InventoryError,
-    InventoryLimits, InventorySnapshot,
+    Asset, AssetId, AssetKind, ChangeSet, CollectionScopeId, CoverageState, InventoryBuilder,
+    InventoryError, InventoryLimits, InventorySnapshot,
 };
 use std::collections::BTreeSet;
 
@@ -121,10 +121,7 @@ fn diff_golden_vectors_retain_tentative_absence_under_partial_coverage() {
     assert_eq!(old.diff(&partial), expected_diff(false));
 
     // BTreeMap insertion order is not part of the public ChangeSet contract.
-    assert_eq!(
-        old.diff(&snapshot(false, true, true)),
-        expected_diff(true)
-    );
+    assert_eq!(old.diff(&snapshot(false, true, true)), expected_diff(true));
     assert_eq!(
         old.diff(&snapshot(false, false, true)),
         expected_diff(false)
