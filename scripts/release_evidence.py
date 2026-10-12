@@ -41,35 +41,94 @@ class BoundedDecompressedStream:
         return data
 
 
-def verify_tar_terminator(archive: Path, end_offset: int) -> None:
-    """Require the two zero-block terminator at the parser's last valid offset.
+def audit_physical_tar_layout(archive: Path, expected_members: int) -> None:
+    """Independently validate physical headers hidden by tarfile's PAX layer.
 
-    Python's tarfile can silently treat a malformed *later* header as EOF.
-    A bounded second pass distinguishes genuine termination from corrupted
-    trailing headers, without extracting files or trusting tarfile EOF.
+    The high-level iterator may swallow malformed noninitial members or PAX
+    overrides. This bounded second pass checks every physical TAR record,
+    rejects size/link overrides, and compares the physical regular/directory
+    member count to records actually yielded by the parser.
     """
+    def exact(stream: BoundedDecompressedStream, size: int) -> bytes:
+        data = bytearray()
+        while len(data) < size:
+            chunk = stream.read(min(65536, size - len(data)))
+            if not chunk:
+                raise ValueError("truncated physical tar stream")
+            data.extend(chunk)
+        return bytes(data)
+
+    def octal(field: bytes) -> int:
+        if field and field[0] & 0x80:
+            raise ValueError("unsupported binary tar size")
+        raw = field.strip(b" \\x00")
+        if not raw or any(byte not in b"01234567" for byte in raw):
+            raise ValueError("malformed tar numeric field")
+        return int(raw, 8)
+
+    def reject_pax_unsafe(payload: bytes) -> None:
+        pos = 0
+        while pos < len(payload):
+            space = payload.find(b" ", pos)
+            if space <= pos:
+                raise ValueError("invalid PAX record")
+            digits = payload[pos:space]
+            if not digits.isdigit() or len(digits) > 9:
+                raise ValueError("invalid PAX record size")
+            length = int(digits)
+            record = payload[pos:pos + length]
+            if length <= space - pos + 3 or len(record) != length or not record.endswith(b"\n"):
+                raise ValueError("invalid PAX record length")
+            attribute = record[space - pos + 1:].split(b"=", 1)[0]
+            if attribute in (b"size", b"linkpath") or attribute.startswith(b"GNU.sparse"):
+                raise ValueError("unsafe PAX size/link override")
+            pos += length
+
     with archive.open("rb") as raw, gzip.GzipFile(fileobj=raw) as uncompressed:
         stream = BoundedDecompressedStream(uncompressed, MAX_TAR_STREAM)
-        remaining = end_offset
-        while remaining:
-            chunk = stream.read(min(65536, remaining))
-            if not chunk:
-                raise ValueError("truncated tar member contents")
-            remaining -= len(chunk)
-        terminator = bytearray()
-        while len(terminator) < 1024:
-            chunk = stream.read(1024 - len(terminator))
-            if not chunk:
-                break
-            terminator.extend(chunk)
-        if len(terminator) != 1024 or any(terminator):
-            raise ValueError("missing canonical tar terminator")
+        count = 0
+        pending = False
         while True:
-            chunk = stream.read(65536)
-            if not chunk:
+            header = exact(stream, 512)
+            if not any(header):
+                if pending or any(exact(stream, 512)):
+                    raise ValueError("missing canonical tar terminator")
+                while True:
+                    trailing = stream.read(65536)
+                    if not trailing:
+                        break
+                    if any(trailing):
+                        raise ValueError("nonzero bytes after tar terminator")
                 break
-            if any(chunk):
-                raise ValueError("nonzero bytes after tar terminator")
+            checksum = octal(header[148:156])
+            unsigned = sum(header[:148]) + 8 * ord(" ") + sum(header[156:])
+            if checksum != unsigned:
+                raise ValueError("invalid physical tar header checksum")
+            size = octal(header[124:136])
+            if size > MAX_ARCHIVE:
+                raise ValueError("physical tar member exceeds byte budget")
+            flag = header[156:157]
+            if flag not in (b"0", b"\x00", b"5", b"x", b"g", b"L"):
+                raise ValueError("unsupported physical tar member type")
+            if flag in (b"0", b"\x00", b"5"):
+                count += 1
+                if count > MAX_ENTRIES:
+                    raise ValueError("physical member budget exceeded")
+                pending = False
+            elif flag in (b"x", b"L"):
+                pending = True
+            if flag in (b"x", b"g"):
+                reject_pax_unsafe(exact(stream, size))
+            else:
+                remaining = size
+                while remaining:
+                    chunk = exact(stream, min(65536, remaining))
+                    remaining -= len(chunk)
+            pad = (-size) % 512
+            if pad and any(exact(stream, pad)):
+                raise ValueError("nonzero physical tar padding")
+        if count != expected_members:
+            raise ValueError("tar parser skipped or invented members")
 
 
 def inspect(archive: Path, commit: str) -> dict:
@@ -138,10 +197,9 @@ def inspect(archive: Path, commit: str) -> dict:
                             raise ValueError("missing manifest contents")
                         manifest = tomllib.loads(stream.read().decode("utf-8"))
                     entries.append({"path": rel, "size": member.size})
-            end_offset = tar.offset
     if count == 0:
         raise ValueError("empty archive")
-    verify_tar_terminator(archive, end_offset)
+    audit_physical_tar_layout(archive, count)
     if not REQUIRED <= files or manifest is None:
         raise ValueError("missing release-critical package files")
     pkg = manifest.get("package", {})
