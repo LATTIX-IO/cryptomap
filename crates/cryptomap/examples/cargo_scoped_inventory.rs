@@ -133,9 +133,13 @@ pub fn collect_cargo(
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args_os().skip(1);
-    let (Some(root), Some(timestamp), Some(scope_id), Some(run_prefix), None) =
-        (args.next(), args.next(), args.next(), args.next(), args.next())
-    else {
+    let (Some(root), Some(timestamp), Some(scope_id), Some(run_prefix), None) = (
+        args.next(),
+        args.next(),
+        args.next(),
+        args.next(),
+        args.next(),
+    ) else {
         return Err(
             "usage: cargo_scoped_inventory <explicit-directory> <RFC3339-timestamp> <tenant-scope-id> <unique-run-prefix>".into(),
         );
@@ -144,7 +148,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .to_str()
         .ok_or("timestamp must be valid UTF-8 RFC3339")?;
     let scope_id = scope_id.to_str().ok_or("scope ID must be valid UTF-8")?;
-    let run_prefix = run_prefix.to_str().ok_or("run prefix must be valid UTF-8")?;
+    let run_prefix = run_prefix
+        .to_str()
+        .ok_or("run prefix must be valid UTF-8")?;
     let snapshot = collect_cargo(Path::new(&root), timestamp, scope_id, run_prefix)?;
     let libraries = snapshot
         .query_assets(|asset| matches!(asset.kind, AssetKind::Library { .. }))
@@ -168,8 +174,20 @@ mod tests {
     #[test]
     fn packaged_fixture_produces_verified_source_bound_inventory() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixtures/cargo");
-        let a = collect_cargo(&root, "2026-10-12T12:00:00Z", "fixture-scope", "fixture-run").unwrap();
-        let b = collect_cargo(&root, "2026-10-12T12:00:00Z", "fixture-scope", "fixture-run").unwrap();
+        let a = collect_cargo(
+            &root,
+            "2026-10-12T12:00:00Z",
+            "fixture-scope",
+            "fixture-run",
+        )
+        .unwrap();
+        let b = collect_cargo(
+            &root,
+            "2026-10-12T12:00:00Z",
+            "fixture-scope",
+            "fixture-run",
+        )
+        .unwrap();
         assert_eq!(a, b);
         assert_eq!(a.relationships.len(), 1);
         assert_eq!(a.coverage_records.len(), 2);
@@ -197,9 +215,14 @@ mod tests {
         assert_ne!(a.id, b.id);
         let a_scope = CollectionScopeId::new("tenant-a").unwrap();
         let b_scope = CollectionScopeId::new("tenant-b").unwrap();
-        a.verify_for_scope(&a_scope, InventoryLimits::default()).unwrap();
-        b.verify_for_scope(&b_scope, InventoryLimits::default()).unwrap();
-        assert!(a.verify_for_scope(&b_scope, InventoryLimits::default()).is_err());
+        a.verify_for_scope(&a_scope, InventoryLimits::default())
+            .unwrap();
+        b.verify_for_scope(&b_scope, InventoryLimits::default())
+            .unwrap();
+        assert!(
+            a.verify_for_scope(&b_scope, InventoryLimits::default())
+                .is_err()
+        );
         let c = collect_cargo(&root, "2026-10-12T12:00:00Z", "tenant-a", "run-002").unwrap();
         assert_ne!(a.id, c.id);
         assert!(collect_cargo(&root, "2026-10-12T12:00:00Z", "tenant-a", "").is_err());
@@ -210,8 +233,13 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixtures/cargo");
         assert!(collect_cargo(&root, "not-a-timestamp", "fixture-scope", "fixture-run").is_err());
         assert!(
-            collect_cargo(&root.join("missing"), "2026-10-12T12:00:00Z", "fixture-scope", "fixture-run")
-                .is_err()
+            collect_cargo(
+                &root.join("missing"),
+                "2026-10-12T12:00:00Z",
+                "fixture-scope",
+                "fixture-run"
+            )
+            .is_err()
         );
     }
 }
