@@ -879,7 +879,6 @@ fn authorized_stream_digest_enforces_stricter_per_call_budget() {
     ));
 }
 
-
 #[test]
 fn generation_handoff_keeps_checkpoint_and_snapshot_in_one_immutable_view() {
     use cryptomap::collectors::dependency::npm_generation::NpmGenerationStore;
@@ -978,10 +977,13 @@ fn generation_handoff_rejects_tampering_cross_tenant_and_ungranted_sources() {
         Err(NpmReconciliationError::UnboundEvidence)
     );
     let mut poisoned = projected.clone();
-    poisoned.assets.values_mut().next().unwrap().extensions.insert(
-        "invalid:cache".to_owned(),
-        "poisoned".to_owned(),
-    );
+    poisoned
+        .assets
+        .values_mut()
+        .next()
+        .unwrap()
+        .extensions
+        .insert("invalid:cache".to_owned(), "poisoned".to_owned());
     assert_eq!(
         publish(checkpoint.clone(), poisoned, &scope),
         Err(NpmReconciliationError::UnboundEvidence)
