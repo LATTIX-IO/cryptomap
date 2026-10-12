@@ -31,8 +31,8 @@ struct Fixture(PathBuf);
 impl Fixture {
     fn new(manifest: &str, lock: &str) -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir()
-            .join(format!("cryptomap-transitive-{}-{id}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("cryptomap-transitive-{}-{id}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("package.json"), manifest).unwrap();
         fs::write(path.join("package-lock.json"), lock).unwrap();
@@ -41,18 +41,34 @@ impl Fixture {
     fn scope(&self, tenant: &str, manifest: bool, lock: bool, bytes: usize) -> CollectionScope {
         let mut scope = CollectionScope::new(CollectionScopeId::new(tenant).unwrap());
         if manifest {
-            scope.grant_file(RawSourceKind::Dependency, "npm:manifest", &self.0, "package.json", bytes)
+            scope
+                .grant_file(
+                    RawSourceKind::Dependency,
+                    "npm:manifest",
+                    &self.0,
+                    "package.json",
+                    bytes,
+                )
                 .unwrap();
         }
         if lock {
-            scope.grant_file(RawSourceKind::Dependency, "npm:lock", &self.0, "package-lock.json", bytes)
+            scope
+                .grant_file(
+                    RawSourceKind::Dependency,
+                    "npm:lock",
+                    &self.0,
+                    "package-lock.json",
+                    bytes,
+                )
                 .unwrap();
         }
         scope
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 fn proof(scope: &CollectionScope) -> Result<NpmTransitiveProof, NpmReconciliationError> {
     resolve_npm_transitive(scope, "npm:manifest", "npm:lock", RawLimits::default())
@@ -78,14 +94,21 @@ fn nested_and_hoisted_versions_remain_distinct_with_stable_exact_edges() {
     assert_eq!(one.lock_sha256.len(), 64);
     assert_eq!(one.nodes.len(), 5);
     assert_eq!(one.edges.len(), 4);
-    let shared: Vec<_> = one.nodes.iter().filter(|node| node.name == "shared").collect();
+    let shared: Vec<_> = one
+        .nodes
+        .iter()
+        .filter(|node| node.name == "shared")
+        .collect();
     assert_eq!(shared.len(), 2);
     assert_eq!(shared[0].path, "node_modules/b/node_modules/shared");
     assert_eq!(shared[0].version, "2.0.0");
     assert_eq!(shared[1].path, "node_modules/shared");
     assert_eq!(shared[1].version, "1.0.0");
-    let edges: std::collections::BTreeSet<_> = one.edges.iter()
-        .map(|edge| (edge.from_path.as_str(), edge.to_path.as_str())).collect();
+    let edges: std::collections::BTreeSet<_> = one
+        .edges
+        .iter()
+        .map(|edge| (edge.from_path.as_str(), edge.to_path.as_str()))
+        .collect();
     assert!(edges.contains(&("node_modules/a", "node_modules/shared")));
     assert!(edges.contains(&("node_modules/b", "node_modules/b/node_modules/shared")));
     assert!(edges.contains(&("npm:root", "node_modules/a")));
@@ -103,10 +126,16 @@ fn same_name_same_version_installs_retain_separate_paths() {
     let fixture = Fixture::new(MANIFEST, &lock);
     let scope = fixture.scope("tenant-a", true, true, 8192);
     let graph = proof(&scope).unwrap();
-    assert_eq!(graph.nodes.iter().filter(|node| node.name == "shared").count(), 2);
+    assert_eq!(
+        graph
+            .nodes
+            .iter()
+            .filter(|node| node.name == "shared")
+            .count(),
+        2
+    );
     assert!(graph.edges.iter().any(|edge| {
-        edge.from_path == "node_modules/b"
-            && edge.to_path == "node_modules/b/node_modules/shared"
+        edge.from_path == "node_modules/b" && edge.to_path == "node_modules/b/node_modules/shared"
     }));
 }
 
@@ -115,16 +144,25 @@ fn file_grants_and_resource_budgets_are_enforced_before_proof() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     for (manifest, lock) in [(false, true), (true, false), (false, false)] {
         let scope = fixture.scope("tenant-a", manifest, lock, 8192);
-        assert_eq!(proof(&scope), Err(NpmReconciliationError::UnauthorizedSource));
+        assert_eq!(
+            proof(&scope),
+            Err(NpmReconciliationError::UnauthorizedSource)
+        );
     }
     let scope = fixture.scope("tenant-a", true, true, 12);
-    assert_eq!(proof(&scope), Err(NpmReconciliationError::UnauthorizedSource));
+    assert_eq!(
+        proof(&scope),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
     let scope = fixture.scope("tenant-a", true, true, 8192);
     assert_eq!(
         resolve_npm_transitive(&scope, "npm:manifest", "npm:manifest", RawLimits::default()),
         Err(NpmReconciliationError::InvalidSource)
     );
-    let quota = RawLimits { observations: 4, ..RawLimits::default() };
+    let quota = RawLimits {
+        observations: 4,
+        ..RawLimits::default()
+    };
     assert!(resolve_npm_transitive(&scope, "npm:manifest", "npm:lock", quota).is_err());
     let bytes = RawLimits {
         total_bytes: MANIFEST.len() + LOCK.len() - 1,
@@ -164,8 +202,7 @@ fn unresolved_versions_unsupported_roles_and_orphans_fail_closed() {
             serde_json::json!({"missing":"1.0.0"});
     }));
     is_rejected(&changed_lock(|json| {
-        json["packages"]["node_modules/orphan"] =
-            serde_json::json!({"version":"1.0.0"});
+        json["packages"]["node_modules/orphan"] = serde_json::json!({"version":"1.0.0"});
     }));
     is_rejected(&changed_lock(|json| {
         json["packages"]["node_modules/a"]["dependencies"]["shared"] = "^1.0.0".into();
@@ -182,14 +219,17 @@ fn reachable_cycle_is_detected_without_recursion_or_hanging() {
     }}"#;
     let fixture = Fixture::new(manifest, lock);
     let scope = fixture.scope("tenant-a", true, true, 8192);
-    assert_eq!(proof(&scope), Err(NpmReconciliationError::UnsupportedProfile));
+    assert_eq!(
+        proof(&scope),
+        Err(NpmReconciliationError::UnsupportedProfile)
+    );
 }
 
 #[test]
 fn duplicate_json_keys_and_invalid_nested_structure_are_rejected() {
     let duplicate = LOCK.replace(
         "\"node_modules/shared\":{\"version\":\"1.0.0\"",
-        "\"node_modules/shared\":{\"version\":\"1.0.0\",\"version\":\"2.0.0\""
+        "\"node_modules/shared\":{\"version\":\"1.0.0\",\"version\":\"2.0.0\"",
     );
     assert_ne!(duplicate, LOCK);
     is_rejected(&duplicate);
