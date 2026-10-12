@@ -852,3 +852,29 @@ fn incremental_plan_rejects_cache_poisoning_tenant_mismatch_and_missing_grants()
         Err(NpmReconciliationError::ResourceLimit)
     );
 }
+
+#[test]
+fn authorized_stream_digest_enforces_stricter_per_call_budget() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let manifest = scope
+        .open_file(RawSourceKind::Dependency, "npm:manifest")
+        .unwrap();
+    let (sha, bytes) = manifest.sha256_bounded(MANIFEST.len()).unwrap();
+    assert_eq!(bytes, MANIFEST.len());
+    assert_eq!(sha.len(), 64);
+    assert!(matches!(
+        manifest.sha256_bounded(MANIFEST.len() - 1),
+        Err(cryptomap::scope::ScopeError::ResourceLimit)
+    ));
+    let lock = scope
+        .open_file(RawSourceKind::Dependency, "npm:lock")
+        .unwrap();
+    let (sha, bytes) = lock.sha256_bounded(LOCK.len()).unwrap();
+    assert_eq!(bytes, LOCK.len());
+    assert_eq!(sha.len(), 64);
+    assert!(matches!(
+        lock.sha256_bounded(1),
+        Err(cryptomap::scope::ScopeError::ResourceLimit)
+    ));
+}
