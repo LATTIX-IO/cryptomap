@@ -1748,3 +1748,78 @@ fn bounded_generation_io_failures_do_not_publish_or_authorize_sources() {
     );
     assert!(target.current().unwrap().is_none());
 }
+
+
+#[test]
+fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
+        npm_generation_frame::{restore_framed_npm_generation_pinned, write_framed_npm_generation},
+    };
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &snapshot,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), checkpoint.fingerprint.clone()).unwrap();
+    let seed = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let original = seed
+        .publish(
+            checkpoint.clone(),
+            snapshot.clone(),
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    let mut framed = Vec::new();
+    let size = write_framed_npm_generation(&original, &mut framed, 256 * 1024).unwrap();
+    assert_eq!(size, framed.len());
+    let limits = NpmRecoveryLimits {
+        max_bytes: 256 * 1024,
+        raw: RawLimits::default(),
+        inventory: InventoryLimits::default(),
+    };
+    let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let denied = fixture.scope("tenant-a", false, "npm:lock");
+    assert_eq!(
+        restore_framed_npm_generation_pinned(
+            &target, &mut std::io::Cursor::new(&framed), &anchor, &denied, None, limits,
+        ),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
+    assert!(target.current().unwrap().is_none());
+    let mut damaged = framed.clone();
+    damaged[16] ^= 0x80;
+    assert_eq!(
+        restore_framed_npm_generation_pinned(
+            &target, &mut std::io::Cursor::new(damaged), &anchor, &scope, None, limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(target.current().unwrap().is_none());
+    let restored = restore_framed_npm_generation_pinned(
+        &target, &mut std::io::Cursor::new(&framed), &anchor, &scope, None, limits,
+    )
+    .unwrap();
+    assert_eq!(restored.snapshot(), &snapshot);
+    assert_eq!(restored.checkpoint(), &checkpoint);
+    assert_eq!(restored.sequence(), 1);
+    assert_eq!(
+        restore_framed_npm_generation_pinned(
+            &target, &mut std::io::Cursor::new(&framed), &anchor, &scope, None, limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(target.current().unwrap().unwrap().sequence(), 1);
+}
