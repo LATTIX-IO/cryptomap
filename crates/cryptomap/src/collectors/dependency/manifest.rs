@@ -8,7 +8,11 @@ use crate::{
     scope::CollectionScope,
 };
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+};
 
 use super::cargo::{LockedPackage, parse_lock, quoted};
 
@@ -102,6 +106,28 @@ fn exact_numeric_version(version: &str) -> bool {
     }) && components.next().is_none()
 }
 
+// Supported optional rust-version profile: 1.MINOR or 1.MINOR.PATCH only.
+// Reject pre-release, ranges, leading zeroes and integers outside u64.
+fn supported_rust_version(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("1.") else {
+        return false;
+    };
+    fn component(value: &str) -> bool {
+        !value.is_empty()
+            && (value.len() == 1 || !value.starts_with('0'))
+            && value.bytes().all(|byte| byte.is_ascii_digit())
+            && value.parse::<u64>().is_ok()
+    }
+    let mut parts = rest.split('.');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(minor), None, None) => component(minor),
+        (Some(minor), Some(patch), None) => component(minor) && component(patch),
+        _ => false,
+    }
+}
+
+/// Parse the conservative Cargo.toml profile with fail-closed extensions.
+/// Optional package metadata never alters dependency identity or evidence.
 pub(super) fn parse_manifest(
     input: &[u8],
     limits: RawLimits,
@@ -115,6 +141,7 @@ pub(super) fn parse_manifest(
     let mut section = Section::None;
     let mut seen_package = false;
     let mut seen_dependencies = false;
+    let mut seen_metadata = BTreeSet::new();
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -140,6 +167,14 @@ pub(super) fn parse_manifest(
         let (key, value) = line.split_once('=').ok_or(InvalidSource)?;
         let key = key.trim();
         let value = value.trim();
+        // Cargo's optional publish flag is a literal boolean; it is metadata,
+        // not a dependency signal. Reject both duplicate and non-boolean forms.
+        if matches!(section, Section::Package) && key == "publish" {
+            if !seen_metadata.insert(key.to_owned()) || !matches!(value, "true" | "false") {
+                return Err(UnsupportedProfile);
+            }
+            continue;
+        }
         let decoded = quoted(value, limits.field_bytes).map_err(|_| UnsupportedProfile)?;
         match section {
             Section::None => return Err(UnsupportedProfile),
@@ -150,6 +185,11 @@ pub(super) fn parse_manifest(
                 "version" if manifest.root_version.is_none() && exact_numeric_version(decoded) => {
                     manifest.root_version = Some(decoded.to_owned());
                 }
+                "edition"
+                    if matches!(decoded, "2015" | "2018" | "2021" | "2024")
+                        && seen_metadata.insert(key.to_owned()) => {}
+                "rust-version"
+                    if supported_rust_version(decoded) && seen_metadata.insert(key.to_owned()) => {}
                 _ => return Err(UnsupportedProfile),
             },
             Section::Dependencies => {
@@ -305,6 +345,77 @@ mod tests {
         assert_eq!(result.direct.len(), 1);
         assert_eq!(result.direct[0].name, "ring");
         assert_eq!(result.direct[0].version, "0.17.12");
+    }
+
+    #[test]
+    fn optional_cargo_package_metadata_does_not_change_dependency_proof() {
+        let base = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
+        let enriched = b"[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.85.0\"\npublish = false\n[dependencies]\nring = \"=0.17.12\"\n";
+        let actual = parse_manifest(enriched, RawLimits::default()).unwrap();
+        assert_eq!(actual.root_name, base.root_name);
+        assert_eq!(actual.root_version, base.root_version);
+        assert_eq!(actual.direct, base.direct);
+        let locked = parse_lock(LOCK, RawLimits::default()).unwrap();
+        let proof = prove_direct(actual, &locked, "manifest".into(), "lock".into()).unwrap();
+        assert_eq!(proof.direct.len(), 1);
+        assert_eq!(proof.direct[0].name, "ring");
+        assert_eq!(proof.direct[0].version, "0.17.12");
+        // Absent optional metadata, earlier source semantics remain unchanged.
+        assert_eq!(
+            prove_direct(base, &locked, "manifest".into(), "lock".into())
+                .unwrap()
+                .direct,
+            proof.direct
+        );
+    }
+
+    #[test]
+    fn cargo_metadata_profile_rejects_duplicates_wrong_types_and_unsupported_extensions() {
+        const PRE: &str = "[package]\nname = \"app\"\nversion = \"0.1.0\"\n";
+        const POST: &str = "[dependencies]\nring = \"=0.17.12\"\n";
+        for declaration in [
+            "edition = \"1999\"\n",
+            "edition = \"2027\"\n",
+            "edition = 2024\n",
+            "edition = \"2024\"\nedition = \"2021\"\n",
+            "rust-version = \"1\"\n",
+            "rust-version = \"2.85\"\n",
+            "rust-version = \"1.085\"\n",
+            "rust-version = \"1.85.00\"\n",
+            "rust-version = \"1.85.0-preview\"\n",
+            "rust-version = \"1.85.0.0\"\n",
+            "rust-version = \"1.18446744073709551616\"\n",
+            "rust-version = \"1.85\"\nrust-version = \"1.85.0\"\n",
+            "publish = [\"private\"]\n",
+            "publish = \"false\"\n",
+            "publish = false\npublish = true\n",
+            "edition = \"2024\" # ignored comment\n",
+            "authors = [\"Example\"]\n",
+        ] {
+            let input = format!("{PRE}{declaration}{POST}");
+            assert!(
+                parse_manifest(input.as_bytes(), RawLimits::default()).is_err(),
+                "unsupported metadata must not prove a dependency: {declaration:?}"
+            );
+        }
+        for (edition, rust_version, publish) in [
+            ("2015", "1.0", "true"),
+            ("2018", "1.56", "false"),
+            ("2021", "1.85.0", "false"),
+            ("2024", "1.85", "true"),
+        ] {
+            let input = format!(
+                "{PRE}edition = \"{edition}\"\nrust-version = \"{rust_version}\"\npublish = {publish}\n{POST}"
+            );
+            let parsed = parse_manifest(input.as_bytes(), RawLimits::default()).unwrap();
+            assert_eq!(parsed.direct["ring"], "0.17.12");
+        }
+        // Cargo optional and target-specific dependency profiles still fail
+        // instead of being silently projected as unconditional runtime use.
+        let optional = format!(
+            "{PRE}edition = \"2024\"\n{POST}[target.'cfg(unix)'.dependencies]\nother = \"=1.0.0\"\n"
+        );
+        assert!(parse_manifest(optional.as_bytes(), RawLimits::default()).is_err());
     }
 
     #[test]
