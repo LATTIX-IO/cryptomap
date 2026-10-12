@@ -4,10 +4,11 @@
 //! substitute for reauthorizing sources and revalidating the canonical graph.
 use super::{
     npm_installation_projection::project_npm_transitive_edges,
-    npm_manifest::NpmReconciliationError,
-    npm_transitive::resolve_npm_transitive,
+    npm_manifest::NpmReconciliationError, npm_transitive::resolve_npm_transitive,
 };
-use crate::{InventoryLimits, InventorySnapshot, SnapshotId, raw::RawLimits, scope::CollectionScope};
+use crate::{
+    InventoryLimits, InventorySnapshot, SnapshotId, raw::RawLimits, scope::CollectionScope,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -77,7 +78,12 @@ pub fn checkpoint_npm_projection(
         .verify_for_scope(scope.id(), inventory_limits)
         .map_err(|_| UnboundEvidence)?;
     let projected = project_npm_transitive_edges(
-        snapshot, scope, manifest_item, lock_item, raw_limits, inventory_limits,
+        snapshot,
+        scope,
+        manifest_item,
+        lock_item,
+        raw_limits,
+        inventory_limits,
     )?;
     if projected != *snapshot {
         return Err(UnboundEvidence);
@@ -85,8 +91,12 @@ pub fn checkpoint_npm_projection(
     let proof = resolve_npm_transitive(scope, manifest_item, lock_item, raw_limits)?;
     let tenant = scope.id().as_str().to_owned();
     let fingerprint = fingerprint(
-        &tenant, manifest_item, lock_item, &snapshot.id,
-        &proof.manifest_sha256, &proof.lock_sha256,
+        &tenant,
+        manifest_item,
+        lock_item,
+        &snapshot.id,
+        &proof.manifest_sha256,
+        &proof.lock_sha256,
     )?;
     Ok(NpmProjectionCheckpoint {
         version: 1,
@@ -116,20 +126,25 @@ pub fn verify_npm_checkpoint(
     use NpmReconciliationError::UnboundEvidence;
     if checkpoint.version != 1
         || checkpoint.scope != scope.id().as_str()
-        || checkpoint.fingerprint != fingerprint(
-            &checkpoint.scope,
-            &checkpoint.manifest_item,
-            &checkpoint.lock_item,
-            &checkpoint.snapshot_id,
-            &checkpoint.manifest_sha256,
-            &checkpoint.lock_sha256,
-        )?
+        || checkpoint.fingerprint
+            != fingerprint(
+                &checkpoint.scope,
+                &checkpoint.manifest_item,
+                &checkpoint.lock_item,
+                &checkpoint.snapshot_id,
+                &checkpoint.manifest_sha256,
+                &checkpoint.lock_sha256,
+            )?
     {
         return Err(UnboundEvidence);
     }
     let fresh = checkpoint_npm_projection(
-        snapshot, scope, &checkpoint.manifest_item, &checkpoint.lock_item,
-        raw_limits, inventory_limits,
+        snapshot,
+        scope,
+        &checkpoint.manifest_item,
+        &checkpoint.lock_item,
+        raw_limits,
+        inventory_limits,
     )?;
     if &fresh != checkpoint {
         return Err(UnboundEvidence);
