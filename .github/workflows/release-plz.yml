@@ -13,7 +13,7 @@ jobs:
   release-plz-release:
     name: Release-plz release
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'LATTIX-IO' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.repository_owner == 'LATTIX-IO' && github.ref == 'refs/heads/main' && vars.CRYPTOMAP_RELEASE_ENABLED == 'true' }}
 
     permissions:
       contents: write
