@@ -59,7 +59,9 @@ pub fn read_framed_npm_generation<R: Read>(
         return Err(ResourceLimit);
     }
     let mut header = [0u8; HEADER_LEN];
-    reader.read_exact(&mut header).map_err(|_| UnboundEvidence)?;
+    reader
+        .read_exact(&mut header)
+        .map_err(|_| UnboundEvidence)?;
     if &header[..MAGIC.len()] != MAGIC {
         return Err(UnboundEvidence);
     }
@@ -113,7 +115,10 @@ mod tests {
     #[test]
     fn framing_detects_truncation_tampering_unknown_magic_and_trailing_bytes() {
         let input = frame(b"{}");
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(&input), 2).unwrap(), b"{}");
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(&input), 2).unwrap(),
+            b"{}"
+        );
         assert_eq!(read_framed_npm_generation(&mut Cursor::new(&input), 1), Err(NpmReconciliationError::ResourceLimit));
         assert_eq!(read_framed_npm_generation(&mut Cursor::new(&input), 0), Err(NpmReconciliationError::ResourceLimit));
         for i in 0..input.len() {
@@ -130,10 +135,16 @@ mod tests {
         assert_eq!(read_framed_npm_generation(&mut Cursor::new(modified), 10), Err(NpmReconciliationError::UnboundEvidence));
         let mut modified = input.clone();
         modified[8..16].copy_from_slice(&u64::MAX.to_be_bytes());
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(modified), 10), Err(NpmReconciliationError::ResourceLimit));
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(modified), 10),
+            Err(NpmReconciliationError::ResourceLimit)
+        );
         let mut modified = input.clone();
         modified[8..16].copy_from_slice(&0_u64.to_be_bytes());
-        assert_eq!(read_framed_npm_generation(&mut Cursor::new(modified), 10), Err(NpmReconciliationError::ResourceLimit));
+        assert_eq!(
+            read_framed_npm_generation(&mut Cursor::new(modified), 10),
+            Err(NpmReconciliationError::ResourceLimit)
+        );
     }
 
     struct BrokenReader;
@@ -145,6 +156,9 @@ mod tests {
 
     #[test]
     fn failed_stream_reads_fail_closed() {
-        assert_eq!(read_framed_npm_generation(&mut BrokenReader, 100), Err(NpmReconciliationError::UnboundEvidence));
+        assert_eq!(
+            read_framed_npm_generation(&mut BrokenReader, 100),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
     }
 }
