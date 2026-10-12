@@ -4,9 +4,10 @@
 #![allow(clippy::unwrap_used)]
 
 use cryptomap::{
-    Asset, AssetId, AssetKind, CollectionScopeId, CoverageState, InventoryBuilder, InventoryError,
+    Asset, AssetId, AssetKind, ChangeSet, CollectionScopeId, CoverageState, InventoryBuilder, InventoryError,
     InventoryLimits, InventorySnapshot,
 };
+use std::collections::BTreeSet;
 
 fn library(id: &str, name: &str, version: &str) -> Asset {
     Asset {
@@ -68,33 +69,66 @@ fn schema_v2_snapshot_sha256_vectors_are_frozen() {
     assert_eq!(baseline, imported);
 }
 
+/// Specify every ChangeSet field to detect silent addition/omission of
+/// observations, evidence, conflicts or coverage changes in the release API.
+fn expected_diff(confirmed: bool) -> ChangeSet {
+    let gone = AssetId::new("lib-aes").unwrap();
+    ChangeSet {
+        added: BTreeSet::new(),
+        removed: if confirmed {
+            BTreeSet::from([gone.clone()])
+        } else {
+            BTreeSet::new()
+        },
+        changed: BTreeSet::new(),
+        unchanged: BTreeSet::from([AssetId::new("lib-ring").unwrap()]),
+        tentative_removed: if confirmed {
+            BTreeSet::new()
+        } else {
+            BTreeSet::from([gone])
+        },
+        observations_added: BTreeSet::new(),
+        observations_removed: BTreeSet::new(),
+        observations_tentative_removed: BTreeSet::new(),
+        observations_changed: BTreeSet::new(),
+        evidence_added: BTreeSet::new(),
+        evidence_removed: BTreeSet::new(),
+        evidence_tentative_removed: BTreeSet::new(),
+        confidence_changed: BTreeSet::new(),
+        relationships_added: BTreeSet::new(),
+        relationships_removed: BTreeSet::new(),
+        relationships_tentative_removed: BTreeSet::new(),
+        relationships_changed: BTreeSet::new(),
+        conflicts_changed: BTreeSet::new(),
+        coverage_changed: if confirmed {
+            BTreeSet::new()
+        } else {
+            BTreeSet::from(["source:b".to_owned()])
+        },
+        conflicts_introduced: BTreeSet::new(),
+        conflicts_resolved: BTreeSet::new(),
+        conflicts_tentative_resolved: BTreeSet::new(),
+    }
+}
+
 #[test]
 fn diff_golden_vectors_retain_tentative_absence_under_partial_coverage() {
     let old = snapshot(true, true, false);
     let fully_inspected = snapshot(false, true, false);
     let partial = snapshot(false, false, false);
-    let gone = AssetId::new("lib-aes").unwrap();
-    let retained = AssetId::new("lib-ring").unwrap();
 
-    let complete_delta = old.diff(&fully_inspected);
-    assert_eq!(complete_delta.removed.len(), 1);
-    assert!(complete_delta.removed.contains(&gone));
-    assert!(complete_delta.tentative_removed.is_empty());
-    assert!(complete_delta.unchanged.contains(&retained));
-    assert!(complete_delta.added.is_empty());
+    assert_eq!(old.diff(&fully_inspected), expected_diff(true));
+    assert_eq!(old.diff(&partial), expected_diff(false));
 
-    let partial_delta = old.diff(&partial);
-    assert!(partial_delta.removed.is_empty());
-    assert_eq!(partial_delta.tentative_removed.len(), 1);
-    assert!(partial_delta.tentative_removed.contains(&gone));
-    assert!(partial_delta.unchanged.contains(&retained));
-    assert!(partial_delta.coverage_changed.contains("source:b"));
-
+    // BTreeMap insertion order is not part of the public ChangeSet contract.
     assert_eq!(
-        old.diff(&fully_inspected),
-        old.diff(&snapshot(false, true, true))
+        old.diff(&snapshot(false, true, true)),
+        expected_diff(true)
     );
-    assert_eq!(old.diff(&partial), old.diff(&snapshot(false, false, true)));
+    assert_eq!(
+        old.diff(&snapshot(false, false, true)),
+        expected_diff(false)
+    );
 }
 
 #[test]
