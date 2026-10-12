@@ -1842,3 +1842,129 @@ fn framed_generation_roundtrip_requires_pinned_source_and_rejects_replay() {
     );
     assert_eq!(target.current().unwrap().unwrap().sequence(), 1);
 }
+
+#[test]
+fn immutable_recovery_slot_rejects_overwrites_and_recovers_verified_generation() {
+    use cap_std::{ambient_authority, fs::Dir};
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
+        npm_generation_frame::restore_framed_npm_generation_pinned,
+        npm_generation_slot::publish_immutable_npm_generation_slot,
+    };
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let location = std::env::temp_dir().join(format!(
+        "cryptomap-foss322-slot-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&location).unwrap();
+    let dir = Dir::open_ambient_dir(&location, ambient_authority()).unwrap();
+
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &snapshot,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), checkpoint.fingerprint.clone()).unwrap();
+    let source = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let generation = source
+        .publish(
+            checkpoint.clone(),
+            snapshot.clone(),
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+
+    // Invalid path input is rejected before touching the capability.
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "../escaped", "slotA", 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageA", "stageA", 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageA", "slotA", 1),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
+    assert!(!location.join("stageA").exists());
+    assert!(!location.join("slotA").exists());
+
+    let len =
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageA", "slotA", 256 * 1024)
+            .unwrap();
+    let stored = std::fs::read(location.join("slotA")).unwrap();
+    assert_eq!(stored.len(), len);
+    assert!(!location.join("stageA").exists());
+
+    // A second legitimate publication cannot replace the existing slot.
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageB", "slotA", 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(std::fs::read(location.join("slotA")).unwrap(), stored);
+    assert!(!location.join("stageB").exists());
+
+    // Even a preexisting destination outside the library's format cannot be
+    // overwritten; it is not trusted as a generation.
+    std::fs::write(location.join("occupied"), b"sentinel").unwrap();
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageC", "occupied", 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(
+        std::fs::read(location.join("occupied")).unwrap(),
+        b"sentinel"
+    );
+    assert!(!location.join("stageC").exists());
+
+    // A stage-name collision fails before any write or unlink of the
+    // existing file. Other storage tenants cannot be silently overwritten.
+    std::fs::write(location.join("stageD"), b"occupied-stage").unwrap();
+    assert_eq!(
+        publish_immutable_npm_generation_slot(&dir, &generation, "stageD", "slotB", 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(
+        std::fs::read(location.join("stageD")).unwrap(),
+        b"occupied-stage"
+    );
+    assert!(!location.join("slotB").exists());
+
+    let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let limits = NpmRecoveryLimits {
+        max_bytes: 256 * 1024,
+        raw: RawLimits::default(),
+        inventory: InventoryLimits::default(),
+    };
+    let restored = restore_framed_npm_generation_pinned(
+        &target,
+        &mut std::io::Cursor::new(stored),
+        &anchor,
+        &scope,
+        None,
+        limits,
+    )
+    .unwrap();
+    assert_eq!(restored.sequence(), 1);
+    assert_eq!(restored.snapshot(), &snapshot);
+    assert_eq!(restored.checkpoint(), &checkpoint);
+
+    drop(dir);
+    std::fs::remove_dir_all(&location).unwrap();
+}
