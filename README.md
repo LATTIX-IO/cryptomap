@@ -56,7 +56,7 @@ Linux CI additionally checks rustdoc, dependency advisories, licenses, SemVer an
 
 ## Publishing
 
-Publication is intentionally blocked in the crate manifest. The release-plz publishing job also requires an explicit `CRYPTOMAP_RELEASE_ENABLED=true` repository variable; enabling either gate independently is insufficient. Review `docs/milestone-a-release-readiness.md` before any publishing PR. No published crates.io or GitHub release is claimed.
+Publication is intentionally blocked in the crate manifest. The release-plz publishing job additionally requires a manual `workflow_dispatch` on `main` and an explicit `CRYPTOMAP_RELEASE_ENABLED=true` repository variable. Ordinary pushes cannot publish, even when the opt-in variable is enabled. Review `docs/milestone-a-release-readiness.md` before any publishing PR. No published crates.io or GitHub release is claimed.
 
 ## License
 
