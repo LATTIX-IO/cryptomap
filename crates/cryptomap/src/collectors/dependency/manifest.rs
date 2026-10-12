@@ -126,6 +126,22 @@ fn supported_rust_version(value: &str) -> bool {
     }
 }
 
+// Support only the semantically equivalent, version-only Cargo inline table:
+// dependency = { version = "=MAJOR.MINOR.PATCH" }.
+// No features, alias, optional/dev, git/path, workspace or target semantics.
+fn inline_exact_version(value: &str, max_bytes: usize) -> Result<&str, CargoReconciliationError> {
+    use CargoReconciliationError::UnsupportedProfile;
+    let inner = value
+        .strip_prefix('{')
+        .and_then(|rest| rest.strip_suffix('}'))
+        .ok_or(UnsupportedProfile)?;
+    let (name, declaration) = inner.trim().split_once('=').ok_or(UnsupportedProfile)?;
+    if name.trim() != "version" {
+        return Err(UnsupportedProfile);
+    }
+    quoted(declaration.trim(), max_bytes).map_err(|_| UnsupportedProfile)
+}
+
 /// Parse the conservative Cargo.toml profile with fail-closed extensions.
 /// Optional package metadata never alters dependency identity or evidence.
 pub(super) fn parse_manifest(
@@ -175,7 +191,11 @@ pub(super) fn parse_manifest(
             }
             continue;
         }
-        let decoded = quoted(value, limits.field_bytes).map_err(|_| UnsupportedProfile)?;
+        let decoded = if matches!(section, Section::Dependencies) && value.starts_with('{') {
+            inline_exact_version(value, limits.field_bytes)?
+        } else {
+            quoted(value, limits.field_bytes).map_err(|_| UnsupportedProfile)?
+        };
         match section {
             Section::None => return Err(UnsupportedProfile),
             Section::Package => match key {
@@ -416,6 +436,65 @@ mod tests {
             "{PRE}edition = \"2024\"\n{POST}[target.'cfg(unix)'.dependencies]\nother = \"=1.0.0\"\n"
         );
         assert!(parse_manifest(optional.as_bytes(), RawLimits::default()).is_err());
+    }
+
+    #[test]
+    fn version_only_inline_table_proves_exactly_the_same_cargo_direct_edge() {
+        let baseline = parse_manifest(MANIFEST, RawLimits::default()).unwrap();
+        let lock = parse_lock(LOCK, RawLimits::default()).unwrap();
+        let proof = prove_direct(baseline, &lock, "manifest".into(), "lock".into()).unwrap();
+        for declaration in [
+            r#"ring = { version = "=0.17.12" }"#,
+            r#"ring={version="=0.17.12"}"#,
+            r#"ring = {version = "=0.17.12"}"#,
+        ] {
+            let input = format!(
+                "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\n{declaration}\n"
+            );
+            let parsed = parse_manifest(input.as_bytes(), RawLimits::default()).unwrap();
+            assert_eq!(parsed.direct["ring"], "0.17.12");
+            let actual = prove_direct(parsed, &lock, "manifest".into(), "lock".into()).unwrap();
+            assert_eq!(actual.direct, proof.direct);
+            assert_eq!(actual.root_name, proof.root_name);
+            assert_eq!(actual.root_version, proof.root_version);
+        }
+    }
+
+    #[test]
+    fn extended_or_ambiguous_inline_tables_never_establish_cargo_direct_links() {
+        for declaration in [
+            r#"ring = { version = "0.17.12" }"#,
+            r#"ring = { version = "^0.17.12" }"#,
+            r#"ring = { version = "=0.17" }"#,
+            r#"ring = { version = "=0.17.12", optional = true }"#,
+            r#"ring = { version = "=0.17.12", default-features = false }"#,
+            r#"ring = { version = "=0.17.12", features = ["std"] }"#,
+            r#"ring = { version = "=0.17.12", package = "alias" }"#,
+            r#"ring = { version = "=0.17.12", git = "https://example.invalid" }"#,
+            r#"ring = { version = "=0.17.12", path = "../outside" }"#,
+            r#"ring = { workspace = true }"#,
+            r#"ring = { version = "=0.17.12", version = "=0.17.12" }"#,
+            r#"ring = { version = "=0.17.12", }"#,
+            r#"ring = { version = "=0.17.12" } # ignored"#,
+            r#"ring = { version = "=0.17.12" "#,
+            r#"ring = { version = "=0.17.12" } extra"#,
+            r#"ring = { version = "=0.17.12\nother = "=1.0.0" }"#,
+            r#"ring = { version = "=18446744073709551616.0.0" }"#,
+            r#"ring = { version = "=01.2.3" }"#,
+            r#"ring = { version = "=1.2.3-preview" }"#,
+        ] {
+            let input = format!(
+                "[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\n{declaration}\n"
+            );
+            assert!(
+                parse_manifest(input.as_bytes(), RawLimits::default()).is_err(),
+                "unsupported semantics must fail closed: {declaration}"
+            );
+        }
+        let duplicate = b"[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dependencies]\nring = { version = \"=0.17.12\" }\nring = \"=0.17.12\"\n";
+        assert!(parse_manifest(duplicate, RawLimits::default()).is_err());
+        let other_section = b"[package]\nname = \"app\"\nversion = \"0.1.0\"\n[dev-dependencies]\nring = { version = \"=0.17.12\" }\n";
+        assert!(parse_manifest(other_section, RawLimits::default()).is_err());
     }
 
     #[test]
