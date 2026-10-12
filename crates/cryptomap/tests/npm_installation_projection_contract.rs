@@ -534,15 +534,24 @@ fn checkpoint_rejects_obsolete_installed_asset_even_when_new_graph_is_present() 
     let fixture = Fixture::new(MANIFEST, LOCK);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
     let valid = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
-    let mut obsolete = valid.assets.values()
-        .find(|asset| asset.extensions.get("npm:install-path")
-            .is_some_and(|path| path == "node_modules/shared"))
-        .unwrap().clone();
-    obsolete.extensions.insert(
-        "npm:install-path".into(), "node_modules/removed".into()
-    );
-    let identity = IdentityContext::new(scope.id().as_str()).unwrap()
-        .with_use_site("npm-install:v1:obsolete-fixture").unwrap();
+    let mut obsolete = valid
+        .assets
+        .values()
+        .find(|asset| {
+            asset
+                .extensions
+                .get("npm:install-path")
+                .is_some_and(|path| path == "node_modules/shared")
+        })
+        .unwrap()
+        .clone();
+    obsolete
+        .extensions
+        .insert("npm:install-path".into(), "node_modules/removed".into());
+    let identity = IdentityContext::new(scope.id().as_str())
+        .unwrap()
+        .with_use_site("npm-install:v1:obsolete-fixture")
+        .unwrap();
     obsolete.id = cryptomap::AssetId::from_kind(&obsolete.kind, &identity).unwrap();
     let mut builder = InventoryBuilder::new();
     for run in valid.runs.values() {
@@ -568,11 +577,17 @@ fn checkpoint_rejects_obsolete_installed_asset_even_when_new_graph_is_present() 
         builder.add_coverage_record(record.clone());
     }
     let stale = builder.finalize(InventoryLimits::default()).unwrap();
-    stale.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    stale
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(
         checkpoint_npm_projection(
-            &stale, &scope, "npm:manifest", "npm:lock",
-            RawLimits::default(), InventoryLimits::default()
+            &stale,
+            &scope,
+            "npm:manifest",
+            "npm:lock",
+            RawLimits::default(),
+            InventoryLimits::default()
         ),
         Err(NpmReconciliationError::UnboundEvidence)
     );
