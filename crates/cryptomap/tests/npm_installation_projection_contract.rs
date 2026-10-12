@@ -1536,3 +1536,215 @@ fn pinned_recovery_blocks_valid_older_generation_when_files_are_rolled_back() {
     assert_eq!(current.snapshot(), &new_snapshot);
     assert_eq!(current.sequence(), 1);
 }
+
+#[test]
+fn bounded_generation_io_roundtrip_revalidates_and_respects_exact_size() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
+        npm_generation_io::{
+            read_bounded_npm_generation, restore_npm_generation_pinned_from_reader,
+            write_bounded_npm_generation,
+        },
+    };
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &snapshot,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), checkpoint.fingerprint.clone()).unwrap();
+    let seed = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let source = seed
+        .publish(
+            checkpoint.clone(),
+            snapshot.clone(),
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    let mut output = Vec::new();
+    let size = write_bounded_npm_generation(&source, &mut output, 256 * 1024).unwrap();
+    assert_eq!(size, output.len());
+    assert_eq!(
+        read_bounded_npm_generation(&mut std::io::Cursor::new(&output), size).unwrap(),
+        output
+    );
+    let mut too_small = Vec::new();
+    assert_eq!(
+        write_bounded_npm_generation(&source, &mut too_small, size - 1),
+        Err(NpmReconciliationError::ResourceLimit),
+    );
+    assert!(too_small.is_empty());
+
+    let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let limits = NpmRecoveryLimits {
+        max_bytes: size,
+        raw: RawLimits::default(),
+        inventory: InventoryLimits::default(),
+    };
+    let restored = restore_npm_generation_pinned_from_reader(
+        &target,
+        &mut std::io::Cursor::new(&output),
+        &anchor,
+        &scope,
+        None,
+        limits,
+    )
+    .unwrap();
+    assert_eq!(restored.sequence(), 1);
+    assert_eq!(restored.snapshot(), &snapshot);
+    assert_eq!(restored.checkpoint(), &checkpoint);
+    assert_eq!(
+        restore_npm_generation_pinned_from_reader(
+            &target,
+            &mut std::io::Cursor::new(&output),
+            &anchor,
+            &scope,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(target.current().unwrap().unwrap().sequence(), 1);
+}
+
+#[test]
+fn bounded_generation_io_failures_do_not_publish_or_authorize_sources() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{NpmRecoveryLimits, NpmTrustedRecoveryAnchor},
+        npm_generation_io::{
+            restore_npm_generation_pinned_from_reader, write_bounded_npm_generation,
+        },
+    };
+    use std::io::{self, Read, Write};
+
+    struct FailingSink {
+        written: usize,
+    }
+    impl Write for FailingSink {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.written > 0 {
+                return Err(io::Error::other("injected write failure"));
+            }
+            let n = bytes.len().min(8);
+            self.written += n;
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &snapshot,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), checkpoint.fingerprint.clone()).unwrap();
+    let seed = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let source = seed
+        .publish(
+            checkpoint,
+            snapshot,
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    write_bounded_npm_generation(&source, &mut bytes, 256 * 1024).unwrap();
+    let mut failing = FailingSink { written: 0 };
+    assert_eq!(
+        write_bounded_npm_generation(&source, &mut failing, 256 * 1024),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(failing.written, 8);
+
+    let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let limits = NpmRecoveryLimits {
+        max_bytes: bytes.len(),
+        raw: RawLimits::default(),
+        inventory: InventoryLimits::default(),
+    };
+    struct FailedReader(bool);
+    impl Read for FailedReader {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            if self.0 {
+                return Err(io::Error::other("injected midstream read failure"));
+            }
+            self.0 = true;
+            output[0] = b'{';
+            Ok(1)
+        }
+    }
+    assert_eq!(
+        restore_npm_generation_pinned_from_reader(
+            &target,
+            &mut FailedReader(false),
+            &anchor,
+            &scope,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(target.current().unwrap().is_none());
+    let truncated = &bytes[..bytes.len() - 1];
+    assert_eq!(
+        restore_npm_generation_pinned_from_reader(
+            &target,
+            &mut std::io::Cursor::new(truncated),
+            &anchor,
+            &scope,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let mut oversized = bytes.clone();
+    oversized.push(b' ');
+    assert_eq!(
+        restore_npm_generation_pinned_from_reader(
+            &target,
+            &mut std::io::Cursor::new(&oversized),
+            &anchor,
+            &scope,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
+    let denied = fixture.scope("tenant-a", false, "npm:lock");
+    assert_eq!(
+        restore_npm_generation_pinned_from_reader(
+            &target,
+            &mut std::io::Cursor::new(&bytes),
+            &anchor,
+            &denied,
+            None,
+            limits,
+        ),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
+    assert!(target.current().unwrap().is_none());
+}
