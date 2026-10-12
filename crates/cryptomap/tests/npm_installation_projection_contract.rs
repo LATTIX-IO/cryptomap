@@ -1333,3 +1333,206 @@ fn generation_recovery_rejects_duplicate_nested_evidence_and_noncanonical_snapsh
         assert!(store.current().unwrap().is_none());
     }
 }
+
+#[test]
+fn pinned_recovery_requires_external_snapshot_and_checkpoint_anchor() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{
+            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation,
+            restore_npm_generation_pinned,
+        },
+    };
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let snapshot = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &snapshot,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    assert!(NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), "sha256:bad").is_err());
+    assert!(
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), format!("sha256:{}", "F".repeat(64)),)
+            .is_err()
+    );
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), checkpoint.fingerprint.clone()).unwrap();
+    assert_eq!(anchor.snapshot_id(), &snapshot.id);
+    assert_eq!(anchor.checkpoint_fingerprint(), checkpoint.fingerprint);
+    let seed = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let published = seed
+        .publish(
+            checkpoint,
+            snapshot.clone(),
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    let bytes = encode_npm_generation(&published, 256 * 1024).unwrap();
+    let target = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let restore = |pin: &NpmTrustedRecoveryAnchor, authorized: &CollectionScope| {
+        restore_npm_generation_pinned(
+            &target,
+            &bytes,
+            pin,
+            authorized,
+            None,
+            NpmRecoveryLimits {
+                max_bytes: bytes.len(),
+                raw: RawLimits::default(),
+                inventory: InventoryLimits::default(),
+            },
+        )
+    };
+    let forged =
+        NpmTrustedRecoveryAnchor::new(snapshot.id.clone(), format!("sha256:{}", "0".repeat(64)))
+            .unwrap();
+    assert_eq!(
+        restore(&forged, &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(target.current().unwrap().is_none());
+    assert_eq!(
+        restore(&anchor, &fixture.scope("tenant-a", false, "npm:lock")),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
+    assert!(target.current().unwrap().is_none());
+    let recovered = restore(&anchor, &scope).unwrap();
+    assert_eq!(recovered.snapshot(), &snapshot);
+    assert_eq!(
+        recovered.checkpoint().fingerprint,
+        anchor.checkpoint_fingerprint()
+    );
+    assert_eq!(recovered.sequence(), 1);
+    assert_eq!(
+        restore(&anchor, &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(std::sync::Arc::ptr_eq(
+        &recovered,
+        &target.current().unwrap().unwrap()
+    ));
+}
+
+#[test]
+fn pinned_recovery_blocks_valid_older_generation_when_files_are_rolled_back() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{
+            NpmRecoveryLimits, NpmTrustedRecoveryAnchor, encode_npm_generation,
+            restore_npm_generation, restore_npm_generation_pinned,
+        },
+    };
+    let old_fixture = Fixture::new(MANIFEST, LOCK);
+    let old_scope = old_fixture.scope("tenant-a", true, "npm:lock");
+    let old_snapshot = transitive(&collect_both(&old_scope, "npm:lock"), &old_scope).unwrap();
+    let old_checkpoint = checkpoint_npm_projection(
+        &old_snapshot,
+        &old_scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let old_seed = NpmGenerationStore::new(&old_scope, "npm:manifest", "npm:lock").unwrap();
+    let old_generation = old_seed
+        .publish(
+            old_checkpoint,
+            old_snapshot.clone(),
+            &old_scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    let old_bytes = encode_npm_generation(&old_generation, 256 * 1024).unwrap();
+
+    // A distinct legitimate generation from the same tenant/source grants:
+    // source-byte changes alter the independently evidenced canonical digest.
+    let new_fixture = Fixture::new(&format!("{MANIFEST} "), LOCK);
+    let new_scope = new_fixture.scope("tenant-a", true, "npm:lock");
+    let new_snapshot = transitive(&collect_both(&new_scope, "npm:lock"), &new_scope).unwrap();
+    assert_ne!(new_snapshot.id, old_snapshot.id);
+    let new_checkpoint = checkpoint_npm_projection(
+        &new_snapshot,
+        &new_scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let anchor =
+        NpmTrustedRecoveryAnchor::new(new_snapshot.id.clone(), new_checkpoint.fingerprint.clone())
+            .unwrap();
+    let new_seed = NpmGenerationStore::new(&new_scope, "npm:manifest", "npm:lock").unwrap();
+    let new_generation = new_seed
+        .publish(
+            new_checkpoint,
+            new_snapshot.clone(),
+            &new_scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    let new_bytes = encode_npm_generation(&new_generation, 256 * 1024).unwrap();
+
+    // The old bundle still passes ordinary integrity/source revalidation if
+    // the attacker also reverts the two source files. A trusted independent
+    // newer anchor must reject this otherwise-valid stale generation.
+    let unsafe_target = NpmGenerationStore::new(&old_scope, "npm:manifest", "npm:lock").unwrap();
+    assert!(
+        restore_npm_generation(
+            &unsafe_target,
+            &old_bytes,
+            &old_scope,
+            None,
+            256 * 1024,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .is_ok()
+    );
+    let pinned_target = NpmGenerationStore::new(&old_scope, "npm:manifest", "npm:lock").unwrap();
+    assert_eq!(
+        restore_npm_generation_pinned(
+            &pinned_target,
+            &old_bytes,
+            &anchor,
+            &old_scope,
+            None,
+            NpmRecoveryLimits {
+                max_bytes: 256 * 1024,
+                raw: RawLimits::default(),
+                inventory: InventoryLimits::default(),
+            },
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(pinned_target.current().unwrap().is_none());
+    let current_target = NpmGenerationStore::new(&new_scope, "npm:manifest", "npm:lock").unwrap();
+    let current = restore_npm_generation_pinned(
+        &current_target,
+        &new_bytes,
+        &anchor,
+        &new_scope,
+        None,
+        NpmRecoveryLimits {
+            max_bytes: 256 * 1024,
+            raw: RawLimits::default(),
+            inventory: InventoryLimits::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(current.snapshot(), &new_snapshot);
+    assert_eq!(current.sequence(), 1);
+}
