@@ -530,6 +530,55 @@ fn checkpoint_is_stable_serializable_and_revalidates_current_graph() {
 }
 
 #[test]
+fn checkpoint_rejects_obsolete_installed_asset_even_when_new_graph_is_present() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let valid = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let mut obsolete = valid.assets.values()
+        .find(|asset| asset.extensions.get("npm:install-path")
+            .is_some_and(|path| path == "node_modules/shared"))
+        .unwrap().clone();
+    obsolete.extensions.insert(
+        "npm:install-path".into(), "node_modules/removed".into()
+    );
+    let identity = IdentityContext::new(scope.id().as_str()).unwrap()
+        .with_use_site("npm-install:v1:obsolete-fixture").unwrap();
+    obsolete.id = cryptomap::AssetId::from_kind(&obsolete.kind, &identity).unwrap();
+    let mut builder = InventoryBuilder::new();
+    for run in valid.runs.values() {
+        builder.add_run(run.clone()).unwrap();
+    }
+    for asset in valid.assets.values() {
+        builder.add_asset(asset.clone()).unwrap();
+    }
+    builder.add_asset(obsolete).unwrap();
+    for evidence in valid.evidence.values() {
+        builder.add_evidence(evidence.clone()).unwrap();
+    }
+    for observation in valid.observations.values() {
+        builder.add_observation(observation.clone()).unwrap();
+    }
+    for relation in valid.relationships.values() {
+        builder.add_relationship(relation.clone()).unwrap();
+    }
+    for (item, state) in &valid.coverage {
+        builder.set_coverage(item.clone(), *state);
+    }
+    for record in &valid.coverage_records {
+        builder.add_coverage_record(record.clone());
+    }
+    let stale = builder.finalize(InventoryLimits::default()).unwrap();
+    stale.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    assert_eq!(
+        checkpoint_npm_projection(
+            &stale, &scope, "npm:manifest", "npm:lock",
+            RawLimits::default(), InventoryLimits::default()
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+}
+
+#[test]
 fn checkpoint_rejects_source_mutation_cross_tenant_and_tampering() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
