@@ -1076,8 +1076,8 @@ fn generation_handoff_concurrent_writers_are_compare_and_swap_serialized() {
         assert_eq!(live.sequence(), 1);
         assert_eq!(live.checkpoint(), &checkpoint);
         assert_eq!(live.snapshot(), &projected);
-    });}
-
+    });
+}
 
 #[test]
 fn generation_recovery_roundtrip_is_bounded_revalidated_and_deterministic() {
@@ -1114,6 +1114,7 @@ fn generation_recovery_roundtrip_is_bounded_revalidated_and_deterministic() {
     let envelope: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(envelope["version"], 1);
     assert!(envelope.get("sequence").is_none());
+    assert_eq!(
         envelope["checkpoint"]["snapshot_id"],
         serde_json::to_value(&projected.id).unwrap()
     );
@@ -1121,7 +1122,6 @@ fn generation_recovery_roundtrip_is_bounded_revalidated_and_deterministic() {
         encode_npm_generation(&published, bytes.len()).unwrap(),
         bytes
     );
-    assert_eq!(
     assert_eq!(
         encode_npm_generation(&published, bytes.len() - 1),
         Err(NpmReconciliationError::ResourceLimit),
@@ -1141,6 +1141,7 @@ fn generation_recovery_roundtrip_is_bounded_revalidated_and_deterministic() {
     assert_eq!(restored.sequence(), 1);
     assert_eq!(restored.snapshot(), &projected);
     assert_eq!(restored.checkpoint(), &checkpoint);
+    assert_eq!(
         encode_npm_generation(&restored, bytes.len()).unwrap(),
         bytes
     );
