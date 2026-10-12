@@ -212,6 +212,21 @@ pub enum AssetKind {
         /// version associated with this asset.
         version: String,
     },
+    /// One source-scoped installed dependency instance. This is distinct from
+    /// Library: identical name/version packages at different paths never merge.
+    /// A versioned identity addition; existing Library identities are unchanged.
+    InstalledDependency {
+        /// Package ecosystem (npm for this increment).
+        ecosystem: String,
+        /// Validated package name.
+        name: String,
+        /// Exact resolved package version.
+        version: String,
+        /// Exact host-approved lockfile source-item identifier.
+        source_item: String,
+        /// Canonical installation path, or npm:root for the root package.
+        installation_path: String,
+    },
     /// Runtime or cryptographic software implementation.
     Runtime {
         /// name associated with this asset.
