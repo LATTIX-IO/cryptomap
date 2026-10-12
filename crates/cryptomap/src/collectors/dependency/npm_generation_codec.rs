@@ -11,7 +11,10 @@ use crate::{
     strict_json::StrictJson,
 };
 use serde::{Deserialize, Serialize};
-use std::{io::{self, Write}, sync::Arc};
+use std::{
+    io::{self, Write},
+    sync::Arc,
+};
 
 const FORMAT_VERSION: u32 = 1;
 
@@ -132,7 +135,10 @@ mod tests {
 
     #[test]
     fn bounded_json_writer_fails_before_limit() {
-        let mut sink = BoundedJson { bytes: Vec::new(), max_bytes: 3 };
+        let mut sink = BoundedJson {
+            bytes: Vec::new(),
+            max_bytes: 3,
+        };
         assert_eq!(sink.write(b"ab").unwrap(), 2);
         assert!(sink.write(b"cd").is_err());
         assert_eq!(sink.bytes, b"ab");
