@@ -126,6 +126,22 @@ fn supported_rust_version(value: &str) -> bool {
     }
 }
 
+// Support only the semantically equivalent, version-only Cargo inline table:
+// dependency = { version = "=MAJOR.MINOR.PATCH" }.
+// No features, alias, optional/dev, git/path, workspace or target semantics.
+fn inline_exact_version(value: &str, max_bytes: usize) -> Result<&str, CargoReconciliationError> {
+    use CargoReconciliationError::UnsupportedProfile;
+    let inner = value
+        .strip_prefix('{')
+        .and_then(|rest| rest.strip_suffix('}'))
+        .ok_or(UnsupportedProfile)?;
+    let (name, declaration) = inner.trim().split_once('=').ok_or(UnsupportedProfile)?;
+    if name.trim() != "version" {
+        return Err(UnsupportedProfile);
+    }
+    quoted(declaration.trim(), max_bytes).map_err(|_| UnsupportedProfile)
+}
+
 /// Parse the conservative Cargo.toml profile with fail-closed extensions.
 /// Optional package metadata never alters dependency identity or evidence.
 pub(super) fn parse_manifest(
@@ -175,7 +191,11 @@ pub(super) fn parse_manifest(
             }
             continue;
         }
-        let decoded = quoted(value, limits.field_bytes).map_err(|_| UnsupportedProfile)?;
+        let decoded = if matches!(section, Section::Dependencies) && value.starts_with('{') {
+            inline_exact_version(value, limits.field_bytes)?
+        } else {
+            quoted(value, limits.field_bytes).map_err(|_| UnsupportedProfile)?
+        };
         match section {
             Section::None => return Err(UnsupportedProfile),
             Section::Package => match key {
