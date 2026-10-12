@@ -4,11 +4,14 @@
 //! substitute for reauthorizing sources and revalidating the canonical graph.
 use super::{
     npm_installation_projection::project_npm_transitive_edges,
-    npm_manifest::NpmReconciliationError, npm_transitive::resolve_npm_transitive,
+    npm_manifest::NpmReconciliationError,
+    npm_transitive::{NpmTransitiveProof, resolve_npm_transitive},
 };
 use crate::{
-    InventoryLimits, InventorySnapshot, SnapshotId, raw::RawLimits, scope::CollectionScope,
+    AssetId, AssetKind, InventoryLimits, InventorySnapshot, RelationshipKind, SnapshotId,
+    raw::RawLimits, scope::CollectionScope,
 };
+use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
