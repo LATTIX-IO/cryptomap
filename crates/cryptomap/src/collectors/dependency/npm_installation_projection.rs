@@ -38,15 +38,19 @@ fn path_asset(
         namespace: "cryptomap:npm-install".into(),
         kind: "installed-dependency:v1".into(),
     };
-    let id = AssetId::from_kind(&kind, &scoped)
-        .map_err(|_| NpmReconciliationError::UnboundEvidence)?;
+    let id =
+        AssetId::from_kind(&kind, &scoped).map_err(|_| NpmReconciliationError::UnboundEvidence)?;
     let extensions = BTreeMap::from([
         ("npm:install-path".into(), node.path.clone()),
         ("npm:name".into(), node.name.clone()),
         ("npm:version".into(), node.version.clone()),
         ("npm:lock-item".into(), source_item.to_owned()),
     ]);
-    Ok(Asset { id, kind, extensions })
+    Ok(Asset {
+        id,
+        kind,
+        extensions,
+    })
 }
 
 fn evidence_for_node(
@@ -63,7 +67,11 @@ fn evidence_for_node(
         version: node.version.clone(),
     };
     let library_id = AssetId::from_kind(&library, identity).map_err(|_| UnboundEvidence)?;
-    if snapshot.assets.get(&library_id).is_none_or(|asset| asset.kind != library) {
+    if snapshot
+        .assets
+        .get(&library_id)
+        .is_none_or(|asset| asset.kind != library)
+    {
         return Err(UnboundEvidence);
     }
     let event = lock_event(lock_item, &node.path, &node.version)?;
@@ -108,13 +116,16 @@ pub fn project_npm_transitive_edges(
     // Validates the snapshot, tenant ownership, independent manifest + lock
     // collection, direct root/dependency observations and successful coverage.
     let direct_snapshot = project_npm_direct_edges(
-        snapshot, scope, manifest_item, lock_item, raw_limits, inventory_limits,
+        snapshot,
+        scope,
+        manifest_item,
+        lock_item,
+        raw_limits,
+        inventory_limits,
     )?;
     let direct = reconcile_npm_direct(scope, manifest_item, lock_item, raw_limits)?;
     let graph = resolve_npm_transitive(scope, manifest_item, lock_item, raw_limits)?;
-    if direct.manifest_sha256 != graph.manifest_sha256
-        || direct.lock_sha256 != graph.lock_sha256
-    {
+    if direct.manifest_sha256 != graph.manifest_sha256 || direct.lock_sha256 != graph.lock_sha256 {
         return Err(UnboundEvidence);
     }
     let identity = IdentityContext::new(scope.id().as_str()).map_err(|_| UnboundEvidence)?;
@@ -153,23 +164,34 @@ pub fn project_npm_transitive_edges(
         }
         let id = RelationshipId::from_endpoints(RelationshipKind::DependsOn, from, to)
             .map_err(|_| UnboundEvidence)?;
-        relations.insert(id.clone(), Relationship {
-            id,
-            from: from.clone(),
-            to: to.clone(),
-            kind: RelationshipKind::DependsOn,
-            evidence: witnesses,
-        });
+        relations.insert(
+            id.clone(),
+            Relationship {
+                id,
+                from: from.clone(),
+                to: to.clone(),
+                kind: RelationshipKind::DependsOn,
+                evidence: witnesses,
+            },
+        );
     }
 
-    let added_assets = assets.keys()
+    let added_assets = assets
+        .keys()
         .filter(|id| !direct_snapshot.assets.contains_key(*id))
         .count();
-    let added_edges = relations.keys()
+    let added_edges = relations
+        .keys()
         .filter(|id| !direct_snapshot.relationships.contains_key(*id))
         .count();
-    if added_assets > inventory_limits.assets.saturating_sub(direct_snapshot.assets.len())
-        || added_edges > inventory_limits.relationships.saturating_sub(direct_snapshot.relationships.len())
+    if added_assets
+        > inventory_limits
+            .assets
+            .saturating_sub(direct_snapshot.assets.len())
+        || added_edges
+            > inventory_limits
+                .relationships
+                .saturating_sub(direct_snapshot.relationships.len())
     {
         return Err(ResourceLimit);
     }
@@ -178,16 +200,28 @@ pub fn project_npm_transitive_edges(
         builder.add_run(run.clone()).map_err(|_| UnboundEvidence)?;
     }
     for asset in direct_snapshot.assets.values().chain(assets.values()) {
-        builder.add_asset(asset.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_asset(asset.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for entry in direct_snapshot.evidence.values() {
-        builder.add_evidence(entry.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_evidence(entry.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for observation in direct_snapshot.observations.values() {
-        builder.add_observation(observation.clone()).map_err(|_| UnboundEvidence)?;
+        builder
+            .add_observation(observation.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
-    for edge in direct_snapshot.relationships.values().chain(relations.values()) {
-        builder.add_relationship(edge.clone()).map_err(|_| UnboundEvidence)?;
+    for edge in direct_snapshot
+        .relationships
+        .values()
+        .chain(relations.values())
+    {
+        builder
+            .add_relationship(edge.clone())
+            .map_err(|_| UnboundEvidence)?;
     }
     for (item, state) in &direct_snapshot.coverage {
         builder.set_coverage(item.clone(), *state);
@@ -195,7 +229,11 @@ pub fn project_npm_transitive_edges(
     for record in &direct_snapshot.coverage_records {
         builder.add_coverage_record(record.clone());
     }
-    let output = builder.finalize(inventory_limits).map_err(|_| ResourceLimit)?;
-    output.verify_for_scope(scope.id(), inventory_limits).map_err(|_| UnboundEvidence)?;
+    let output = builder
+        .finalize(inventory_limits)
+        .map_err(|_| ResourceLimit)?;
+    output
+        .verify_for_scope(scope.id(), inventory_limits)
+        .map_err(|_| UnboundEvidence)?;
     Ok(output)
 }
