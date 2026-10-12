@@ -86,9 +86,10 @@ fn matches_fresh_graph(
     }
     let mut expected_edges = BTreeSet::new();
     for edge in &proof.edges {
-        let (Some(from), Some(to)) =
-            (installed.get(edge.from_path.as_str()), installed.get(edge.to_path.as_str()))
-        else {
+        let (Some(from), Some(to)) = (
+            installed.get(edge.from_path.as_str()),
+            installed.get(edge.to_path.as_str()),
+        ) else {
             return false;
         };
         expected_edges.insert(((*from).clone(), (*to).clone()));
@@ -167,10 +168,16 @@ pub fn checkpoint_npm_projection(
     if projected != *snapshot
         || !matches_fresh_graph(snapshot, lock_item, &proof)
         || !source_hash_is_recorded(
-            snapshot, manifest_item, &proof.manifest_sha256, "cryptomap:npm-manifest",
+            snapshot,
+            manifest_item,
+            &proof.manifest_sha256,
+            "cryptomap:npm-manifest",
         )
         || !source_hash_is_recorded(
-            snapshot, lock_item, &proof.lock_sha256, "cryptomap:npm-lockfile",
+            snapshot,
+            lock_item,
+            &proof.lock_sha256,
+            "cryptomap:npm-lockfile",
         )
     {
         return Err(UnboundEvidence);
