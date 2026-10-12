@@ -1078,3 +1078,188 @@ fn generation_handoff_concurrent_writers_are_compare_and_swap_serialized() {
         assert_eq!(live.snapshot(), &projected);
     });
 }
+
+
+#[test]
+fn generation_recovery_roundtrip_is_bounded_revalidated_and_deterministic() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{encode_npm_generation, restore_npm_generation},
+    };
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected, &scope, "npm:manifest", "npm:lock",
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    let original = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let published = original.publish(
+        checkpoint.clone(), projected.clone(), &scope, None,
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    let encode = || encode_npm_generation(&published, 256 * 1024).unwrap();
+    let bytes = encode();
+    assert_eq!(bytes, encode());
+    let envelope: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(envelope["version"], 1);
+    assert!(envelope.get("sequence").is_none());
+    assert_eq!(envelope["checkpoint"]["snapshot_id"], serde_json::to_value(&projected.id).unwrap());
+    assert_eq!(encode_npm_generation(&published, bytes.len()).unwrap(), bytes);
+    assert_eq!(
+        encode_npm_generation(&published, bytes.len() - 1),
+        Err(NpmReconciliationError::ResourceLimit),
+    );
+
+    let restored_store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let restored = restore_npm_generation(
+        &restored_store, &bytes, &scope, None, bytes.len(),
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    assert_eq!(restored.sequence(), 1);
+    assert_eq!(restored.snapshot(), &projected);
+    assert_eq!(restored.checkpoint(), &checkpoint);
+    assert_eq!(encode_npm_generation(&restored, bytes.len()).unwrap(), bytes);
+    assert_eq!(
+        restore_npm_generation(
+            &restored_store, &bytes, &scope, None, bytes.len(),
+            RawLimits::default(), InventoryLimits::default(),
+        ),
+        Err(NpmReconciliationError::UnboundEvidence),
+    );
+    assert_eq!(restored_store.current().unwrap().unwrap().sequence(), 1);
+    let next = restore_npm_generation(
+        &restored_store, &bytes, &scope, Some(1), bytes.len(),
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    assert_eq!(next.sequence(), 2);
+    assert_eq!(restored.sequence(), 1);
+    assert_eq!(restored.checkpoint(), &checkpoint);
+    assert!(std::sync::Arc::ptr_eq(
+        &next, &restored_store.current().unwrap().unwrap()
+    ));
+}
+
+#[test]
+fn generation_recovery_rejects_malformed_duplicate_or_foreign_envelopes() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{encode_npm_generation, restore_npm_generation},
+    };
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected, &scope, "npm:manifest", "npm:lock",
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    let seed = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let published = seed.publish(
+        checkpoint, projected, &scope, None,
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    let bytes = encode_npm_generation(&published, 256 * 1024).unwrap();
+    let str_json = String::from_utf8(bytes.clone()).unwrap();
+    let duplicate = str_json.replacen(
+        r#"{"version":1,"#,
+        r#"{"version":1,"version":1,"#,
+        1,
+    );
+    assert_ne!(duplicate, str_json);
+    let mut extra: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    extra["unexpected"] = serde_json::json!("untrusted");
+    let extra_json = serde_json::to_vec(&extra).unwrap();
+    let mut unsupported: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    unsupported["version"] = serde_json::json!(2);
+    let unsupported_json = serde_json::to_vec(&unsupported).unwrap();
+    let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    tampered["checkpoint"]["fingerprint"] = serde_json::json!("sha256:fake");
+    let tampered_json = serde_json::to_vec(&tampered).unwrap();
+
+    let restore = |input: &[u8], authorized: &CollectionScope| {
+        let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+        let result = restore_npm_generation(
+            &store, input, authorized, None, 256 * 1024,
+            RawLimits::default(), InventoryLimits::default(),
+        );
+        assert!(store.current().unwrap().is_none());
+        result
+    };
+    for candidate in [
+        duplicate.as_bytes(),
+        extra_json.as_slice(),
+        unsupported_json.as_slice(),
+        tampered_json.as_slice(),
+        b"{\"version\":1,",
+        b"\0binary",
+    ] {
+        assert_eq!(
+            restore(candidate, &scope),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
+    }
+    assert_eq!(
+        restore(&bytes, &fixture.scope("tenant-b", true, "npm:lock")),
+        Err(NpmReconciliationError::UnboundEvidence),
+    );
+    assert_eq!(
+        restore(&bytes, &fixture.scope("tenant-a", false, "npm:lock")),
+        Err(NpmReconciliationError::UnauthorizedSource),
+    );
+    let changed = Fixture::new(MANIFEST, &format!("{LOCK} "));
+    assert_eq!(
+        restore(&bytes, &changed.scope("tenant-a", true, "npm:lock")),
+        Err(NpmReconciliationError::UnboundEvidence),
+    );
+    let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    assert_eq!(
+        restore_npm_generation(
+            &store, &bytes, &scope, None, bytes.len() - 1,
+            RawLimits::default(), InventoryLimits::default(),
+        ),
+        Err(NpmReconciliationError::ResourceLimit)
+    );
+    assert!(store.current().unwrap().is_none());
+}
+
+#[test]
+fn generation_recovery_rejects_duplicate_nested_evidence_and_noncanonical_snapshot() {
+    use cryptomap::collectors::dependency::{
+        npm_generation::NpmGenerationStore,
+        npm_generation_codec::{encode_npm_generation, restore_npm_generation},
+    };
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected, &scope, "npm:manifest", "npm:lock",
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    let seed = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let published = seed.publish(
+        checkpoint, projected, &scope, None,
+        RawLimits::default(), InventoryLimits::default(),
+    ).unwrap();
+    let bytes = encode_npm_generation(&published, 256 * 1024).unwrap();
+    let original = String::from_utf8(bytes.clone()).unwrap();
+    let nested = original.replacen(
+        r#""checkpoint":{"version":1,"#,
+        r#""checkpoint":{"version":1,"version":1,"#,
+        1,
+    );
+    assert_ne!(nested, original);
+    let mut poisoned: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    poisoned["snapshot"]["schema_version"] = serde_json::json!(999);
+    let poisoned_json = serde_json::to_vec(&poisoned).unwrap();
+    let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    for candidate in [nested.as_bytes(), poisoned_json.as_slice()] {
+        assert_eq!(
+            restore_npm_generation(
+                &store, candidate, &scope, None, 256 * 1024,
+                RawLimits::default(), InventoryLimits::default()
+            ),
+            Err(NpmReconciliationError::UnboundEvidence)
+        );
+        assert!(store.current().unwrap().is_none());
+    }
+}
