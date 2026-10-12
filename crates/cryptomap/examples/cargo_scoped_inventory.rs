@@ -25,10 +25,7 @@ use std::{error::Error, path::Path};
 /// The supplied timestamp is host-reported RFC3339, not inferred from the
 /// filesystem. Unsupported Cargo syntax fails closed instead of reporting
 /// the repository as free of cryptographic dependencies.
-pub fn collect_cargo(
-    root: &Path,
-    observed_at: &str,
-) -> Result<InventorySnapshot, Box<dyn Error>> {
+pub fn collect_cargo(root: &Path, observed_at: &str) -> Result<InventorySnapshot, Box<dyn Error>> {
     let mut scope = CollectionScope::new(CollectionScopeId::new("example-cargo-scope")?);
     for (source, name) in [
         ("cargo:manifest", "Cargo.toml"),
@@ -129,7 +126,9 @@ pub fn collect_cargo(
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args_os().skip(1);
     let (Some(root), Some(timestamp), None) = (args.next(), args.next(), args.next()) else {
-        return Err("usage: cargo_scoped_inventory <explicit-directory> <RFC3339-timestamp>".into());
+        return Err(
+            "usage: cargo_scoped_inventory <explicit-directory> <RFC3339-timestamp>".into(),
+        );
     };
     let timestamp = timestamp
         .to_str()
@@ -162,14 +161,19 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a.relationships.len(), 1);
         assert_eq!(a.coverage_records.len(), 2);
-        assert_eq!(a.query_assets(|asset| matches!(asset.kind, AssetKind::Library { .. })).count(), 2);
+        assert_eq!(
+            a.query_assets(|asset| matches!(asset.kind, AssetKind::Library { .. }))
+                .count(),
+            2
+        );
         let serialized = serde_json::to_string(&a).unwrap();
         let scope = CollectionScopeId::new("example-cargo-scope").unwrap();
         let imported = InventorySnapshot::from_json_verified_for_scope(
             &serialized,
             &scope,
             InventoryLimits::default(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(a, imported);
     }
 
