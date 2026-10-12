@@ -878,3 +878,201 @@ fn authorized_stream_digest_enforces_stricter_per_call_budget() {
         Err(cryptomap::scope::ScopeError::ResourceLimit)
     ));
 }
+
+
+#[test]
+fn generation_handoff_keeps_checkpoint_and_snapshot_in_one_immutable_view() {
+    use cryptomap::collectors::dependency::npm_generation::NpmGenerationStore;
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    assert!(store.current().unwrap().is_none());
+    let first = store
+        .publish(
+            checkpoint.clone(),
+            projected.clone(),
+            &scope,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    assert_eq!(first.sequence(), 1);
+    assert_eq!(first.snapshot(), &projected);
+    assert_eq!(first.checkpoint(), &checkpoint);
+    let reader = store.current().unwrap().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&reader, &first));
+
+    // A replacement is a single pointer swap, not a graph mutation.
+    let second = store
+        .publish(
+            checkpoint.clone(),
+            projected.clone(),
+            &scope,
+            Some(first.sequence()),
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+        .unwrap();
+    assert_eq!(second.sequence(), 2);
+    assert_eq!(store.current().unwrap().unwrap().sequence(), 2);
+    assert_eq!(reader.sequence(), 1);
+    assert_eq!(reader.snapshot(), &projected);
+    assert_eq!(reader.checkpoint(), &checkpoint);
+    assert_eq!(
+        store.publish(
+            checkpoint.clone(),
+            projected.clone(),
+            &scope,
+            Some(1),
+            RawLimits::default(),
+            InventoryLimits::default(),
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert_eq!(store.current().unwrap().unwrap().sequence(), 2);
+}
+
+#[test]
+fn generation_handoff_rejects_tampering_cross_tenant_and_ungranted_sources() {
+    use cryptomap::collectors::dependency::npm_generation::NpmGenerationStore;
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    assert!(NpmGenerationStore::new(&scope, "npm:manifest", "npm:manifest").is_err());
+    assert!(NpmGenerationStore::new(&scope, "", "npm:lock").is_err());
+    let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    let publish = |token, snapshot, authorized: &CollectionScope| {
+        store.publish(
+            token,
+            snapshot,
+            authorized,
+            None,
+            RawLimits::default(),
+            InventoryLimits::default(),
+        )
+    };
+    let mut tampered = checkpoint.clone();
+    tampered.fingerprint = "sha256:invalid".to_owned();
+    assert_eq!(
+        publish(tampered, projected.clone(), &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let mut poisoned = projected.clone();
+    poisoned.assets.values_mut().next().unwrap().extensions.insert(
+        "invalid:cache".to_owned(),
+        "poisoned".to_owned(),
+    );
+    assert_eq!(
+        publish(checkpoint.clone(), poisoned, &scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let foreign_scope = fixture.scope("tenant-b", true, "npm:lock");
+    assert_eq!(
+        publish(checkpoint.clone(), projected.clone(), &foreign_scope),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    let ungranted = fixture.scope("tenant-a", false, "npm:lock");
+    assert_eq!(
+        publish(checkpoint.clone(), projected.clone(), &ungranted),
+        Err(NpmReconciliationError::UnauthorizedSource)
+    );
+    let changed = Fixture::new(&format!("{MANIFEST} "), LOCK);
+    assert_eq!(
+        publish(
+            checkpoint.clone(),
+            projected.clone(),
+            &changed.scope("tenant-a", true, "npm:lock"),
+        ),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+    assert!(store.current().unwrap().is_none());
+
+    let valid = publish(checkpoint.clone(), projected.clone(), &scope).unwrap();
+    assert_eq!(valid.sequence(), 1);
+    let result = store.publish(
+        checkpoint,
+        projected,
+        &scope,
+        Some(0),
+        RawLimits::default(),
+        InventoryLimits::default(),
+    );
+    assert_eq!(result, Err(NpmReconciliationError::UnboundEvidence));
+    assert!(std::sync::Arc::ptr_eq(
+        &valid,
+        &store.current().unwrap().unwrap()
+    ));
+}
+
+#[test]
+fn generation_handoff_concurrent_writers_are_compare_and_swap_serialized() {
+    use cryptomap::collectors::dependency::npm_generation::NpmGenerationStore;
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let projected = transitive(&collect_both(&scope, "npm:lock"), &scope).unwrap();
+    let checkpoint = checkpoint_npm_projection(
+        &projected,
+        &scope,
+        "npm:manifest",
+        "npm:lock",
+        RawLimits::default(),
+        InventoryLimits::default(),
+    )
+    .unwrap();
+    let store = NpmGenerationStore::new(&scope, "npm:manifest", "npm:lock").unwrap();
+    std::thread::scope(|threads| {
+        let left = threads.spawn(|| {
+            store.publish(
+                checkpoint.clone(),
+                projected.clone(),
+                &scope,
+                None,
+                RawLimits::default(),
+                InventoryLimits::default(),
+            )
+        });
+        let right = threads.spawn(|| {
+            store.publish(
+                checkpoint.clone(),
+                projected.clone(),
+                &scope,
+                None,
+                RawLimits::default(),
+                InventoryLimits::default(),
+            )
+        });
+        let results = [left.join().unwrap(), right.join().unwrap()];
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, Err(NpmReconciliationError::UnboundEvidence)))
+                .count(),
+            1
+        );
+        let live = store.current().unwrap().unwrap();
+        assert_eq!(live.sequence(), 1);
+        assert_eq!(live.checkpoint(), &checkpoint);
+        assert_eq!(live.snapshot(), &projected);
+    });
+}
