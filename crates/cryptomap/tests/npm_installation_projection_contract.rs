@@ -1,8 +1,8 @@
 //! Independent npm manifest + lockfile collection and canonical edge contracts.
 #![allow(clippy::unwrap_used)]
 use cryptomap::{
-    AssetKind, CollectionRunId, IdentityContext, InventoryLimits, InventorySnapshot,
-    RelationshipKind,
+    AssetKind, CollectionRunId, IdentityContext, InventoryBuilder, InventoryLimits,
+    InventorySnapshot, RelationshipKind, RunCompleteness,
     batch::{BatchLimits, BatchRun, normalize_batch},
     collector::{CancellationToken, CollectionRequest, Collector, RequestedSource},
     collectors::dependency::{
@@ -394,6 +394,45 @@ fn stale_manifest_and_lockfile_evidence_cannot_be_reused() {
     let changed_lock = Fixture::new(MANIFEST, &format!("{LOCK} "));
     assert_eq!(
         transitive(&original, &changed_lock.scope("tenant-a", true, "npm:lock")),
+        Err(NpmReconciliationError::UnboundEvidence)
+    );
+}
+
+#[test]
+fn partial_lock_run_cannot_attest_canonical_transitive_installations() {
+    let fixture = Fixture::new(MANIFEST, LOCK);
+    let scope = fixture.scope("tenant-a", true, "npm:lock");
+    let original = collect_both(&scope, "npm:lock");
+    let mut builder = InventoryBuilder::new();
+    for run in original.runs.values() {
+        let mut copied = run.clone();
+        if copied.id.as_str() == "run-npm-lock" {
+            copied.completeness = RunCompleteness::Partial;
+        }
+        builder.add_run(copied).unwrap();
+    }
+    for asset in original.assets.values() {
+        builder.add_asset(asset.clone()).unwrap();
+    }
+    for evidence in original.evidence.values() {
+        builder.add_evidence(evidence.clone()).unwrap();
+    }
+    for observation in original.observations.values() {
+        builder.add_observation(observation.clone()).unwrap();
+    }
+    for relationship in original.relationships.values() {
+        builder.add_relationship(relationship.clone()).unwrap();
+    }
+    for (item, state) in &original.coverage {
+        builder.set_coverage(item.clone(), *state);
+    }
+    for coverage in &original.coverage_records {
+        builder.add_coverage_record(coverage.clone());
+    }
+    let partial = builder.finalize(InventoryLimits::default()).unwrap();
+    partial.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    assert_eq!(
+        transitive(&partial, &scope),
         Err(NpmReconciliationError::UnboundEvidence)
     );
 }
