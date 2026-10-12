@@ -1,6 +1,6 @@
 //! End-to-end passive, explicitly authorized Cargo manifest/lock inventory.
 //!
-//! Usage: cargo run --example cargo_scoped_inventory -- PATH RFC3339-TIMESTAMP
+//! Usage: cargo run --example cargo_scoped_inventory -- PATH RFC3339-TIMESTAMP SCOPE-ID RUN-PREFIX
 //! See examples/fixtures/cargo for a bounded supported fixture.
 //! No Cargo commands, package resolution, network access or implicit scanning.
 
