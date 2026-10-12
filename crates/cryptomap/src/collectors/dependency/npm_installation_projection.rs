@@ -72,13 +72,10 @@ fn index_lock_evidence(
         .filter(|coverage| {
             coverage.source_item == lock_item
                 && coverage.state == CoverageState::InspectedObserved
-                && snapshot
-                    .runs
-                    .get(&coverage.run)
-                    .is_some_and(|run| {
-                        matches!(run.completeness, crate::RunCompleteness::Complete)
-                            && run.requested.contains(lock_item)
-                    })
+                && snapshot.runs.get(&coverage.run).is_some_and(|run| {
+                    matches!(run.completeness, crate::RunCompleteness::Complete)
+                        && run.requested.contains(lock_item)
+                })
         })
         .map(|record| record.run.clone())
         .collect();
