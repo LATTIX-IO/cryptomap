@@ -223,6 +223,45 @@ fn extension_paths(snapshot: &InventorySnapshot) -> std::collections::BTreeSet<S
 }
 
 #[test]
+fn validated_npm_root_metadata_preserves_source_granted_canonical_projections() {
+    let baseline_fixture = Fixture::new(MANIFEST, LOCK);
+    let baseline_scope = baseline_fixture.scope("tenant-a", true, "npm:lock");
+    let baseline = transitive(
+        &collect_both(&baseline_scope, "npm:lock"),
+        &baseline_scope,
+    )
+    .unwrap();
+    let baseline_paths = extension_paths(&baseline);
+    assert_eq!(baseline.relationships.len(), 6);
+
+    for metadata in [
+        "\"private\":true,\"type\":\"module\",",
+        "\"private\":false,\"type\":\"commonjs\",",
+        "\"private\":true,",
+        "\"type\":\"module\",",
+    ] {
+        let manifest = format!(
+            "{{\"name\":\"app\",\"version\":\"1.0.0\",{metadata}\"dependencies\":{{\"a\":\"1.0.0\",\"b\":\"1.0.0\"}}}}"
+        );
+        let fixture = Fixture::new(&manifest, LOCK);
+        let scope = fixture.scope("tenant-a", true, "npm:lock");
+        let source = collect_both(&scope, "npm:lock");
+        let projected = transitive(&source, &scope).unwrap();
+        projected
+            .verify_for_scope(scope.id(), InventoryLimits::default())
+            .unwrap();
+        assert_eq!(projected.relationships.len(), baseline.relationships.len());
+        assert_eq!(extension_paths(&projected), baseline_paths);
+        assert_eq!(transitive(&source, &scope).unwrap(), projected);
+
+        // Metadata does not authorize reads. Both exact source grants remain
+        // mandatory even when fields are explicitly accepted by the parser.
+        let denied = fixture.scope("tenant-a", false, "npm:lock");
+        assert!(transitive(&source, &denied).is_err());
+    }
+}
+
+#[test]
 fn two_source_npm_transitive_edges_are_persisted_and_replay_stably() {
     let fixture = Fixture::new(MANIFEST, LOCK);
     let scope = fixture.scope("tenant-a", true, "npm:lock");
