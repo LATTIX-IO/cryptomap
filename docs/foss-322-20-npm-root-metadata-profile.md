@@ -17,7 +17,7 @@ Use the existing `StrictJson` duplicate-key rejecting parser. No other package f
 1. Unit: baseline and enriched manifests produce identical name/version, package declaration map and complete exact-pin proof for both supported module types and either private boolean, including independently optional metadata keys.
 2. Security: malformed/wrong-type metadata, duplicate keys, unexpected package scripts and dependency profiles, bogus type values, duplicate dependency field and excessive field length reject without partial proof.
 3. Regression: existing package-lock v2/v3 reconciliation, installed-node path and source-grant tests remain green. No npm execution, network fetch, implicit traversal or invented runtime crypto-use evidence.
-4. Merge: after upstream PR #38 squash merges, rebuild branch directly on new main so diff contains only npm metadata code/tests and this SDD. Run exact-head Linux fmt/locked check/strict Clippy/workspace tests/docs/package/RustSec audit/deny/SemVer, Windows locked tests, Rust 1.85 tests, and resolve all actionable reviewers.
+4. Merge: branch is a single-commit child of PR #38's verified squash-main `0a0a7c98618f8f2ead9ee249d7de1324da04b070`, with only npm metadata code/tests and this SDD. Require exact-head Linux fmt/locked check/strict Clippy/workspace tests/docs/package/RustSec audit/deny/SemVer, Windows locked tests, Rust 1.85 tests, and all actionable review threads resolved.
 
 ## Boundary
 
