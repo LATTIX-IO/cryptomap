@@ -41,6 +41,37 @@ class BoundedDecompressedStream:
         return data
 
 
+def verify_tar_terminator(archive: Path, end_offset: int) -> None:
+    """Require the two zero-block terminator at the parser's last valid offset.
+
+    Python's tarfile can silently treat a malformed *later* header as EOF.
+    A bounded second pass distinguishes genuine termination from corrupted
+    trailing headers, without extracting files or trusting tarfile EOF.
+    """
+    with archive.open("rb") as raw, gzip.GzipFile(fileobj=raw) as uncompressed:
+        stream = BoundedDecompressedStream(uncompressed, MAX_TAR_STREAM)
+        remaining = end_offset
+        while remaining:
+            chunk = stream.read(min(65536, remaining))
+            if not chunk:
+                raise ValueError("truncated tar member contents")
+            remaining -= len(chunk)
+        terminator = bytearray()
+        while len(terminator) < 1024:
+            chunk = stream.read(1024 - len(terminator))
+            if not chunk:
+                break
+            terminator.extend(chunk)
+        if len(terminator) != 1024 or any(terminator):
+            raise ValueError("missing canonical tar terminator")
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            if any(chunk):
+                raise ValueError("nonzero bytes after tar terminator")
+
+
 def inspect(archive: Path, commit: str) -> dict:
     """Inspect a bounded, untrusted release archive without extracting it."""
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -107,8 +138,10 @@ def inspect(archive: Path, commit: str) -> dict:
                             raise ValueError("missing manifest contents")
                         manifest = tomllib.loads(stream.read().decode("utf-8"))
                     entries.append({"path": rel, "size": member.size})
+            end_offset = tar.offset
     if count == 0:
         raise ValueError("empty archive")
+    verify_tar_terminator(archive, end_offset)
     if not REQUIRED <= files or manifest is None:
         raise ValueError("missing release-critical package files")
     pkg = manifest.get("package", {})
