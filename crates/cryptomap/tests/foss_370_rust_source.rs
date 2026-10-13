@@ -4,7 +4,7 @@
 #![cfg(feature = "rust-source")]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
-    AssetKind, CollectionRunId, CollectorId, CoverageState, EvidenceKind, IdentityContext,
+    AssetKind, CollectionRunId, CoverageState, EvidenceKind, IdentityContext,
     InventoryLimits, InventorySnapshot,
     collector::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
@@ -140,7 +140,12 @@ fn exact_ast_calls_emit_frozen_syntax_only_source_evidence() {
     ];
     let read = fs::read(root.join("crypto_calls.rs")).unwrap();
     let digest = format!("{:x}", Sha256::digest(read));
-    for (record, name) in output.observations.iter().zip(expect) {
+    // The bounded sink intentionally orders records by stable hashed event ID,
+    // not lexicographic source-call position. Assert syntax in source order by
+    // the independently recorded byte offsets, not by arbitrary hash order.
+    let mut sites: Vec<_> = output.observations.iter().collect();
+    sites.sort_by_key(|record| record.source.offset);
+    for (record, name) in sites.into_iter().zip(expect) {
         assert!(matches!(
             &record.fact,
             RawFactKind::Configuration { property, value }
