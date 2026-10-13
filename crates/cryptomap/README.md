@@ -42,6 +42,10 @@ cargo run --locked -p cryptomap --example cargo_scoped_inventory -- \
 
 The timestamp, tenant/scope identifier and distinct run prefix are supplied by the host. A new run prefix is required for every independent collection; fixed example values are only for reproducible fixtures. This is an *explicit directory* tool, not recursive scanning. Unsupported Cargo grammar is rejected instead of implying no cryptographic dependencies.
 
+## Optional isolated collector mode (Milestone B1, unreleased)
+
+For trusted, independently invocable collectors, `collect_scoped_isolated` retains successful sources when another source returns an ordinary collection error, while rejecting forged events and cross-source collisions. Use `CollectionSummary::from_outcome` for payload-free counters and `collect_normalized_isolated` for immediately validated snapshots. This is not an OS sandbox and is not yet an automatic source scanner; strict collection remains the default. See [B1 contract and tests](../../docs/milestone-b1-isolated-diagnostics.md).
+
 ## Concepts
 
 - **Asset** — a canonical logical identity; duplicate asset names are not enough to equate separate use sites.

@@ -9,6 +9,7 @@ pub mod collector;
 pub mod collectors;
 mod correlation;
 pub mod coverage;
+pub mod diagnostics;
 pub mod filesystem_scope;
 pub mod identity;
 pub mod metadata;
