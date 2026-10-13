@@ -24,6 +24,9 @@ for expected in \
     examples/npm_scoped_inventory.rs \
     examples/rust_scoped_source.rs \
     examples/fixtures/source/crypto_calls.rs \
+    examples/json_scoped_tls.rs \
+    examples/fixtures/config/tls.json \
+    examples/fixtures/config/empty-tls.json \
     examples/fixtures/npm/package.json \
     examples/fixtures/npm/package-lock.json \
     examples/collector_skeleton.rs \
@@ -117,3 +120,13 @@ CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
     --example rust_scoped_source -- \
     "$scratch/rust-input" "crypto_calls.rs" "2026-10-13T15:00:00Z" \
     "packaged-rust-tenant" "packaged-rust-run"
+
+# The JSON config example must run from the packaged crate, offline,
+# with one explicit .json file capability. This is configured-only evidence.
+mkdir -p "$scratch/json-tls-input"
+cp "$package/examples/fixtures/config/tls.json" "$scratch/json-tls-input/tls.json"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" --features json-tls-config \
+    --example json_scoped_tls -- \
+    "$scratch/json-tls-input" "tls.json" "2026-10-13T15:00:00Z" \
+    "packaged-json-tenant" "packaged-json-run"
