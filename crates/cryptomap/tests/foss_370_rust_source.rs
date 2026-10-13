@@ -510,17 +510,12 @@ fn many_independent_short_statements_remain_supported() {
     assert!(outcome.observations.is_empty());
 }
 
-
 #[test]
 fn comma_separated_deep_generics_cannot_bypass_ast_depth_budget() {
     let sandbox = Sandbox::new();
     // Each nested generic contributes a comma, but that comma is not a
     // statement boundary. Unchecked recursive syn parsing may exhaust stack.
-    let content = format!(
-        "type Deep = {}(){};",
-        "A<(), ".repeat(700),
-        ">".repeat(700),
-    );
+    let content = format!("type Deep = {}(){};", "A<(), ".repeat(700), ">".repeat(700),);
     assert!(content.len() < MAX_RUST_SOURCE_BYTES);
     sandbox.write("nested_generics.rs", content);
     let scope = scope_for(&sandbox.root, &[("generic:comma", "nested_generics.rs")]);
