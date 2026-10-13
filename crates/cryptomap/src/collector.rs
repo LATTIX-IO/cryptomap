@@ -394,14 +394,16 @@ impl CollectionSink {
 /// A collector MUST NOT inspect anything not explicitly requested. The sink
 /// validates records but does not enforce actual OS filesystem/network access.
 pub trait Collector: Send + Sync {
-    /// An optional exact host scope bound to a trusted collector instance.
+    /// Return whether the supplied host scope is the *exact* authorized scope.
     ///
-    /// Scoped entrypoints reject a mismatched scope before any data collection.
-    /// Third-party collectors retain the original trait contract via None,
-    /// but an implementation holding a scope MUST override this method.
-    /// This is a trusted in-process API, not a sandbox for hostile plugins.
-    fn bound_scope(&self) -> Option<&crate::scope::CollectionScope> {
-        None
+    /// Scope-carrying trusted collectors MUST override this. The default true
+    /// preserves source compatibility for third-party collectors without an
+    /// internally captured scope; it does not sandbox untrusted code.
+    ///
+    /// This predicate intentionally exposes no reference to the underlying
+    /// source capability, which must remain owned by the host.
+    fn matches_invocation_scope(&self, _scope: &crate::scope::CollectionScope) -> bool {
+        true
     }
 
     /// The identity, version and declared capabilities of this implementation.

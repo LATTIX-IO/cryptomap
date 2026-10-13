@@ -453,7 +453,8 @@ fn collector_and_host_scope_must_be_same_grant_instance_even_with_identical_ids(
     let scope_a = scope_for(&a.root, &[("same", "tls.json")]);
     let scope_b = scope_for(&b.root, &[("same", "tls.json")]);
     let collector = JsonTlsConfigCollector::new(&scope_a, AT);
-    assert!(std::ptr::eq(collector.bound_scope().unwrap(), &scope_a));
+    assert!(collector.matches_invocation_scope(&scope_a));
+    assert!(!collector.matches_invocation_scope(&scope_b));
     assert!(matches!(
         collect_scoped(
             &scope_b,

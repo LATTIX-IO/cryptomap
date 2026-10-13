@@ -238,8 +238,8 @@ impl<'a> RustSourceCollector<'a> {
     }
 }
 impl Collector for RustSourceCollector<'_> {
-    fn bound_scope(&self) -> Option<&CollectionScope> {
-        Some(self.scope)
+    fn matches_invocation_scope(&self, scope: &CollectionScope) -> bool {
+        std::ptr::eq(self.scope, scope)
     }
 
     fn descriptor(&self) -> CollectorDescriptor {

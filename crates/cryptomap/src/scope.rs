@@ -214,10 +214,7 @@ pub(crate) fn validate_collector_binding<C: Collector + ?Sized>(
     scope: &CollectionScope,
     collector: &C,
 ) -> Result<(), ScopeError> {
-    if collector
-        .bound_scope()
-        .is_some_and(|bound| !std::ptr::eq(bound, scope))
-    {
+    if !collector.matches_invocation_scope(scope) {
         return Err(ScopeError::OutOfScope);
     }
     Ok(())

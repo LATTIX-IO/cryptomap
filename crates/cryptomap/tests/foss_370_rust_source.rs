@@ -589,7 +589,8 @@ fn existing_rust_source_collector_rejects_other_host_scope_with_same_ids() {
     let scope_a = scope_for(&a.root, &[("same", "crypto.rs")]);
     let scope_b = scope_for(&b.root, &[("same", "crypto.rs")]);
     let collector = RustSourceCollector::new(&scope_a, OBSERVED_AT);
-    assert!(std::ptr::eq(collector.bound_scope().unwrap(), &scope_a));
+    assert!(collector.matches_invocation_scope(&scope_a));
+    assert!(!collector.matches_invocation_scope(&scope_b));
     let req = CollectionRequest {
         run: CollectionRunId::new("run-rust").unwrap(),
         sources: sources(&["same"]),
