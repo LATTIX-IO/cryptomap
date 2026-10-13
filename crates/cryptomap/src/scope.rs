@@ -225,7 +225,9 @@ pub fn collect_scoped<C: Collector + ?Sized>(
 ///
 /// This mode requires a cooperative collector whose single-source calls are
 /// independent. Each source failure is reported as failed coverage rather than
-/// a clean absence; all permission checks occur before any execution.
+/// a clean absence. The raw route validates granted scope but does not
+/// independently bind collector descriptor or tenant identity. Use
+/// `orchestration::collect_normalized_isolated` for host-pinned provenance.
 pub fn collect_scoped_isolated<C: Collector + ?Sized>(
     scope: &CollectionScope,
     collector: &C,

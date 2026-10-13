@@ -22,8 +22,9 @@ pub struct ScopedInvocation<'a> {
 
 fn preflight(invocation: &ScopedInvocation<'_>) -> Result<CollectionRequest, PipelineError> {
     let input = &invocation.input;
-    // Check all host inputs *before* invoking collector code. No descriptor
-    // from a collector may replace the separately pinned expected descriptor.
+    // Check host inputs before invoking Collector::collect. Descriptor() is
+    // still trusted in-process plugin code, not an OS security boundary.
+    // It cannot replace the independently pinned expected descriptor.
     if input.identity.scope != input.scope.id().as_str()
         || invocation.collector.descriptor() != *input.expected_descriptor
     {
