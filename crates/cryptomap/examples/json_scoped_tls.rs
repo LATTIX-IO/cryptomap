@@ -25,7 +25,13 @@ pub fn run_config(
 ) -> Result<cryptomap::InventorySnapshot, Box<dyn Error>> {
     let mut scope = CollectionScope::new(CollectionScopeId::new(tenant)?);
     let item = "source:json-tls-profile";
-    scope.grant_file(RawSourceKind::Source, item, root, relative, MAX_JSON_TLS_BYTES)?;
+    scope.grant_file(
+        RawSourceKind::Source,
+        item,
+        root,
+        relative,
+        MAX_JSON_TLS_BYTES,
+    )?;
     let collector = JsonTlsConfigCollector::new(&scope, observed_at);
     let expected_descriptor = collector.descriptor();
     let expected_run = CollectionRunId::new(run_name)?;
@@ -75,10 +81,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let run = run.to_str().ok_or("run must be UTF-8")?;
     let snapshot = run_config(Path::new(&root), Path::new(&relative), at, tenant, run)?;
     let configured_protocols = snapshot
-        .query_assets(|asset| matches!(
-            asset.kind,
-            AssetKind::Protocol { state: ProtocolState::Configured, .. }
-        ))
+        .query_assets(|asset| {
+            matches!(
+                asset.kind,
+                AssetKind::Protocol {
+                    state: ProtocolState::Configured,
+                    ..
+                }
+            )
+        })
         .count();
     println!(
         "verified snapshot={} configured_tls_versions={} evidence={} coverage={}",
@@ -100,13 +111,21 @@ mod tests {
     fn packaged_json_fixture_round_trips_with_exact_evidence() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixtures/config");
         let first = run_config(
-            &root, Path::new("tls.json"), "2026-10-13T15:00:00Z",
-            "json-tenant", "json-run",
-        ).unwrap();
+            &root,
+            Path::new("tls.json"),
+            "2026-10-13T15:00:00Z",
+            "json-tenant",
+            "json-run",
+        )
+        .unwrap();
         let second = run_config(
-            &root, Path::new("tls.json"), "2026-10-13T15:00:00Z",
-            "json-tenant", "json-run",
-        ).unwrap();
+            &root,
+            Path::new("tls.json"),
+            "2026-10-13T15:00:00Z",
+            "json-tenant",
+            "json-run",
+        )
+        .unwrap();
         assert_eq!(first, second);
         assert_eq!(first.evidence.len(), 4);
         assert_eq!(first.coverage_records.len(), 1);

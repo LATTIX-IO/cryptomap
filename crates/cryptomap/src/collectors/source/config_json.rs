@@ -8,8 +8,8 @@ use crate::{
     CollectorId, Confidence, CoverageState, EvidenceKind, InventoryError, ProtocolState,
     collector::{
         COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode, CollectionRequest,
-        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor,
-        CollectorDiagnostic, CollectorDiagnosticCode,
+        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor, CollectorDiagnostic,
+        CollectorDiagnosticCode,
     },
     raw::{RAW_CONTRACT_VERSION, RawFactKind, RawObservation, RawSourceKind, RawSourceLocator},
     scope::{CollectionScope, ScopeError},
@@ -99,9 +99,7 @@ fn reviewed_suite(value: &str) -> Option<&'static str> {
         "TLS_AES_128_GCM_SHA256" => Some("TLS_AES_128_GCM_SHA256"),
         "TLS_AES_256_GCM_SHA384" => Some("TLS_AES_256_GCM_SHA384"),
         "TLS_CHACHA20_POLY1305_SHA256" => Some("TLS_CHACHA20_POLY1305_SHA256"),
-        "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" => {
-            Some("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
-        }
+        "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" => Some("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"),
         "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" => {
             Some("TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384")
         }
@@ -112,7 +110,9 @@ fn reviewed_suite(value: &str) -> Option<&'static str> {
 /// Parse an exact profile into whitelisted nonsecret facts, without emitting
 /// records until the complete input has been checked. Wrong profiles are
 /// Unsupported; malformed content, duplicates and rejected keys are failures.
-fn validated_facts(bytes: &[u8]) -> Result<Vec<(&'static str, &'static str)>, CollectorDiagnosticCode> {
+fn validated_facts(
+    bytes: &[u8],
+) -> Result<Vec<(&'static str, &'static str)>, CollectorDiagnosticCode> {
     let document: ProfileDocument =
         serde_json::from_slice(bytes).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
     if document.profile != PROFILE {
@@ -121,14 +121,16 @@ fn validated_facts(bytes: &[u8]) -> Result<Vec<(&'static str, &'static str)>, Co
     let mut facts = Vec::new();
     let mut unique = BTreeSet::new();
     for candidate in document.tls.versions {
-        let approved = reviewed_version(&candidate).ok_or(CollectorDiagnosticCode::MalformedSource)?;
+        let approved =
+            reviewed_version(&candidate).ok_or(CollectorDiagnosticCode::MalformedSource)?;
         if !unique.insert(("tls-version", approved)) {
             return Err(CollectorDiagnosticCode::MalformedSource);
         }
         facts.push(("tls-version", approved));
     }
     for candidate in document.tls.cipher_suites {
-        let approved = reviewed_suite(&candidate).ok_or(CollectorDiagnosticCode::MalformedSource)?;
+        let approved =
+            reviewed_suite(&candidate).ok_or(CollectorDiagnosticCode::MalformedSource)?;
         if !unique.insert(("cipher-suite", approved)) {
             return Err(CollectorDiagnosticCode::MalformedSource);
         }
@@ -141,7 +143,9 @@ fn validated_facts(bytes: &[u8]) -> Result<Vec<(&'static str, &'static str)>, Co
 fn io_diagnostic(err: &ScopeError) -> CollectorDiagnosticCode {
     match err {
         ScopeError::ResourceLimit => CollectorDiagnosticCode::ResourceLimit,
-        ScopeError::InvalidInput | ScopeError::OutOfScope => CollectorDiagnosticCode::PermissionDenied,
+        ScopeError::InvalidInput | ScopeError::OutOfScope => {
+            CollectorDiagnosticCode::PermissionDenied
+        }
         ScopeError::Io | ScopeError::Collection(_) => CollectorDiagnosticCode::MalformedSource,
     }
 }
@@ -170,7 +174,10 @@ pub struct JsonTlsConfigCollector<'a> {
 impl<'a> JsonTlsConfigCollector<'a> {
     /// Bind only to the caller's explicit source grants; no I/O is performed.
     pub fn new(scope: &'a CollectionScope, observed_at: impl Into<String>) -> Self {
-        Self { scope, observed_at: observed_at.into() }
+        Self {
+            scope,
+            observed_at: observed_at.into(),
+        }
     }
 }
 impl Collector for JsonTlsConfigCollector<'_> {
@@ -201,24 +208,44 @@ impl Collector for JsonTlsConfigCollector<'_> {
         let descriptor = self.descriptor();
         for source in &request.sources {
             if cancel.is_cancelled() {
-                report(sink, &source.item, CollectorDiagnosticCode::Cancelled, CoverageState::NotInspected)?;
+                report(
+                    sink,
+                    &source.item,
+                    CollectorDiagnosticCode::Cancelled,
+                    CoverageState::NotInspected,
+                )?;
                 continue;
             }
             let file = match self.scope.open_file(RawSourceKind::Source, &source.item) {
                 Ok(file) => file,
                 Err(error) => {
-                    report(sink, &source.item, io_diagnostic(&error), CoverageState::Failed)?;
+                    report(
+                        sink,
+                        &source.item,
+                        io_diagnostic(&error),
+                        CoverageState::Failed,
+                    )?;
                     continue;
                 }
             };
             if file.relative().extension().and_then(|ext| ext.to_str()) != Some("json") {
-                report(sink, &source.item, CollectorDiagnosticCode::UnsupportedSource, CoverageState::Unsupported)?;
+                report(
+                    sink,
+                    &source.item,
+                    CollectorDiagnosticCode::UnsupportedSource,
+                    CoverageState::Unsupported,
+                )?;
                 continue;
             }
             let bytes = match file.read_limited(MAX_JSON_TLS_BYTES) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    report(sink, &source.item, io_diagnostic(&error), CoverageState::Failed)?;
+                    report(
+                        sink,
+                        &source.item,
+                        io_diagnostic(&error),
+                        CoverageState::Failed,
+                    )?;
                     continue;
                 }
             };
@@ -236,11 +263,21 @@ impl Collector for JsonTlsConfigCollector<'_> {
             };
             // All-or-nothing per file on malformed profiles or source budget.
             if facts.len() > request.limits.observations {
-                report(sink, &source.item, CollectorDiagnosticCode::ResourceLimit, CoverageState::Failed)?;
+                report(
+                    sink,
+                    &source.item,
+                    CollectorDiagnosticCode::ResourceLimit,
+                    CoverageState::Failed,
+                )?;
                 continue;
             }
             if cancel.is_cancelled() {
-                report(sink, &source.item, CollectorDiagnosticCode::Cancelled, CoverageState::NotInspected)?;
+                report(
+                    sink,
+                    &source.item,
+                    CollectorDiagnosticCode::Cancelled,
+                    CoverageState::NotInspected,
+                )?;
                 continue;
             }
             let digest = format!("{:x}", Sha256::digest(&bytes));
@@ -304,13 +341,20 @@ impl Collector for JsonTlsConfigCollector<'_> {
                     sink,
                     &source.item,
                     CollectorDiagnosticCode::Cancelled,
-                    if emitted == 0 { CoverageState::NotInspected } else { CoverageState::Partial },
+                    if emitted == 0 {
+                        CoverageState::NotInspected
+                    } else {
+                        CoverageState::Partial
+                    },
                 )?;
             } else {
                 sink.cover(
                     &source.item,
-                    if facts.is_empty() { CoverageState::InspectedNoObservation }
-                    else { CoverageState::InspectedObserved },
+                    if facts.is_empty() {
+                        CoverageState::InspectedNoObservation
+                    } else {
+                        CoverageState::InspectedObserved
+                    },
                 )?;
             }
         }
