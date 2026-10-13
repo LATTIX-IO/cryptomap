@@ -26,6 +26,9 @@ use syn::{
 pub const MAX_RUST_SOURCE_BYTES: usize = 32 * 1024;
 const MAX_TOKENS: usize = 8_192;
 const MAX_NESTING: usize = 64;
+// Chained unary, binary, member and generic syntax can overflow recursive
+// parser/visitor stacks without opening any new delimiter group.
+const MAX_FLAT_TOKENS: usize = 128;
 const MAX_CALLS_PER_FILE: usize = 256;
 const ID: &str = "cryptomap:rust-source-calls";
 const VERSION: &str = "0.1.0";
@@ -124,7 +127,8 @@ impl<'ast> Visit<'ast> for CallVisitor {
 /// The byte-level check is intentionally conservative: parentheses appearing
 /// inside comments or literals may cause a resource-limit diagnostic rather
 /// than an incorrect clean scan. The token count additionally bounds the
-/// actual parsed TokenTree hierarchy.
+/// actual parsed TokenTree hierarchy. A per-segment ceiling limits recursive
+/// expressions even without delimiter nesting; statements remain independent.
 fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
     let mut nesting = 0_usize;
     for byte in content.bytes() {
@@ -148,10 +152,23 @@ fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
         if depth > MAX_NESTING {
             return Err(CollectorDiagnosticCode::ResourceLimit);
         }
+        let mut segment_tokens = 0_usize;
         for token in stream {
             total_tokens = total_tokens.saturating_add(1);
             if total_tokens > MAX_TOKENS {
                 return Err(CollectorDiagnosticCode::ResourceLimit);
+            }
+            // Comma/semicolon delimit independent list elements/statements;
+            // any one undelimited run is conservatively bounded *before* syn.
+            let separator =
+                matches!(&token, TokenTree::Punct(p) if matches!(p.as_char(), ';' | ','));
+            if separator {
+                segment_tokens = 0;
+            } else {
+                segment_tokens = segment_tokens.saturating_add(1);
+                if segment_tokens > MAX_FLAT_TOKENS {
+                    return Err(CollectorDiagnosticCode::ResourceLimit);
+                }
             }
             if let TokenTree::Group(group) = token {
                 queue.push((group.stream(), depth.saturating_add(1)));

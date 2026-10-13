@@ -4,7 +4,7 @@
 
 ## Exact scope and trust model
 
-A trusted host grants each explicitly chosen `.rs` file using `CollectionScope::grant_file(RawSourceKind::Source, item, root, relative, max_bytes)`. The collector never searches a repository, expands globs, enumerates directories, executes Cargo or project code, loads macros, resolves imports, connects to a network or retrieves secrets. It reopens each granted source through the rooted capability, rejects symlink/junction indirection, reads no more than 32 KiB per source and enforces bounded structural depth and token budgets before parsing.
+A trusted host grants each explicitly chosen `.rs` file using `CollectionScope::grant_file(RawSourceKind::Source, item, root, relative, max_bytes)`. The collector never searches a repository, expands globs, enumerates directories, executes Cargo or project code, loads macros, resolves imports, connects to a network or retrieves secrets. It reopens each granted source through the rooted capability, rejects symlink/junction indirection, reads no more than 32 KiB per source and enforces bounded structural depth, total token count, and a conservative 128-token syntactic-segment budget before recursive AST parsing. Long expression chains fail as `ResourceLimit` even if small in bytes.
 
 The same file must have `.rs` as its actual granted relative extension; a request label alone cannot cause another file type to be parsed. Unsupported file types remain `Unsupported`, malformed or invalid-UTF8 files remain `Failed`, and exceeded byte/token/nesting budgets remain `Failed` with `ResourceLimit`. They are **never** `InspectedNoObservation`. A successfully inspected supported file with no reviewed calls legitimately has that no-observation coverage.
 
@@ -46,7 +46,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-Acceptance includes calls versus strings/comments/macros/imports, source hashes and locations, deterministic snapshot replay and tenant separation, unsupported/malformed/UTF-8/oversized inputs, token/depth budgets, denied grants, removed files, symlink escape, cancellation and packaged external consumer. CI additionally covers Rust 1.85, Windows, signed-main release supply-chain gates and the frozen Milestone A semantics.
+Acceptance includes calls versus strings/comments/macros/imports, source hashes and locations, deterministic snapshot replay and tenant separation, unsupported/malformed/UTF-8/oversized inputs, token/depth and undelimited expression-chain budgets (unary, binary, member and generic forms), denied grants, removed files, symlink escape, cancellation and packaged external consumer. CI additionally covers Rust 1.85, Windows, signed-main release supply-chain gates and the frozen Milestone A semantics.
 
 ## Deferred
 
