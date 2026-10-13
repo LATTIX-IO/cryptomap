@@ -4,8 +4,8 @@
 #![cfg(feature = "rust-source")]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
-    AssetKind, CollectionRunId, CoverageState, EvidenceKind, IdentityContext,
-    InventoryLimits, InventorySnapshot,
+    AssetKind, CollectionRunId, CoverageState, EvidenceKind, IdentityContext, InventoryLimits,
+    InventorySnapshot,
     collector::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
         CollectorDiagnosticCode, RequestedSource,
