@@ -383,6 +383,70 @@ pub trait Collector: Send + Sync {
     ) -> Result<(), InventoryError>;
 }
 
+
+/// Execute a cooperative collector independently per requested source.
+///
+/// Unlike `collect`, an ordinary source-specific collector error records Failed
+/// coverage and retains other successful sources. A failed source's partial
+/// events are discarded. This is opt-in: collectors must support independent
+/// single-source invocations, and it does not sandbox a malicious collector.
+/// Authorization must be checked by the caller before this unscoped helper.
+pub fn collect_isolated<C: Collector + ?Sized>(
+    collector: &C,
+    request: CollectionRequest,
+    cancel: &CancellationToken,
+) -> Result<CollectionOutcome, InventoryError> {
+    let descriptor = collector.descriptor();
+    request.validate(&descriptor)?;
+    let mut combined = CollectionSink::new(descriptor.clone(), request.clone())?;
+    let mut sources = request.sources.clone();
+    sources.sort_by(|a, b| a.item.cmp(&b.item));
+    for source in sources {
+        if cancel.is_cancelled() {
+            combined.diagnose(CollectorDiagnostic {
+                code: CollectorDiagnosticCode::Cancelled,
+                source_item: Some(source.item),
+            })?;
+            continue;
+        }
+        let single_request = CollectionRequest {
+            run: request.run.clone(),
+            sources: vec![source.clone()],
+            limits: request.limits,
+            options: request.options.clone(),
+        };
+        let mut individual = CollectionSink::new(descriptor.clone(), single_request.clone())?;
+        match collector.collect(&single_request, &mut individual, cancel) {
+            Ok(()) => {
+                let result = individual.finish();
+                // Merge through the original bounded sink. Cross-source event
+                // collisions or aggregate limits remain fatal, never partial.
+                for fact in result.observations {
+                    combined.emit(fact)?;
+                }
+                for diagnostic in result.diagnostics {
+                    combined.diagnose(diagnostic)?;
+                }
+                combined.cover(&source.item, result.coverage[&source.item])?;
+            }
+            Err(error) => {
+                let code = match error {
+                    InventoryError::LimitExceeded(_) => CollectorDiagnosticCode::ResourceLimit,
+                    InventoryError::UnsupportedSchema(_) => CollectorDiagnosticCode::UnsupportedSource,
+                    _ => CollectorDiagnosticCode::InvalidObservation,
+                };
+                // Never include the potentially secret-bearing error payload.
+                combined.diagnose(CollectorDiagnostic {
+                    code,
+                    source_item: Some(source.item.clone()),
+                })?;
+                combined.cover(&source.item, CoverageState::Failed)?;
+            }
+        }
+    }
+    Ok(combined.finish())
+}
+
 /// Drive any collector through independent sink checks and terminal aggregation.
 pub fn collect<C: Collector + ?Sized>(
     collector: &C,
