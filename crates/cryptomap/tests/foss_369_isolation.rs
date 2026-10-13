@@ -569,7 +569,10 @@ fn successful_return_without_explicit_coverage_is_not_unattempted() {
     assert_eq!(outcome.coverage["a"], CoverageState::Failed);
     assert_eq!(outcome.status, CollectionStatus::Failed);
     assert_eq!(outcome.diagnostics.len(), 1);
-    assert_eq!(outcome.diagnostics[0].code, CollectorDiagnosticCode::IncompleteScope);
+    assert_eq!(
+        outcome.diagnostics[0].code,
+        CollectorDiagnosticCode::IncompleteScope
+    );
     let summary = CollectionSummary::from_outcome(&outcome);
     assert_eq!(summary.attempted, 1);
     assert_eq!(summary.not_inspected, 0);
