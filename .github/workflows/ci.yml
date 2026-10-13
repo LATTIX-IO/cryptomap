@@ -45,6 +45,12 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-targets --all-features --locked
 
+      - name: Deterministic collector robustness/fuzz smoke
+        run: cargo test -p cryptomap --test milestone_a_collector_robustness --locked
+
+      - name: Bounded snapshot finalization/import/diff benchmark smoke
+        run: cargo test -p cryptomap --test milestone_a_inventory_scale_smoke --locked -- --nocapture
+
       - name: Documentation
         env:
           RUSTDOCFLAGS: -D warnings
