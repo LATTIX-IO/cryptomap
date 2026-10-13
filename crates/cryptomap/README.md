@@ -46,6 +46,18 @@ The timestamp, tenant/scope identifier and distinct run prefix are supplied by t
 
 For trusted, independently invocable collectors, `collect_scoped_isolated` retains successful sources when another source returns an ordinary collection error, while rejecting forged events and cross-source collisions. Use `CollectionSummary::from_outcome` for payload-free counters and `collect_normalized_isolated` for immediately validated snapshots. This is not an OS sandbox and is not yet an automatic source scanner; strict collection remains the default. See [B1 contract and tests](../../docs/milestone-b1-isolated-diagnostics.md).
 
+## Optional Rust source syntax evidence (Milestone B2 developer preview)
+
+The feature-gated `rust-source` collector parses only explicitly authorized Rust `.rs` files to report a small whitelist of *syntactic* qualified calls. It emits source-verified `SourceUse` evidence with call-site location, rather than asserting algorithm execution or guessing a dependency graph.
+
+```sh
+cargo run --locked -p cryptomap --features rust-source --example rust_scoped_source -- \
+  crates/cryptomap/examples/fixtures/source crypto_calls.rs \
+  2026-10-13T15:00:00Z example-tenant example-rust-run
+```
+
+The parser feature is disabled by default. See [Milestone B2 documentation](../../docs/milestone-b2-rust-source-evidence.md) for the exact syntactic whitelist, security limits and regression tests.
+
 ## Concepts
 
 - **Asset** — a canonical logical identity; duplicate asset names are not enough to equate separate use sites.
@@ -58,7 +70,7 @@ For trusted, independently invocable collectors, `collect_scoped_isolated` retai
 
 The passive Cargo subset supports lockfile v3/v4 and bounded, exact numeric direct dependency declarations; it accepts only specifically supported metadata and version-only inline-table syntax. Npm supports package-lock v2/v3 with strict exact-root and installation profiles. Unsupported version ranges, Cargo workspace/target/dev/optional/renamed declarations, and npm peer/dev/workspace/alias semantics are not silently interpreted.
 
-Other collectors (X.509, TLS, source/config, telemetry), the CycloneDX CBOM adapter, and cryptopolicy/cryptoshift bridges are **not yet available**.
+Other collectors (X.509, TLS, general multi-language source/config, telemetry), the CycloneDX CBOM adapter, and cryptopolicy/cryptoshift bridges are **not yet available**.
 
 ## Security and contributor notes
 

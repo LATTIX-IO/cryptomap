@@ -22,6 +22,8 @@ for expected in \
     LICENSE-APACHE \
     examples/cargo_scoped_inventory.rs \
     examples/npm_scoped_inventory.rs \
+    examples/rust_scoped_source.rs \
+    examples/fixtures/source/crypto_calls.rs \
     examples/fixtures/npm/package.json \
     examples/fixtures/npm/package-lock.json \
     examples/collector_skeleton.rs \
@@ -104,3 +106,14 @@ CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
     --manifest-path "$package/Cargo.toml" \
     --example npm_scoped_inventory -- \
     "$scratch/npm-input" "2026-10-12T12:00:00Z" "packaged-npm-scope" "packaged-npm-run"
+
+# Exercise the opt-in AST parser from the *packaged* crate, not workspace
+# sources, through one exact read-only file capability. No Cargo script from
+# the analyzed source file is run, and unsupported syntax cannot mean no use.
+mkdir -p "$scratch/rust-input"
+cp "$package/examples/fixtures/source/crypto_calls.rs" "$scratch/rust-input/crypto_calls.rs"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" --features rust-source \
+    --example rust_scoped_source -- \
+    "$scratch/rust-input" "crypto_calls.rs" "2026-10-13T15:00:00Z" \
+    "packaged-rust-tenant" "packaged-rust-run"
