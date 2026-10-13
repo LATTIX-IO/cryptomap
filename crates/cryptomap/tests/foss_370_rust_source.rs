@@ -314,8 +314,10 @@ fn resource_limits_prevent_partial_lookalike_and_hidden_overread() {
         b"fn f() { sha2::Sha256::digest(b\"x\"); sha2::Sha512::digest(b\"y\"); }",
     );
     let scope = scope_for(&sandbox.root, &[("calls", "calls.rs")]);
-    let mut limits = RawLimits::default();
-    limits.observations = 1;
+    let limits = RawLimits {
+        observations: 1,
+        ..RawLimits::default()
+    };
     let output = run_raw(&scope, &["calls"], limits);
     assert_eq!(output.coverage["calls"], CoverageState::Failed);
     assert!(output.observations.is_empty());
