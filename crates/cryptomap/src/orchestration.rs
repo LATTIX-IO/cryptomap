@@ -37,6 +37,7 @@ fn preflight(invocation: &ScopedInvocation<'_>) -> Result<CollectionRequest, Pip
         options: Default::default(),
     };
     request.validate(input.expected_descriptor)?;
+    crate::scope::validate_collector_binding(input.scope, invocation.collector)?;
     input.scope.validate_request(&request)?;
     Ok(request)
 }

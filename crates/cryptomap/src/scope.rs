@@ -206,6 +206,23 @@ impl CollectionScope {
     }
 }
 
+/// Check that a collector holding a scope is invoked under that exact grant.
+///
+/// Comparing only scope IDs is insufficient: separate objects can carry the
+/// same tenant label yet authorize different files. No source is opened here.
+pub(crate) fn validate_collector_binding<C: Collector + ?Sized>(
+    scope: &CollectionScope,
+    collector: &C,
+) -> Result<(), ScopeError> {
+    if collector
+        .bound_scope()
+        .is_some_and(|bound| !std::ptr::eq(bound, scope))
+    {
+        return Err(ScopeError::OutOfScope);
+    }
+    Ok(())
+}
+
 /// Scope-validated collector entry point for trusted in-process plugins.
 ///
 /// This checks scope before running the collector. A truly untrusted plugin
@@ -217,6 +234,7 @@ pub fn collect_scoped<C: Collector + ?Sized>(
     request: CollectionRequest,
     cancel: &CancellationToken,
 ) -> Result<CollectionOutcome, ScopeError> {
+    validate_collector_binding(scope, collector)?;
     scope.validate_request(&request)?;
     collector::collect(collector, request, cancel).map_err(ScopeError::Collection)
 }
@@ -234,6 +252,7 @@ pub fn collect_scoped_isolated<C: Collector + ?Sized>(
     request: CollectionRequest,
     cancel: &CancellationToken,
 ) -> Result<CollectionOutcome, ScopeError> {
+    validate_collector_binding(scope, collector)?;
     scope.validate_request(&request)?;
     collector::collect_isolated(collector, request, cancel).map_err(ScopeError::Collection)
 }

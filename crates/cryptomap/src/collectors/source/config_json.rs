@@ -181,6 +181,10 @@ impl<'a> JsonTlsConfigCollector<'a> {
     }
 }
 impl Collector for JsonTlsConfigCollector<'_> {
+    fn bound_scope(&self) -> Option<&CollectionScope> {
+        Some(self.scope)
+    }
+
     fn descriptor(&self) -> CollectorDescriptor {
         CollectorDescriptor {
             contract_version: COLLECTOR_CONTRACT_VERSION,
