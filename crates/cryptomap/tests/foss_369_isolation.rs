@@ -578,3 +578,23 @@ fn successful_return_without_explicit_coverage_is_not_unattempted() {
     assert_eq!(summary.not_inspected, 0);
     assert_eq!(summary.inspected_no_observation, 0);
 }
+
+#[test]
+fn declared_partial_evidence_survives_an_independent_success() {
+    let fixture = Fixture::new(&["a", "b"]);
+    let collector = ProbeCollector::new(&[("a", Mode::Partial)]);
+    let outcome = fixture.isolated(&collector, &CancellationToken::default());
+    assert_eq!(outcome.status, CollectionStatus::Partial);
+    assert_eq!(outcome.coverage["a"], CoverageState::Partial);
+    assert_eq!(outcome.coverage["b"], CoverageState::InspectedObserved);
+    assert_eq!(outcome.observations.len(), 2);
+    let summary = CollectionSummary::from_outcome(&outcome);
+    assert_eq!(summary.partial, 1);
+    assert_eq!(summary.inspected_observed, 1);
+    let snapshot = fixture
+        .normalized(&collector, &CancellationToken::default())
+        .unwrap();
+    assert_eq!(snapshot.coverage["a"], CoverageState::Partial);
+    assert_eq!(snapshot.coverage["b"], CoverageState::InspectedObserved);
+    snapshot.verify(InventoryLimits::default()).unwrap();
+}
