@@ -28,6 +28,7 @@ use std::{
 enum Mode {
     Observed,
     Clean,
+    NoCoverage,
     Fail,
     FailAfterEmit,
     Partial,
@@ -124,6 +125,7 @@ impl Collector for ProbeCollector {
                     sink.cover(item, CoverageState::InspectedObserved)?;
                 }
                 Mode::Clean => sink.cover(item, CoverageState::InspectedNoObservation)?,
+                Mode::NoCoverage => {}
                 Mode::Fail => return Err(InventoryError::InvalidMetadata),
                 Mode::FailAfterEmit => {
                     sink.emit(observation(request, item))?;
@@ -416,12 +418,18 @@ fn cancellation_preserves_partial_evidence_and_marks_future_sources_uninspected(
     assert_eq!(counts.partial, 1);
     assert_eq!(counts.not_inspected, 2);
     assert_eq!(counts.diagnostics, 2);
+    let second_cancel = CancellationToken::default();
     let snapshot = fixture
         .normalized(
-            &ProbeCollector::new(&[("a", Mode::Partial)]),
-            &CancellationToken::default(),
+            &ProbeCollector::new(&[("a", Mode::CancelPartial)]),
+            &second_cancel,
         )
         .unwrap();
+    assert!(second_cancel.is_cancelled());
+    assert_eq!(snapshot.evidence.len(), 1);
+    assert_eq!(snapshot.coverage["a"], CoverageState::Partial);
+    assert_eq!(snapshot.coverage["b"], CoverageState::NotInspected);
+    assert_eq!(snapshot.coverage["c"], CoverageState::NotInspected);
     snapshot.verify(InventoryLimits::default()).unwrap();
 }
 
@@ -551,4 +559,19 @@ fn unsupported_schema_is_explicitly_unsupported_and_never_clean() {
     let counts = CollectionSummary::from_outcome(&outcome);
     assert_eq!(counts.unsupported, 1);
     assert_eq!(counts.attempted, 2);
+}
+
+#[test]
+fn successful_return_without_explicit_coverage_is_not_unattempted() {
+    let fixture = Fixture::new(&["a"]);
+    let collector = ProbeCollector::new(&[("a", Mode::NoCoverage)]);
+    let outcome = fixture.isolated(&collector, &CancellationToken::default());
+    assert_eq!(outcome.coverage["a"], CoverageState::Failed);
+    assert_eq!(outcome.status, CollectionStatus::Failed);
+    assert_eq!(outcome.diagnostics.len(), 1);
+    assert_eq!(outcome.diagnostics[0].code, CollectorDiagnosticCode::IncompleteScope);
+    let summary = CollectionSummary::from_outcome(&outcome);
+    assert_eq!(summary.attempted, 1);
+    assert_eq!(summary.not_inspected, 0);
+    assert_eq!(summary.inspected_no_observation, 0);
 }

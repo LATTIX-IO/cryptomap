@@ -458,7 +458,19 @@ pub fn collect_isolated<C: Collector + ?Sized>(
                 for diagnostic in result.diagnostics {
                     combined.diagnose(diagnostic)?;
                 }
-                combined.cover(&source.item, result.coverage[&source.item])?;
+                let state = result.coverage[&source.item];
+                if state == CoverageState::NotInspected {
+                    // A call that returned success but did not attest any
+                    // inspection was attempted, not skipped. Never label it
+                    // unattempted or silently convert it to a clean result.
+                    combined.diagnose(CollectorDiagnostic {
+                        code: CollectorDiagnosticCode::IncompleteScope,
+                        source_item: Some(source.item.clone()),
+                    })?;
+                    combined.cover(&source.item, CoverageState::Failed)?;
+                } else {
+                    combined.cover(&source.item, state)?;
+                }
             }
             Err(error) => {
                 let (code, state) = match error {
