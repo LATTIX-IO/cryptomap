@@ -124,23 +124,20 @@ impl<'ast> Visit<'ast> for CallVisitor {
 
 /// Reject highly nested untrusted syntax before invoking a recursive AST parser.
 ///
-/// The byte-level check is intentionally conservative: parentheses appearing
-/// inside comments or literals may cause a resource-limit diagnostic rather
-/// than an incorrect clean scan. The token count additionally bounds the
-/// actual parsed TokenTree hierarchy. A per-segment ceiling limits recursive
-/// expressions even without delimiter nesting; statements remain independent.
+/// The pre-tokenization byte check counts ALL opening delimiter bytes,
+/// including those inside strings/comments. It deliberately never subtracts
+/// closing bytes: a quote/comment can hide closing punctuation from a naive
+/// counter, allowing thousands of actual nested groups through to the
+/// recursive tokenizer. False ResourceLimit is safer than stack overflow.
+/// The subsequent token pass also bounds whole-file and inherited AST chains.
 fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
-    let mut nesting = 0_usize;
+    let mut opening_delimiters = 0_usize;
     for byte in content.bytes() {
-        match byte {
-            b'(' | b'[' | b'{' => {
-                nesting = nesting.saturating_add(1);
-                if nesting > MAX_NESTING {
-                    return Err(CollectorDiagnosticCode::ResourceLimit);
-                }
+        if matches!(byte, b'(' | b'[' | b'{') {
+            opening_delimiters = opening_delimiters.saturating_add(1);
+            if opening_delimiters > MAX_NESTING {
+                return Err(CollectorDiagnosticCode::ResourceLimit);
             }
-            b')' | b']' | b'}' => nesting = nesting.saturating_sub(1),
-            _ => {}
         }
     }
     let token_stream = content

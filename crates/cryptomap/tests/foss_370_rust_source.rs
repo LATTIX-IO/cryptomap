@@ -553,3 +553,29 @@ fn nested_brace_groups_carry_parent_recursive_expression_budget() {
         CollectorDiagnosticCode::ResourceLimit
     );
 }
+
+#[test]
+fn quoted_closing_delimiters_cannot_hide_deep_token_groups() {
+    let sandbox = Sandbox::new();
+    // Each layer opens a *real* parenthesis while the quoted right-parens
+    // previously reset a naive byte counter. The input is small, valid
+    // Rust tuple nesting, and beneath the global token budget.
+    let layers = 700;
+    let source = format!(
+        "fn f() {{ let _ = {}true{}; }}",
+        "(\"))))))))))))\",".repeat(layers),
+        ")".repeat(layers),
+    );
+    assert!(source.len() < MAX_RUST_SOURCE_BYTES);
+    sandbox.write("quoted_closers.rs", source);
+    let scope = scope_for(&sandbox.root, &[("quoted:close", "quoted_closers.rs")]);
+    let outcome = run_raw(&scope, &["quoted:close"], RawLimits::default());
+    assert_eq!(outcome.status, CollectionStatus::Failed);
+    assert_eq!(outcome.coverage["quoted:close"], CoverageState::Failed);
+    assert!(outcome.observations.is_empty());
+    assert_eq!(outcome.diagnostics.len(), 1);
+    assert_eq!(
+        outcome.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+}
