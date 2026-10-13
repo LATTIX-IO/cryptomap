@@ -534,11 +534,20 @@ fn unsupported_schema_is_explicitly_unsupported_and_never_clean() {
     let fixture = Fixture::new(&["a:unsupported", "b:success"]);
     let collector = ProbeCollector::new(&[("a:unsupported", Mode::UnsupportedSchema)]);
     let outcome = fixture.isolated(&collector, &CancellationToken::default());
-    assert_eq!(outcome.coverage["a:unsupported"], CoverageState::Unsupported);
-    assert_eq!(outcome.coverage["b:success"], CoverageState::InspectedObserved);
+    assert_eq!(
+        outcome.coverage["a:unsupported"],
+        CoverageState::Unsupported
+    );
+    assert_eq!(
+        outcome.coverage["b:success"],
+        CoverageState::InspectedObserved
+    );
     assert_eq!(outcome.status, CollectionStatus::Partial);
     assert_eq!(outcome.diagnostics.len(), 1);
-    assert_eq!(outcome.diagnostics[0].code, CollectorDiagnosticCode::UnsupportedSource);
+    assert_eq!(
+        outcome.diagnostics[0].code,
+        CollectorDiagnosticCode::UnsupportedSource
+    );
     let counts = CollectionSummary::from_outcome(&outcome);
     assert_eq!(counts.unsupported, 1);
     assert_eq!(counts.attempted, 2);

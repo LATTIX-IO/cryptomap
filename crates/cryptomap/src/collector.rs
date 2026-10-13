@@ -462,9 +462,10 @@ pub fn collect_isolated<C: Collector + ?Sized>(
             }
             Err(error) => {
                 let (code, state) = match error {
-                    InventoryError::LimitExceeded(_) => {
-                        (CollectorDiagnosticCode::ResourceLimit, CoverageState::Failed)
-                    }
+                    InventoryError::LimitExceeded(_) => (
+                        CollectorDiagnosticCode::ResourceLimit,
+                        CoverageState::Failed,
+                    ),
                     InventoryError::UnsupportedSchema(_) => (
                         CollectorDiagnosticCode::UnsupportedSource,
                         CoverageState::Unsupported,
