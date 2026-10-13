@@ -4,17 +4,18 @@
 use cryptomap::{
     AssetKind, CollectionRunId, CoverageState, EvidenceKind, IdentityContext, InventoryLimits,
     InventorySnapshot, ProtocolState,
+    batch::BatchLimits,
     collector::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
         CollectorDiagnosticCode, RequestedSource,
     },
     collectors::source::config_json::{JsonTlsConfigCollector, MAX_JSON_TLS_BYTES, PROFILE},
     coverage::CollectionScopeId,
-    orchestration::{ScopedInvocation, collect_normalized},
+    orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
     pipeline::{PipelineError, PipelineInput},
     raw::{RawFactKind, RawLimits, RawSourceKind},
     registry::Registry,
-    scope::{CollectionScope, collect_scoped},
+    scope::{CollectionScope, ScopeError, collect_scoped, collect_scoped_isolated},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -436,4 +437,118 @@ fn file_symlinks_cannot_extend_authority() {
             .grant_file(RawSourceKind::Source, "link", &box_.root, "link.json", 4096)
             .is_err()
     );
+}
+
+#[test]
+fn collector_and_host_scope_must_be_same_grant_instance_even_with_identical_ids() {
+    let a = Sandbox::new();
+    let b = Sandbox::new();
+    a.write("tls.json", BASIC);
+    b.write(
+        "tls.json",
+        r#"{"profile":"cryptomap:tls-config:v1","tls":{"versions":["1.3"]}}"#,
+    );
+    // Same scope string + requested item, different explicitly authorized
+    // file handles. Prior implementation could normalize A's data as B's.
+    let scope_a = scope_for(&a.root, &[("same", "tls.json")]);
+    let scope_b = scope_for(&b.root, &[("same", "tls.json")]);
+    let collector = JsonTlsConfigCollector::new(&scope_a, AT);
+    assert!(std::ptr::eq(collector.bound_scope().unwrap(), &scope_a));
+    assert!(matches!(
+        collect_scoped(
+            &scope_b,
+            &collector,
+            request(&["same"], RawLimits::default()),
+            &CancellationToken::default(),
+        ),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(matches!(
+        collect_scoped_isolated(
+            &scope_b,
+            &collector,
+            request(&["same"], RawLimits::default()),
+            &CancellationToken::default(),
+        ),
+        Err(ScopeError::OutOfScope)
+    ));
+
+    let descriptor = collector.descriptor();
+    let run_a = CollectionRunId::new("json-run-a").unwrap();
+    let run_b = CollectionRunId::new("json-run-b").unwrap();
+    let identity = IdentityContext::new("json-tls-tenant").unwrap();
+    let registry = Registry::builtin();
+    let source_list = sources(&["same"]);
+    let mismatched = collect_normalized(
+        ScopedInvocation {
+            collector: &collector,
+            input: PipelineInput {
+                scope: &scope_b,
+                identity: &identity,
+                registry: &registry,
+                expected_descriptor: &descriptor,
+                expected_run: &run_b,
+                sources: &source_list,
+                raw_limits: RawLimits::default(),
+                inventory_limits: InventoryLimits::default(),
+                started_at: AT,
+                ended_at: AT,
+            },
+        },
+        &CancellationToken::default(),
+    );
+    assert!(matches!(
+        mismatched,
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+
+    // A multi-collector batch must fail *preflight* before dispatch.
+    let batch = collect_normalized_batch(
+        vec![
+            ScopedInvocation {
+                collector: &collector,
+                input: PipelineInput {
+                    scope: &scope_a,
+                    identity: &identity,
+                    registry: &registry,
+                    expected_descriptor: &descriptor,
+                    expected_run: &run_a,
+                    sources: &source_list,
+                    raw_limits: RawLimits::default(),
+                    inventory_limits: InventoryLimits::default(),
+                    started_at: AT,
+                    ended_at: AT,
+                },
+            },
+            ScopedInvocation {
+                collector: &collector,
+                input: PipelineInput {
+                    scope: &scope_b,
+                    identity: &identity,
+                    registry: &registry,
+                    expected_descriptor: &descriptor,
+                    expected_run: &run_b,
+                    sources: &source_list,
+                    raw_limits: RawLimits::default(),
+                    inventory_limits: InventoryLimits::default(),
+                    started_at: AT,
+                    ended_at: AT,
+                },
+            },
+        ],
+        BatchLimits::default(),
+        &CancellationToken::default(),
+    );
+    assert!(matches!(
+        batch,
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+    let valid = collect_scoped(
+        &scope_a,
+        &collector,
+        request(&["same"], RawLimits::default()),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(valid.observations.len(), 4);
 }
