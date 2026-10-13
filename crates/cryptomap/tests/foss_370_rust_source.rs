@@ -597,7 +597,12 @@ fn existing_rust_source_collector_rejects_other_host_scope_with_same_ids() {
         options: Default::default(),
     };
     assert!(matches!(
-        collect_scoped(&scope_b, &collector, req.clone(), &CancellationToken::default()),
+        collect_scoped(
+            &scope_b,
+            &collector,
+            req.clone(),
+            &CancellationToken::default()
+        ),
         Err(ScopeError::OutOfScope)
     ));
     assert!(matches!(
