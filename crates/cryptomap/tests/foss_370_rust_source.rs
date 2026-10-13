@@ -7,8 +7,8 @@ use cryptomap::{
     AssetKind, CollectionRunId, CollectorId, CoverageState, EvidenceKind, IdentityContext,
     InventoryLimits, InventorySnapshot,
     collector::{
-        CancellationToken, CollectionRequest, CollectionSink, CollectionStatus,
-        Collector, CollectorDiagnosticCode, RequestedSource,
+        CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
+        CollectorDiagnosticCode, RequestedSource,
     },
     collectors::source::rust::{MAX_RUST_SOURCE_BYTES, RustSourceCollector},
     coverage::CollectionScopeId,
@@ -33,9 +33,8 @@ struct Sandbox {
 impl Sandbox {
     fn new() -> Self {
         let unique = NEXT.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "cryptomap-foss370-{}-{unique}", std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("cryptomap-foss370-{}-{unique}", std::process::id()));
         fs::create_dir(&root).unwrap();
         Self { root }
     }
@@ -168,11 +167,15 @@ fn exact_ast_calls_emit_frozen_syntax_only_source_evidence() {
         .unwrap();
     assert_eq!(snapshot.evidence.len(), 4);
     assert_eq!(
-        snapshot.query_assets(|a| matches!(a.kind, AssetKind::SourceUse { .. })).count(),
+        snapshot
+            .query_assets(|a| matches!(a.kind, AssetKind::SourceUse { .. }))
+            .count(),
         4
     );
     assert_eq!(
-        snapshot.query_assets(|a| matches!(a.kind, AssetKind::AlgorithmUse { .. })).count(),
+        snapshot
+            .query_assets(|a| matches!(a.kind, AssetKind::AlgorithmUse { .. }))
+            .count(),
         0
     );
 }
@@ -197,7 +200,10 @@ fn strings_comments_imports_local_methods_and_macros_are_not_calls() {
     );
     let scope = scope_for(&sandbox.root, &[("one", "no_calls.rs")]);
     let output = run_raw(&scope, &["one"], RawLimits::default());
-    assert_eq!(output.coverage["one"], CoverageState::InspectedNoObservation);
+    assert_eq!(
+        output.coverage["one"],
+        CoverageState::InspectedNoObservation
+    );
     assert!(output.observations.is_empty());
     assert_eq!(output.status, CollectionStatus::Complete);
 }
@@ -239,9 +245,10 @@ fn independent_file_order_preserves_canonical_snapshot_identity() {
         .unwrap();
     let other = normalized(&different, &["src:a", "src:b"], "other-tenant").unwrap();
     assert_ne!(a.id, other.id);
-    assert!(a
-        .verify_for_scope(different.id(), InventoryLimits::default())
-        .is_err());
+    assert!(
+        a.verify_for_scope(different.id(), InventoryLimits::default())
+            .is_err()
+    );
 }
 
 #[test]
@@ -252,22 +259,31 @@ fn malformed_utf8_and_oversized_source_are_not_clean() {
     sandbox.write("large.rs", vec![b' '; MAX_RUST_SOURCE_BYTES + 1]);
     let scope = scope_for(
         &sandbox.root,
-        &[("bad", "bad.rs"), ("utf8", "utf8.rs"), ("large", "large.rs")],
+        &[
+            ("bad", "bad.rs"),
+            ("utf8", "utf8.rs"),
+            ("large", "large.rs"),
+        ],
     );
-    let output = run_raw(
-        &scope,
-        &["bad", "utf8", "large"],
-        RawLimits::default(),
-    );
+    let output = run_raw(&scope, &["bad", "utf8", "large"], RawLimits::default());
     assert_eq!(output.status, CollectionStatus::Failed);
     assert!(output.observations.is_empty());
     for item in ["bad", "utf8", "large"] {
         assert_eq!(output.coverage[item], CoverageState::Failed);
     }
     assert_eq!(output.diagnostics.len(), 3);
-    assert_eq!(output.diagnostics[0].code, CollectorDiagnosticCode::MalformedSource);
-    assert_eq!(output.diagnostics[1].code, CollectorDiagnosticCode::MalformedSource);
-    assert_eq!(output.diagnostics[2].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(
+        output.diagnostics[0].code,
+        CollectorDiagnosticCode::MalformedSource
+    );
+    assert_eq!(
+        output.diagnostics[1].code,
+        CollectorDiagnosticCode::MalformedSource
+    );
+    assert_eq!(
+        output.diagnostics[2].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
 }
 
 #[test]
@@ -279,7 +295,10 @@ fn unsupported_extension_is_explicit_unsupported_and_attempted() {
     assert_eq!(output.coverage["not-rs"], CoverageState::Unsupported);
     assert_eq!(output.status, CollectionStatus::Failed);
     assert!(output.observations.is_empty());
-    assert_eq!(output.diagnostics[0].code, CollectorDiagnosticCode::UnsupportedSource);
+    assert_eq!(
+        output.diagnostics[0].code,
+        CollectorDiagnosticCode::UnsupportedSource
+    );
 }
 
 #[test]
@@ -295,29 +314,42 @@ fn resource_limits_prevent_partial_lookalike_and_hidden_overread() {
     let output = run_raw(&scope, &["calls"], limits);
     assert_eq!(output.coverage["calls"], CoverageState::Failed);
     assert!(output.observations.is_empty());
-    assert_eq!(output.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
-    assert!(scope
-        .open_file(RawSourceKind::Source, "calls")
-        .unwrap()
-        .read_limited(8)
-        .is_err());
+    assert_eq!(
+        output.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+    assert!(
+        scope
+            .open_file(RawSourceKind::Source, "calls")
+            .unwrap()
+            .read_limited(8)
+            .is_err()
+    );
 }
 
 #[test]
 fn deep_syntax_or_large_token_count_is_rejected_before_ast() {
     let sandbox = Sandbox::new();
     sandbox.write("deep.rs", format!("fn x() {{ {} }}", "(".repeat(80)));
-    sandbox.write("tokens.rs", format!("fn x() {{ {} }}", "let a=0;".repeat(2500)));
-    let scope = scope_for(&sandbox.root, &[("deep", "deep.rs"), ("tokens", "tokens.rs")]);
+    sandbox.write(
+        "tokens.rs",
+        format!("fn x() {{ {} }}", "let a=0;".repeat(2500)),
+    );
+    let scope = scope_for(
+        &sandbox.root,
+        &[("deep", "deep.rs"), ("tokens", "tokens.rs")],
+    );
     let output = run_raw(&scope, &["deep", "tokens"], RawLimits::default());
     for item in ["deep", "tokens"] {
         assert_eq!(output.coverage[item], CoverageState::Failed);
     }
     assert!(output.observations.is_empty());
-    assert!(output
-        .diagnostics
-        .iter()
-        .all(|d| d.code == CollectorDiagnosticCode::ResourceLimit));
+    assert!(
+        output
+            .diagnostics
+            .iter()
+            .all(|d| d.code == CollectorDiagnosticCode::ResourceLimit)
+    );
 }
 
 #[test]
@@ -355,11 +387,23 @@ fn file_symlink_cannot_extend_explicit_authority() {
     use std::os::unix::fs::symlink;
     let sandbox = Sandbox::new();
     sandbox.write("outside.rs", b"fn x() {}");
-    symlink(sandbox.root.join("outside.rs"), sandbox.root.join("redirect.rs")).unwrap();
+    symlink(
+        sandbox.root.join("outside.rs"),
+        sandbox.root.join("redirect.rs"),
+    )
+    .unwrap();
     let mut scope = CollectionScope::new(CollectionScopeId::new("tenant-rust").unwrap());
-    assert!(scope
-        .grant_file(RawSourceKind::Source, "link", &sandbox.root, "redirect.rs", 8192)
-        .is_err());
+    assert!(
+        scope
+            .grant_file(
+                RawSourceKind::Source,
+                "link",
+                &sandbox.root,
+                "redirect.rs",
+                8192
+            )
+            .is_err()
+    );
 }
 
 #[test]

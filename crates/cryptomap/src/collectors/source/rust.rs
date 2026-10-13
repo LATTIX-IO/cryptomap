@@ -8,8 +8,8 @@ use crate::{
     Confidence, CoverageState, EvidenceKind, InventoryError,
     collector::{
         COLLECTOR_CONTRACT_VERSION, CancellationToken, CollectionMode, CollectionRequest,
-        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor,
-        CollectorDiagnostic, CollectorDiagnosticCode,
+        CollectionSink, Collector, CollectorCapabilities, CollectorDescriptor, CollectorDiagnostic,
+        CollectorDiagnosticCode,
     },
     raw::{RAW_CONTRACT_VERSION, RawFactKind, RawObservation, RawSourceKind, RawSourceLocator},
     scope::{CollectionScope, ScopeError},
@@ -51,8 +51,16 @@ fn reviewed_call(path: &syn::Path) -> Option<&'static str> {
     {
         return None;
     }
-    let segments: Vec<String> = path.segments.iter().map(|part| part.ident.to_string()).collect();
-    match (segments[0].as_str(), segments[1].as_str(), segments[2].as_str()) {
+    let segments: Vec<String> = path
+        .segments
+        .iter()
+        .map(|part| part.ident.to_string())
+        .collect();
+    match (
+        segments[0].as_str(),
+        segments[1].as_str(),
+        segments[2].as_str(),
+    ) {
         ("sha2", "Sha256", "digest") => Some("sha2::Sha256::digest"),
         ("sha2", "Sha512", "digest") => Some("sha2::Sha512::digest"),
         ("ring", "digest", "digest") => Some("ring::digest::digest"),
@@ -154,11 +162,10 @@ fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
 }
 
 fn extract_calls(bytes: &[u8]) -> Result<Vec<CallSite>, CollectorDiagnosticCode> {
-    let content = std::str::from_utf8(bytes)
-        .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    let content =
+        std::str::from_utf8(bytes).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
     syntax_budget(content)?;
-    let file = syn::parse_file(content)
-        .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    let file = syn::parse_file(content).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
     let mut visitor = CallVisitor::default();
     visitor.visit_file(&file);
     if visitor.overflow
@@ -332,9 +339,10 @@ impl Collector for RustSourceCollector<'_> {
                     confidence: Confidence::High,
                     inference_rule: None,
                     source_sha256: Some(digest.clone()),
-                    attributes: BTreeMap::from([
-                        ("source:evidence-semantics".into(), "syntactic-call-only".into()),
-                    ]),
+                    attributes: BTreeMap::from([(
+                        "source:evidence-semantics".into(),
+                        "syntactic-call-only".into(),
+                    )]),
                 })?;
             }
             if interrupted {

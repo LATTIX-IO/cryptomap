@@ -75,7 +75,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.next(),
         args.next(),
     ) else {
-        return Err("usage: rust_scoped_source ROOT RELATIVE-FILE RFC3339-TIME TENANT-SCOPE RUN-ID".into());
+        return Err(
+            "usage: rust_scoped_source ROOT RELATIVE-FILE RFC3339-TIME TENANT-SCOPE RUN-ID".into(),
+        );
     };
     let at = at.to_str().ok_or("timestamp must be UTF-8 RFC3339")?;
     let tenant = tenant.to_str().ok_or("tenant must be UTF-8")?;
@@ -109,14 +111,16 @@ mod tests {
             "2026-10-13T15:00:00Z",
             "example-tenant",
             "example-run",
-        ).unwrap();
+        )
+        .unwrap();
         let again = run_source(
             &root,
             relative,
             "2026-10-13T15:00:00Z",
             "example-tenant",
             "example-run",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(first, again);
         assert_eq!(first.evidence.len(), 4);
     }
