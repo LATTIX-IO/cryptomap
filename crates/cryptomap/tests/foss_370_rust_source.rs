@@ -584,8 +584,8 @@ fn quoted_closing_delimiters_cannot_hide_deep_token_groups() {
 fn existing_rust_source_collector_rejects_other_host_scope_with_same_ids() {
     let a = Sandbox::new();
     let b = Sandbox::new();
-    a.write("crypto.rs", b"fn a() { sha2::Sha256::digest(b\\\"a\\\"); }");
-    b.write("crypto.rs", b"fn b() { sha2::Sha512::digest(b\\\"b\\\"); }");
+    a.write("crypto.rs", br#"fn a() { sha2::Sha256::digest(b"a"); }"#);
+    b.write("crypto.rs", br#"fn b() { sha2::Sha512::digest(b"b"); }"#);
     let scope_a = scope_for(&a.root, &[("same", "crypto.rs")]);
     let scope_b = scope_for(&b.root, &[("same", "crypto.rs")]);
     let collector = RustSourceCollector::new(&scope_a, OBSERVED_AT);
