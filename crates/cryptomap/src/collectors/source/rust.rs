@@ -158,10 +158,11 @@ fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
             if total_tokens > MAX_TOKENS {
                 return Err(CollectorDiagnosticCode::ResourceLimit);
             }
-            // Comma/semicolon delimit independent list elements/statements;
-            // any one undelimited run is conservatively bounded *before* syn.
-            let separator =
-                matches!(&token, TokenTree::Punct(p) if matches!(p.as_char(), ';' | ','));
+            // A comma does NOT terminate a recursive type/expression chain:
+            // A<(), A<(), ...>> may include thousands of commas without any
+            // TokenTree group nesting. Only the semicolon is a statement
+            // boundary in the enclosing group.
+            let separator = matches!(&token, TokenTree::Punct(p) if p.as_char() == ';');
             if separator {
                 segment_tokens = 0;
             } else {
