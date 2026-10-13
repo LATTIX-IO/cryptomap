@@ -163,6 +163,44 @@ class SoftwareSbomTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ambiguous locked version"):
             self.check()
 
+
+    def test_optional_parser_packages_require_exact_locked_spdx_versions(self):
+        """Optional parser crates still require release SBOM evidence."""
+        for optional in ("syn", "proc-macro2"):
+            with self.subTest(package=optional):
+                doc = sample()
+                doc["packages"] = [
+                    entry for entry in doc["packages"]
+                    if entry["name"] != optional
+                ]
+                self.write(doc)
+                with self.assertRaisesRegex(ValueError, "missing locked"):
+                    self.check()
+                doc = sample()
+                next(entry for entry in doc["packages"] if entry["name"] == optional)[
+                    "versionInfo"
+                ] = "9.9.9"
+                self.write(doc)
+                with self.assertRaisesRegex(ValueError, "differs from Cargo.lock"):
+                    self.check()
+                doc = sample()
+                next(entry for entry in doc["packages"] if entry["name"] == optional)[
+                    "versionInfo"
+                ] = ""
+                self.write(doc)
+                with self.assertRaisesRegex(ValueError, "unversioned"):
+                    self.check()
+
+    def test_extra_unreviewed_root_dependency_cannot_bypass_release_gate(self):
+        """Do not silently approve a changed root dependency set."""
+        self.lock.write_text(
+            lock_fixture().replace('dependencies = [', 'dependencies = ["unreviewed", ', 1),
+            encoding="utf-8",
+        )
+        self.write(sample())
+        with self.assertRaisesRegex(ValueError, "direct dependency contract"):
+            self.check()
+
     def test_reject_empty_and_oversized_sbom(self):
         """Fail when the SPDX document is empty or over its memory ceiling."""
         doc = sample()

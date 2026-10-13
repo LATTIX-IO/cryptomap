@@ -51,6 +51,12 @@ jobs:
       - name: Opt-in fault isolation, diagnostics and security regressions
         run: cargo test -p cryptomap --test foss_369_isolation --locked
 
+      - name: Parser-backed Rust source-call integration and security regressions
+        run: cargo test -p cryptomap --test foss_370_rust_source --features rust-source --locked
+
+      - name: Default library build without optional source parser
+        run: cargo check -p cryptomap --no-default-features --locked
+
       - name: Bounded snapshot finalization/import/diff benchmark smoke
         run: cargo test -p cryptomap --test milestone_a_inventory_scale_smoke --locked -- --nocapture
 

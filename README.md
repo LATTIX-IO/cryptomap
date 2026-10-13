@@ -35,7 +35,8 @@ The output is a verified snapshot digest plus asset, relationship and coverage c
 | Deterministic immutable snapshots, import verification, queries and diffs | Implemented |
 | Conservative Cargo.lock v3/v4 and exact-pinned Cargo.toml | Implemented, deliberately limited syntax |
 | Conservative npm package.json + package-lock v2/v3 | Implemented, deliberately limited syntax |
-| Public X.509 / live TLS / source-call / telemetry collectors | Planned; **not shipped** |
+| Optional Rust qualified source-call collector | B2 development increment; `rust-source` feature, exact-file AST evidence only |
+| Public X.509 / live TLS / general source-call / telemetry collectors | Planned; **not shipped** |
 | CycloneDX CBOM 1.7 import/export | Planned; **not shipped** |
 | Cryptopolicy / cryptoshift interoperability adapters | Planned; **not shipped** |
 | Standalone CLI, recursive repository crypto scan, algorithm execution proof | **Not claimed** |
@@ -45,6 +46,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 ## Documentation and development
 
 - [Milestone A user journey, security bounds and release procedure](docs/milestone-a-release-readiness.md)
+- [Milestone B2 optional Rust source-evidence collector, boundaries and quickstart](docs/milestone-b2-rust-source-evidence.md)
 - [Software SBOM and main-only attestation trust boundary](docs/milestone-a-sbom-attestations.md)
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)
