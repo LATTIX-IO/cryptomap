@@ -41,6 +41,14 @@ cargo run --locked -p cryptomap --example npm_scoped_inventory -- crates/cryptom
 
 The golden values were derived from the documented identity domain separator, canonical JSON tuple and `asset:v2` shape. They are normative for this preview: a change requires intentional identity/schema versioning, migration notes and review, never an automatic fixture update merely to pass CI.
 
+## Frozen snapshot-v2 and ChangeSet contracts
+
+`crates/cryptomap/tests/milestone_a_snapshot_diff_golden.rs` fixes three normative SHA-256 snapshot IDs for schema 2, computed from a precisely described, run-less *legacy compatibility* fixture with explicit Cargo library assets and two source-coverage entries. These are **not** independently authorized tenant snapshots; verified import under a trusted scope must reject them. The test intentionally separates integrity from authentication.
+
+The vectors pin BTreeMap order independence, exact canonical content encoding, verified JSON round trips, and rejection of hash/metadata tampering and unsupported future schema versions. Full reinspection of every previously covered source confirms an asset removal; missing coverage keeps the same absence **tentative**. The CI checks exact added/removed/tentative/unchanged sets and coverage-changed identifiers.
+
+Any changed SHA-256 fixture must be reviewed with the canonical tuple/schema implementation and explicit migration rationale; never auto-refresh normative hashes to accommodate a regression. These vectors are a high-risk release gate, not proof that all future CBOM extensions are compatible.
+
 ## Release and future compatibility
 
 The SDK is pre-1.0 and may evolve. Run stable and MSRV Windows/Linux CI, strict Clippy, tests, rustdoc, package/clean-room consumption, and identity golden tests before merge. The package cannot be published until a separate human-authorized release PR, crates.io ownership verification, approved version/changelog and a registry dry-run pass. SBOM/software provenance does not substitute for Cryptomap's future CycloneDX CBOM support.
