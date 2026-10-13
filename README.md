@@ -46,6 +46,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 ## Documentation and development
 
 - [Milestone A user journey, security bounds and release procedure](docs/milestone-a-release-readiness.md)
+- [Windows hands-on Milestone A verification: inspect collectors, negative cases, archive and attestations](docs/milestone-a-windows-manual-validation.md)
 - [Milestone B2 optional Rust source-evidence collector, boundaries and quickstart](docs/milestone-b2-rust-source-evidence.md)
 - [Software SBOM and main-only attestation trust boundary](docs/milestone-a-sbom-attestations.md)
 - [Crate developer guide](crates/cryptomap/README.md)
