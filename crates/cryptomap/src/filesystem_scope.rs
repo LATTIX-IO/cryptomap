@@ -269,13 +269,26 @@ impl AuthorizedFile<'_> {
 
     /// Read at most the approved bytes, returning ResourceLimit for overflow.
     pub fn read_bounded(&self) -> Result<Vec<u8>, ScopeError> {
+        self.read_limited(self.max_bytes)
+    }
+
+    /// Read at most an additional, possibly tighter collector-specific budget.
+    ///
+    /// The read is relative to the same authorized directory handle and file;
+    /// the one-byte lookahead rejects growth beyond the smaller ceiling.
+    /// This never grants access beyond the host's file capability.
+    pub fn read_limited(&self, maximum: usize) -> Result<Vec<u8>, ScopeError> {
+        if maximum == 0 {
+            return Err(ScopeError::InvalidInput);
+        }
         let file = self.open_handle()?;
-        let cap = u64::try_from(self.max_bytes).map_err(|_| ScopeError::InvalidInput)?;
+        let ceiling = self.max_bytes.min(maximum);
+        let cap = u64::try_from(ceiling).map_err(|_| ScopeError::InvalidInput)?;
         let mut data = Vec::new();
         file.take(cap.saturating_add(1))
             .read_to_end(&mut data)
             .map_err(|_| ScopeError::Io)?;
-        if data.len() > self.max_bytes {
+        if data.len() > ceiling {
             return Err(ScopeError::ResourceLimit);
         }
         Ok(data)

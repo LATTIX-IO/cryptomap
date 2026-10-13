@@ -16,7 +16,19 @@ categories = ["cryptography", "development-tools", "data-structures"]
 # Guard against publishing before conformance and compatibility requirements are complete.
 publish = false
 
+[features]
+default = []
+# Explicit opt-in: AST parser code is not pulled into the core inventory SDK.
+rust-source = ["dep:syn", "dep:proc-macro2"]
+
+[[example]]
+name = "rust_scoped_source"
+path = "examples/rust_scoped_source.rs"
+required-features = ["rust-source"]
+
 [dependencies]
+syn = { version = "=3.0.7", default-features = false, features = ["full", "parsing", "visit"], optional = true }
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

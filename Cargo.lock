@@ -96,9 +96,11 @@ version = "0.1.1-alpha.1"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
+ "proc-macro2",
  "serde",
  "serde_json",
  "sha2",
+ "syn",
 ]
 
 [[package]]
