@@ -529,3 +529,27 @@ fn comma_separated_deep_generics_cannot_bypass_ast_depth_budget() {
         CollectorDiagnosticCode::ResourceLimit
     );
 }
+
+#[test]
+fn nested_brace_groups_carry_parent_recursive_expression_budget() {
+    let sandbox = Sandbox::new();
+    // Groups independently contain <=128 tokens, depth <64, the whole file
+    // has <8192 tokens and <32 KiB, yet the unchecked AST is >7000 deep.
+    let mut expression = "true".to_owned();
+    for _ in 0..60 {
+        expression = format!("{}{{ {expression} }}", "!".repeat(120));
+    }
+    let source = format!("fn f() {{ let _ = {expression}; }}");
+    assert!(source.len() < MAX_RUST_SOURCE_BYTES);
+    sandbox.write("nested_braces.rs", source);
+    let scope = scope_for(&sandbox.root, &[("nested:braces", "nested_braces.rs")]);
+    let output = run_raw(&scope, &["nested:braces"], RawLimits::default());
+    assert_eq!(output.coverage["nested:braces"], CoverageState::Failed);
+    assert_eq!(output.status, CollectionStatus::Failed);
+    assert!(output.observations.is_empty());
+    assert_eq!(output.diagnostics.len(), 1);
+    assert_eq!(
+        output.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+}

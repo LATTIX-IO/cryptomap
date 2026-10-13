@@ -146,9 +146,13 @@ fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
     let token_stream = content
         .parse::<proc_macro2::TokenStream>()
         .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
-    let mut queue = vec![(token_stream, 0_usize)];
+    // Each child group inherits the active parent expression's token depth.
+    // Treating every TokenTree::Group as a fresh zero would allow 60 nested
+    // brace blocks containing 120 unary operators each to overflow syn's
+    // recursive AST parser/visitor while passing the flat-token check.
+    let mut queue = vec![(token_stream, 0_usize, 0_usize)];
     let mut total_tokens = 0_usize;
-    while let Some((stream, depth)) = queue.pop() {
+    while let Some((stream, depth, inherited)) = queue.pop() {
         if depth > MAX_NESTING {
             return Err(CollectorDiagnosticCode::ResourceLimit);
         }
@@ -158,21 +162,21 @@ fn syntax_budget(content: &str) -> Result<(), CollectorDiagnosticCode> {
             if total_tokens > MAX_TOKENS {
                 return Err(CollectorDiagnosticCode::ResourceLimit);
             }
-            // A comma does NOT terminate a recursive type/expression chain:
-            // A<(), A<(), ...>> may include thousands of commas without any
-            // TokenTree group nesting. Only the semicolon is a statement
-            // boundary in the enclosing group.
+            // A comma is not an expression or type recursion boundary.
+            // Semicolons reset only the *local* statement segment; the
+            // enclosing group's inherited chain still counts.
             let separator = matches!(&token, TokenTree::Punct(p) if p.as_char() == ';');
             if separator {
                 segment_tokens = 0;
             } else {
                 segment_tokens = segment_tokens.saturating_add(1);
-                if segment_tokens > MAX_FLAT_TOKENS {
-                    return Err(CollectorDiagnosticCode::ResourceLimit);
-                }
+            }
+            let cumulative = inherited.saturating_add(segment_tokens);
+            if cumulative > MAX_FLAT_TOKENS {
+                return Err(CollectorDiagnosticCode::ResourceLimit);
             }
             if let TokenTree::Group(group) = token {
-                queue.push((group.stream(), depth.saturating_add(1)));
+                queue.push((group.stream(), depth.saturating_add(1), cumulative));
             }
         }
     }
