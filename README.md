@@ -49,6 +49,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)
 - [Collector author guide and clean-room consumer](docs/collector-author-guide.md)
+- [Milestone B1 opt-in source fault isolation and diagnostics](docs/milestone-b1-isolated-diagnostics.md)
 - [Versioned compatibility and schema policy](docs/compatibility-policy.md)
 - [Milestone A supported-input matrix and frozen identity vectors](docs/milestone-a-sdk-compatibility.md)
 - [Contribution policy](CONTRIBUTING.md)
