@@ -27,7 +27,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
         with:
-          toolchain: stable
+          toolchain: '1.99.0'
           components: rustfmt, clippy
 
       - name: Cache Cargo
@@ -64,6 +64,9 @@ jobs:
 
       - name: Release artifact evidence tests
         run: python3 -m unittest discover -s scripts -p 'test_release_evidence.py' -v
+
+      - name: Release approval authorization regression tests
+        run: python3 -m unittest discover -s scripts -p 'test_publish_gate.py' -v
 
       - name: Inspect packaged archive and record release evidence
         run: |
@@ -155,10 +158,15 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
         with:
           toolchain: '1.85.0'
+      - name: Verify effective MSRV compiler
+        run: |
+          rustc +1.85.0 --version
+          cargo +1.85.0 --version
+          test "$(rustc +1.85.0 --version | cut -d ' ' -f 2)" = "1.85.0"
       - name: MSRV check
-        run: cargo check --workspace --all-targets --all-features --locked
+        run: cargo +1.85.0 check --workspace --all-targets --all-features --locked
       - name: MSRV integration tests
-        run: cargo test --workspace --all-features --locked
+        run: cargo +1.85.0 test --workspace --all-features --locked
 
   rust-windows:
     name: Windows compatibility
@@ -171,7 +179,7 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
         with:
-          toolchain: stable
+          toolchain: '1.99.0'
       - name: Windows locked compile
         run: cargo check --workspace --all-targets --all-features --locked
       - name: Windows integration tests
