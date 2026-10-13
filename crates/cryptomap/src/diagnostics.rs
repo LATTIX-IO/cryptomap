@@ -89,7 +89,9 @@ impl CollectionSummary {
                 CoverageState::NotInspected => summary.not_inspected += 1,
             }
         }
-        summary.attempted = summary.requested - summary.not_inspected - summary.unsupported;
+        // Unsupported is an attempted inspection whose parser/profile could
+        // not establish coverage, not an unattempted source.
+        summary.attempted = summary.requested - summary.not_inspected;
         summary
     }
 }

@@ -213,6 +213,9 @@ pub struct CollectionSink {
     coverage: BTreeMap<String, CoverageState>,
     diagnostics: Vec<CollectorDiagnostic>,
     total_bytes: usize,
+    // Any rejected sink mutation is fatal in fault-isolated mode, even when
+    // a cooperative plugin catches and ignores the returned error.
+    rejected: bool,
 }
 
 impl CollectionSink {
@@ -229,11 +232,18 @@ impl CollectionSink {
             coverage: BTreeMap::new(),
             diagnostics: Vec::new(),
             total_bytes: 0,
+            rejected: false,
         })
     }
 
     /// Accept one independently checked raw observation.
     pub fn emit(&mut self, observation: RawObservation) -> Result<(), InventoryError> {
+        let result = self.emit_checked(observation);
+        self.rejected |= result.is_err();
+        result
+    }
+
+    fn emit_checked(&mut self, observation: RawObservation) -> Result<(), InventoryError> {
         let size = observation.validate(&self.request.limits)?;
         if observation.run != self.request.run
             || observation.collector != self.descriptor.id
@@ -277,6 +287,12 @@ impl CollectionSink {
 
     /// Record an exact source outcome, checking request membership.
     pub fn cover(&mut self, source: &str, state: CoverageState) -> Result<(), InventoryError> {
+        let result = self.cover_checked(source, state);
+        self.rejected |= result.is_err();
+        result
+    }
+
+    fn cover_checked(&mut self, source: &str, state: CoverageState) -> Result<(), InventoryError> {
         if !self.request.sources.iter().any(|s| s.item == source) {
             return Err(InventoryError::InvalidMetadata);
         }
@@ -289,6 +305,12 @@ impl CollectionSink {
 
     /// Record a bounded diagnostic code for a requested source.
     pub fn diagnose(&mut self, diagnostic: CollectorDiagnostic) -> Result<(), InventoryError> {
+        let result = self.diagnose_checked(diagnostic);
+        self.rejected |= result.is_err();
+        result
+    }
+
+    fn diagnose_checked(&mut self, diagnostic: CollectorDiagnostic) -> Result<(), InventoryError> {
         if let Some(source) = &diagnostic.source_item {
             if !self.request.sources.iter().any(|s| &s.item == source) {
                 return Err(InventoryError::InvalidMetadata);
@@ -416,13 +438,23 @@ pub fn collect_isolated<C: Collector + ?Sized>(
             options: request.options.clone(),
         };
         let mut individual = CollectionSink::new(descriptor.clone(), single_request.clone())?;
-        match collector.collect(&single_request, &mut individual, cancel) {
+        let attempt = collector.collect(&single_request, &mut individual, cancel);
+        // Do not reinterpret a forged event, undeclared source, duplicate
+        // event or attempted grant expansion as a recoverable parse error.
+        if individual.rejected {
+            return Err(InventoryError::InvalidMetadata);
+        }
+        match attempt {
             Ok(()) => {
                 let result = individual.finish();
                 // Merge through the original bounded sink. Cross-source event
                 // collisions or aggregate limits remain fatal, never partial.
                 for fact in result.observations {
-                    combined.emit(fact)?;
+                    combined.emit(fact).map_err(|error| match error {
+                        InventoryError::LimitExceeded(what) => InventoryError::LimitExceeded(what),
+                        // Duplicate IDs may contain secrets. Fail without echoing them.
+                        _ => InventoryError::InvalidMetadata,
+                    })?;
                 }
                 for diagnostic in result.diagnostics {
                     combined.diagnose(diagnostic)?;
@@ -432,7 +464,9 @@ pub fn collect_isolated<C: Collector + ?Sized>(
             Err(error) => {
                 let code = match error {
                     InventoryError::LimitExceeded(_) => CollectorDiagnosticCode::ResourceLimit,
-                    InventoryError::UnsupportedSchema(_) => CollectorDiagnosticCode::UnsupportedSource,
+                    InventoryError::UnsupportedSchema(_) => {
+                        CollectorDiagnosticCode::UnsupportedSource
+                    },
                     _ => CollectorDiagnosticCode::InvalidObservation,
                 };
                 // Never include the potentially secret-bearing error payload.
@@ -464,8 +498,8 @@ pub fn collect<C: Collector + ?Sized>(
         }
         return Ok(sink.finish());
     }
-    // Fail closed on fatal collector failure rather than inventing coverage.
-    // FOSS-328 will introduce explicit partial-error aggregation.
+    // Strict mode remains fail-closed. For explicitly independent sources,
+    // callers may instead opt into collect_isolated after scope validation.
     collector.collect(&request, &mut sink, cancel)?;
     Ok(sink.finish())
 }

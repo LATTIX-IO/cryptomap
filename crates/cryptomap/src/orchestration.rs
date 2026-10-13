@@ -7,7 +7,7 @@ use crate::{
     batch::{BatchLimits, BatchRun, normalize_batch},
     collector::{CancellationToken, CollectionRequest, Collector},
     pipeline::{PipelineError, PipelineInput, normalize},
-    scope::collect_scoped,
+    scope::{collect_scoped, collect_scoped_isolated},
 };
 use std::collections::BTreeSet;
 
@@ -51,6 +51,27 @@ pub fn collect_normalized(
 ) -> Result<InventorySnapshot, PipelineError> {
     let request = preflight(&invocation)?;
     let outcome = collect_scoped(
+        invocation.input.scope,
+        invocation.collector,
+        request,
+        cancel,
+    )?;
+    normalize(invocation.input, outcome)
+}
+
+/// Execute one authorized, cooperative collector with independent source failures.
+///
+/// The complete host-pinned request, scope and descriptor are validated before
+/// **any** call. A source-local collector error becomes explicit failed coverage
+/// while independent successful observations survive canonical normalization.
+/// Rejected sink writes, forged events and aggregate budgets still abort.
+/// This is not a sandbox or a compatibility guarantee for stateful collectors.
+pub fn collect_normalized_isolated(
+    invocation: ScopedInvocation<'_>,
+    cancel: &CancellationToken,
+) -> Result<InventorySnapshot, PipelineError> {
+    let request = preflight(&invocation)?;
+    let outcome = collect_scoped_isolated(
         invocation.input.scope,
         invocation.collector,
         request,
