@@ -448,13 +448,21 @@ fn cancelled_before_collection_does_not_open_or_claim_clean() {
     assert!(output.observations.is_empty());
 }
 
-
 #[test]
 fn long_undelimited_expression_chains_fail_before_recursive_ast_parsing() {
     let sandbox = Sandbox::new();
-    sandbox.write("unary.rs", format!("fn f() {{ let _ = {}true; }}", "!".repeat(250)));
-    sandbox.write("binary.rs", format!("fn f() {{ let _ = 1{}; }}", "+1".repeat(250)));
-    sandbox.write("field.rs", format!("fn f() {{ let _ = x{}; }}", ".field".repeat(250)));
+    sandbox.write(
+        "unary.rs",
+        format!("fn f() {{ let _ = {}true; }}", "!".repeat(250)),
+    );
+    sandbox.write(
+        "binary.rs",
+        format!("fn f() {{ let _ = 1{}; }}", "+1".repeat(250)),
+    );
+    sandbox.write(
+        "field.rs",
+        format!("fn f() {{ let _ = x{}; }}", ".field".repeat(250)),
+    );
     sandbox.write(
         "generic.rs",
         format!("type Deep = {}u8{};", "Vec<".repeat(100), ">".repeat(100)),
@@ -479,10 +487,12 @@ fn long_undelimited_expression_chains_fail_before_recursive_ast_parsing() {
         assert_eq!(outcome.coverage[source], CoverageState::Failed);
     }
     assert_eq!(outcome.diagnostics.len(), 4);
-    assert!(outcome
-        .diagnostics
-        .iter()
-        .all(|d| d.code == CollectorDiagnosticCode::ResourceLimit));
+    assert!(
+        outcome
+            .diagnostics
+            .iter()
+            .all(|d| d.code == CollectorDiagnosticCode::ResourceLimit)
+    );
 }
 
 #[test]
@@ -492,7 +502,10 @@ fn many_independent_short_statements_remain_supported() {
     sandbox.write("many.rs", source);
     let scope = scope_for(&sandbox.root, &[("many", "many.rs")]);
     let outcome = run_raw(&scope, &["many"], RawLimits::default());
-    assert_eq!(outcome.coverage["many"], CoverageState::InspectedNoObservation);
+    assert_eq!(
+        outcome.coverage["many"],
+        CoverageState::InspectedNoObservation
+    );
     assert!(outcome.diagnostics.is_empty());
     assert!(outcome.observations.is_empty());
 }
