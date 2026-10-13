@@ -405,7 +405,6 @@ pub trait Collector: Send + Sync {
     ) -> Result<(), InventoryError>;
 }
 
-
 /// Execute a cooperative collector independently per requested source.
 ///
 /// Unlike `collect`, an ordinary source-specific collector error records Failed
@@ -466,7 +465,7 @@ pub fn collect_isolated<C: Collector + ?Sized>(
                     InventoryError::LimitExceeded(_) => CollectorDiagnosticCode::ResourceLimit,
                     InventoryError::UnsupportedSchema(_) => {
                         CollectorDiagnosticCode::UnsupportedSource
-                    },
+                    }
                     _ => CollectorDiagnosticCode::InvalidObservation,
                 };
                 // Never include the potentially secret-bearing error payload.

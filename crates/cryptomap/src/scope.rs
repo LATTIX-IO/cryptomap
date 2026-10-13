@@ -221,7 +221,6 @@ pub fn collect_scoped<C: Collector + ?Sized>(
     collector::collect(collector, request, cancel).map_err(ScopeError::Collection)
 }
 
-
 /// Run an opt-in fault-isolated collector after validating exact host grants.
 ///
 /// This mode requires a cooperative collector whose single-source calls are
