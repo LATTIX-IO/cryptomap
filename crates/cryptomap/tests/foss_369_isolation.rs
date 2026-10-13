@@ -33,10 +33,13 @@ enum Mode {
     Partial,
     CancelPartial,
     Unsupported,
+    UnsupportedSchema,
     ResourceLimit,
     InvalidEvent,
     InvalidCover,
     IgnoredInvalidEvent,
+    IgnoredInvalidCover,
+    IgnoredInvalidDiagnostic,
     FakeRun,
     SharedEvent,
     SecretError,
@@ -142,6 +145,7 @@ impl Collector for ProbeCollector {
                         source_item: Some(item.into()),
                     })?;
                 }
+                Mode::UnsupportedSchema => return Err(InventoryError::UnsupportedSchema(999)),
                 Mode::ResourceLimit => return Err(InventoryError::LimitExceeded("fixture limit")),
                 Mode::InvalidEvent => {
                     let mut fact = observation(request, item);
@@ -155,6 +159,17 @@ impl Collector for ProbeCollector {
                     let mut fact = observation(request, item);
                     fact.source.item = "not:granted".into();
                     let _ = sink.emit(fact);
+                    sink.cover(item, CoverageState::InspectedNoObservation)?;
+                }
+                Mode::IgnoredInvalidCover => {
+                    let _ = sink.cover("not:granted", CoverageState::InspectedNoObservation);
+                    sink.cover(item, CoverageState::InspectedNoObservation)?;
+                }
+                Mode::IgnoredInvalidDiagnostic => {
+                    let _ = sink.diagnose(CollectorDiagnostic {
+                        code: CollectorDiagnosticCode::InvalidObservation,
+                        source_item: Some("not:granted".into()),
+                    });
                     sink.cover(item, CoverageState::InspectedNoObservation)?;
                 }
                 Mode::FakeRun => {
@@ -343,6 +358,8 @@ fn sink_rejection_is_fatal_even_when_plugin_ignores_its_error() {
         Mode::InvalidEvent,
         Mode::InvalidCover,
         Mode::IgnoredInvalidEvent,
+        Mode::IgnoredInvalidCover,
+        Mode::IgnoredInvalidDiagnostic,
         Mode::FakeRun,
     ] {
         let fixture = Fixture::new(&["a", "b"]);
@@ -510,4 +527,19 @@ fn diagnostic_classification_is_stable_and_never_a_risk_score() {
     assert!(retryable(CollectorDiagnosticCode::Timeout));
     assert!(retryable(CollectorDiagnosticCode::Cancelled));
     assert!(!retryable(CollectorDiagnosticCode::InvalidObservation));
+}
+
+#[test]
+fn unsupported_schema_is_explicitly_unsupported_and_never_clean() {
+    let fixture = Fixture::new(&["a:unsupported", "b:success"]);
+    let collector = ProbeCollector::new(&[("a:unsupported", Mode::UnsupportedSchema)]);
+    let outcome = fixture.isolated(&collector, &CancellationToken::default());
+    assert_eq!(outcome.coverage["a:unsupported"], CoverageState::Unsupported);
+    assert_eq!(outcome.coverage["b:success"], CoverageState::InspectedObserved);
+    assert_eq!(outcome.status, CollectionStatus::Partial);
+    assert_eq!(outcome.diagnostics.len(), 1);
+    assert_eq!(outcome.diagnostics[0].code, CollectorDiagnosticCode::UnsupportedSource);
+    let counts = CollectionSummary::from_outcome(&outcome);
+    assert_eq!(counts.unsupported, 1);
+    assert_eq!(counts.attempted, 2);
 }

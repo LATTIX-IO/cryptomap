@@ -461,19 +461,25 @@ pub fn collect_isolated<C: Collector + ?Sized>(
                 combined.cover(&source.item, result.coverage[&source.item])?;
             }
             Err(error) => {
-                let code = match error {
-                    InventoryError::LimitExceeded(_) => CollectorDiagnosticCode::ResourceLimit,
-                    InventoryError::UnsupportedSchema(_) => {
-                        CollectorDiagnosticCode::UnsupportedSource
+                let (code, state) = match error {
+                    InventoryError::LimitExceeded(_) => {
+                        (CollectorDiagnosticCode::ResourceLimit, CoverageState::Failed)
                     }
-                    _ => CollectorDiagnosticCode::InvalidObservation,
+                    InventoryError::UnsupportedSchema(_) => (
+                        CollectorDiagnosticCode::UnsupportedSource,
+                        CoverageState::Unsupported,
+                    ),
+                    _ => (
+                        CollectorDiagnosticCode::InvalidObservation,
+                        CoverageState::Failed,
+                    ),
                 };
                 // Never include the potentially secret-bearing error payload.
                 combined.diagnose(CollectorDiagnostic {
                     code,
                     source_item: Some(source.item.clone()),
                 })?;
-                combined.cover(&source.item, CoverageState::Failed)?;
+                combined.cover(&source.item, state)?;
             }
         }
     }
