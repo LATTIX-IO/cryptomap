@@ -163,6 +163,26 @@ class ExactReleaseGateTests(unittest.TestCase):
                 )
                 with self.assertRaises(AssertionError):
                     self._require_exact_attestation_contract(poisoned_second)
+                # Repeated selectors must not supersede approved earlier values.
+                for suffix in [
+                    '            --source-digest "$OTHER_SHA"\n',
+                    '            --source-ref refs/heads/untrusted\n',
+                    '            --predicate-type https://spdx.dev/Document/v2.3\n',
+                ]:
+                    mutated = section.replace(
+                        '            --source-digest "$GITHUB_SHA"\n',
+                        '            --source-digest "$GITHUB_SHA"\n' + suffix,
+                        1,
+                    )
+                    with self.assertRaises(AssertionError):
+                        self._require_exact_attestation_contract(mutated)
+                mutated = section.replace(
+                    '\n          )\n',
+                    '\n          )\n          attestation_scope+=(--source-digest "$OTHER_SHA")\n',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(mutated)
 
     def _require_exact_attestation_contract(self, step):
         """Ensure both predicates use the same exact-host and source identity."""
@@ -192,8 +212,27 @@ class ExactReleaseGateTests(unittest.TestCase):
             command,
             command + ["--predicate-type", "https://spdx.dev/Document/v2.3"],
         ])
-        shared = step.split("attestation_scope=(", 1)[1].split("\n          )", 1)[0]
-        self.assertNotIn("--predicate-type", shared)
+        # Parse the effective shell array, not the opaque reference: later
+        # duplicate flags could override the approved identities.
+        scope = re.search(
+            r"(?m)^ {10}attestation_scope=\(\n((?: {12}[^\n]*\n)+) {10}\)$",
+            step,
+        )
+        self.assertIsNotNone(scope)
+        self.assertEqual(
+            shlex.split(scope.group(1)),
+            ["--repo", "$GITHUB_REPOSITORY",
+             "--signer-workflow", "$GITHUB_REPOSITORY/.github/workflows/ci.yml",
+             "--source-ref", "refs/heads/main",
+             "--source-digest", "$GITHUB_SHA"],
+        )
+        # Reject subsequent array reassignments/appends before verification.
+        mutations = [
+            line.strip() for line in step.splitlines()
+            if line.strip().startswith(("attestation_scope=", "attestation_scope+=",
+                                        "attestation_scope["))
+        ]
+        self.assertEqual(mutations, ["attestation_scope=("])
 
     def test_reject_accidentally_disabled_or_widened_registry(self):
         """Only the exact, deliberate crates.io allowlist permits this alpha."""
