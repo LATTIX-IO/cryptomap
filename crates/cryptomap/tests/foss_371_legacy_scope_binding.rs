@@ -13,9 +13,7 @@ use cryptomap::{
         npm::NpmLockfileCollector, npm_manifest_collector::NpmManifestCollector,
     },
     coverage::CollectionScopeId,
-    orchestration::{
-        ScopedInvocation, collect_normalized, collect_normalized_batch,
-    },
+    orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
     pipeline::{PipelineError, PipelineInput},
     raw::{RawLimits, RawSourceKind},
     registry::Registry,
@@ -36,7 +34,8 @@ impl TempRoot {
     fn new(file: &str) -> Self {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
-            "cryptomap-dependency-scope-{}-{n}", std::process::id()
+            "cryptomap-dependency-scope-{}-{n}",
+            std::process::id()
         ));
         fs::create_dir(&root).unwrap();
         // This file is an actual grant but must never be opened by
@@ -73,7 +72,11 @@ fn request(run: &str) -> CollectionRequest {
 
 /// Exercise the identical misuse through *all* host execution surfaces.
 /// A subsequent regression removing one binding will fail before merge.
-fn assert_scope_isolation(collector: &dyn Collector, grant_a: &CollectionScope, grant_b: &CollectionScope) {
+fn assert_scope_isolation(
+    collector: &dyn Collector,
+    grant_a: &CollectionScope,
+    grant_b: &CollectionScope,
+) {
     assert!(collector.matches_invocation_scope(grant_a));
     assert!(!collector.matches_invocation_scope(grant_b));
     let req = request("dep-scope-run");
