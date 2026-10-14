@@ -187,7 +187,7 @@ class ExactReleaseGateTests(unittest.TestCase):
             if line.strip().startswith("gh attestation verify ")
         ]
         command = ["gh", "attestation", "verify",
-                   "\${candidates[0]}", "\${attestation_scope[@]}"]
+                   "${candidates[0]}", "${attestation_scope[@]}"]
         self.assertEqual(commands, [
             command,
             command + ["--predicate-type", "https://spdx.dev/Document/v2.3"],
