@@ -1,4 +1,4 @@
-//! FOSS-371: authorized, bounded, configured-only JSON TLS evidence.
+//! FOSS-372: authorized, bounded, configured-only TOML TLS evidence.
 #![cfg(feature = "toml-tls-config")]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
@@ -9,7 +9,7 @@ use cryptomap::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
         CollectorDiagnosticCode, RequestedSource,
     },
-    collectors::source::config_toml::{TomlTlsConfigCollector, MAX_TOML_TLS_BYTES, PROFILE},
+    collectors::source::config_toml::{TomlTlsConfigCollector, MAX_TOML_TLS_BYTES},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
     pipeline::{PipelineError, PipelineInput},
