@@ -136,6 +136,21 @@ class ExactReleaseGateTests(unittest.TestCase):
                     self.assertIn(vital, section)
                     with self.assertRaises(AssertionError, msg=f"{workflow}: {vital}"):
                         self._require_exact_attestation_contract(section.replace(vital, "REMOVED", 1))
+                # Regressions that keep both command substrings but silently
+                # switch the first/default SLSA verification to SPDX.
+                first = 'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
+                poisoned = section.replace(
+                    first + "\n", first + " --predicate-type https://spdx.dev/Document/v2.3\n", 1
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(poisoned)
+                poisoned_scope = section.replace(
+                    '--source-digest "$GITHUB_SHA"',
+                    '--source-digest "$GITHUB_SHA" --predicate-type https://spdx.dev/Document/v2.3',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(poisoned_scope)
 
     def _require_exact_attestation_contract(self, step):
         """Ensure both predicates use the same exact-host and source identity."""
@@ -151,8 +166,17 @@ class ExactReleaseGateTests(unittest.TestCase):
         )
         for phrase in required:
             self.assertIn(phrase, step)
-        self.assertEqual(step.count("gh attestation verify "), 2)
-        self.assertEqual(step.count('gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'), 2)
+        # Inspect complete invocations, not substrings: a second SPDX flag
+        # on the first command would silently drop SLSA verification.
+        first = 'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
+        commands = [
+            line.strip() for line in step.splitlines()
+            if line.strip().startswith("gh attestation verify ")
+        ]
+        self.assertEqual(commands, [first, first + " \\"])
+        shared = step.split("attestation_scope=(", 1)[1].split("\n          )", 1)[0]
+        self.assertNotIn("--predicate-type", shared)
+        self.assertIn('            --predicate-type https://spdx.dev/Document/v2.3', step)
 
     def test_reject_accidentally_disabled_or_widened_registry(self):
         """Only the exact, deliberate crates.io allowlist permits this alpha."""
