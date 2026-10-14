@@ -20,6 +20,13 @@ publish = false
 default = []
 # Explicit opt-in: AST parser code is not pulled into the core inventory SDK.
 rust-source = ["dep:syn", "dep:proc-macro2"]
+# No new runtime dependencies: bounded, strict JSON TLS profile only.
+json-tls-config = []
+
+[[example]]
+name = "json_scoped_tls"
+path = "examples/json_scoped_tls.rs"
+required-features = ["json-tls-config"]
 
 [[example]]
 name = "rust_scoped_source"

@@ -16,7 +16,7 @@ use cryptomap::{
     pipeline::{PipelineError, PipelineInput},
     raw::{RawFactKind, RawLimits, RawSourceKind},
     registry::Registry,
-    scope::{CollectionScope, collect_scoped},
+    scope::{CollectionScope, ScopeError, collect_scoped, collect_scoped_isolated},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -578,4 +578,76 @@ fn quoted_closing_delimiters_cannot_hide_deep_token_groups() {
         outcome.diagnostics[0].code,
         CollectorDiagnosticCode::ResourceLimit
     );
+}
+
+#[test]
+fn existing_rust_source_collector_rejects_other_host_scope_with_same_ids() {
+    let a = Sandbox::new();
+    let b = Sandbox::new();
+    a.write("crypto.rs", br#"fn a() { sha2::Sha256::digest(b"a"); }"#);
+    b.write("crypto.rs", br#"fn b() { sha2::Sha512::digest(b"b"); }"#);
+    let scope_a = scope_for(&a.root, &[("same", "crypto.rs")]);
+    let scope_b = scope_for(&b.root, &[("same", "crypto.rs")]);
+    let collector = RustSourceCollector::new(&scope_a, OBSERVED_AT);
+    assert!(collector.matches_invocation_scope(&scope_a));
+    assert!(!collector.matches_invocation_scope(&scope_b));
+    let req = CollectionRequest {
+        run: CollectionRunId::new("run-rust").unwrap(),
+        sources: sources(&["same"]),
+        limits: RawLimits::default(),
+        options: Default::default(),
+    };
+    assert!(matches!(
+        collect_scoped(
+            &scope_b,
+            &collector,
+            req.clone(),
+            &CancellationToken::default()
+        ),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(matches!(
+        collect_scoped_isolated(&scope_b, &collector, req, &CancellationToken::default()),
+        Err(ScopeError::OutOfScope)
+    ));
+
+    let descriptor = collector.descriptor();
+    let identity = IdentityContext::new("tenant-rust").unwrap();
+    let registry = Registry::builtin();
+    let run = CollectionRunId::new("run-rust").unwrap();
+    let source_list = sources(&["same"]);
+    assert!(matches!(
+        collect_normalized(
+            ScopedInvocation {
+                collector: &collector,
+                input: PipelineInput {
+                    scope: &scope_b,
+                    identity: &identity,
+                    registry: &registry,
+                    expected_descriptor: &descriptor,
+                    expected_run: &run,
+                    sources: &source_list,
+                    raw_limits: RawLimits::default(),
+                    inventory_limits: InventoryLimits::default(),
+                    started_at: OBSERVED_AT,
+                    ended_at: OBSERVED_AT,
+                },
+            },
+            &CancellationToken::default(),
+        ),
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+    let original = collect_scoped(
+        &scope_a,
+        &collector,
+        CollectionRequest {
+            run: CollectionRunId::new("run-rust").unwrap(),
+            sources: sources(&["same"]),
+            limits: RawLimits::default(),
+            options: Default::default(),
+        },
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(original.observations.len(), 1);
 }

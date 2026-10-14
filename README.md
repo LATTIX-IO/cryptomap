@@ -35,7 +35,8 @@ The output is a verified snapshot digest plus asset, relationship and coverage c
 | Deterministic immutable snapshots, import verification, queries and diffs | Implemented |
 | Conservative Cargo.lock v3/v4 and exact-pinned Cargo.toml | Implemented, deliberately limited syntax |
 | Conservative npm package.json + package-lock v2/v3 | Implemented, deliberately limited syntax |
-| Optional Rust qualified source-call collector | B2 development increment; `rust-source` feature, exact-file AST evidence only |
+| Optional Rust qualified source-call collector | B2 developer preview; `rust-source` feature, exact-file AST evidence only |
+| Optional JSON TLS configuration profile collector | B3 developer preview; `json-tls-config` feature, configured-only claims |
 | Public X.509 / live TLS / general source-call / telemetry collectors | Planned; **not shipped** |
 | CycloneDX CBOM 1.7 import/export | Planned; **not shipped** |
 | Cryptopolicy / cryptoshift interoperability adapters | Planned; **not shipped** |
@@ -48,6 +49,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 - [Milestone A user journey, security bounds and release procedure](docs/milestone-a-release-readiness.md)
 - [Windows hands-on Milestone A verification: inspect collectors, negative cases, archive and attestations](docs/milestone-a-windows-manual-validation.md)
 - [Milestone B2 optional Rust source-evidence collector, boundaries and quickstart](docs/milestone-b2-rust-source-evidence.md)
+- [Milestone B3 opt-in JSON TLS configuration evidence and security boundaries](docs/milestone-b3-json-tls-config.md)
 - [Software SBOM and main-only attestation trust boundary](docs/milestone-a-sbom-attestations.md)
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)

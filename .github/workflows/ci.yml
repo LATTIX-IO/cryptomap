@@ -54,6 +54,12 @@ jobs:
       - name: Parser-backed Rust source-call integration and security regressions
         run: cargo test -p cryptomap --test foss_370_rust_source --features rust-source --locked
 
+      - name: Bounded JSON TLS configuration and security regressions
+        run: cargo test -p cryptomap --test foss_371_json_tls_config --features json-tls-config --locked
+
+      - name: Exact host-scope binding for all built-in Cargo and npm collectors
+        run: cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked
+
       - name: Default library build without optional source parser
         run: cargo check -p cryptomap --no-default-features --locked
 
