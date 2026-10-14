@@ -58,6 +58,18 @@ cargo run --locked -p cryptomap --features rust-source --example rust_scoped_sou
 
 The parser feature is disabled by default. See [Milestone B2 documentation](../../docs/milestone-b2-rust-source-evidence.md) for the exact syntactic whitelist, security limits and regression tests.
 
+## Optional JSON TLS configuration evidence (Milestone B3 developer preview)
+
+The off-by-default `json-tls-config` collector reads one explicitly granted JSON configuration file with the exact `cryptomap:tls-config:v1` marker and emits configured protocol versions and named cipher-suite claims. It neither connects to TLS endpoints nor establishes negotiation or executable algorithm use.
+
+```sh
+cargo run --locked -p cryptomap --features json-tls-config --example json_scoped_tls -- \
+  crates/cryptomap/examples/fixtures/config tls.json \
+  2026-10-13T15:00:00Z example-json-tenant example-json-run
+```
+
+See the [profile schema, security limitations and failure semantics](../../docs/milestone-b3-json-tls-config.md).
+
 ## Concepts
 
 - **Asset** — a canonical logical identity; duplicate asset names are not enough to equate separate use sites.
@@ -70,7 +82,7 @@ The parser feature is disabled by default. See [Milestone B2 documentation](../.
 
 The passive Cargo subset supports lockfile v3/v4 and bounded, exact numeric direct dependency declarations; it accepts only specifically supported metadata and version-only inline-table syntax. Npm supports package-lock v2/v3 with strict exact-root and installation profiles. Unsupported version ranges, Cargo workspace/target/dev/optional/renamed declarations, and npm peer/dev/workspace/alias semantics are not silently interpreted.
 
-Other collectors (X.509, TLS, general multi-language source/config, telemetry), the CycloneDX CBOM adapter, and cryptopolicy/cryptoshift bridges are **not yet available**.
+Other collectors (X.509, live negotiated TLS, general multi-language source/config, telemetry), the CycloneDX CBOM adapter, and cryptopolicy/cryptoshift bridges are **not yet available**.
 
 ## Security and contributor notes
 

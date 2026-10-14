@@ -69,3 +69,25 @@ Each file open rechecks relative paths and parents, requests no-follow plus Unix
 This capability API does not confine untrusted in-process plugins; the host must provide an OS sandbox for malicious third-party code. New tests cover symlinked ancestors, FIFO substitution and read limits.
 
 A deterministic Unix test anchors a directory handle, renames its pathname, creates a replacement directory with the same name, then proves descent through the original handle reads the authorized file rather than the replacement. The full Linux/Windows/MSRV CI matrix remains the merge gate.
+
+## Cross-invocation scope binding (FOSS-371 hardening of earlier increments)
+
+A source item string or tenant label alone is **not** an authorization capability.
+All six built-in scope-carrying collectors (Cargo manifest/lockfile, npm
+manifest/lockfile, Rust source and JSON TLS profile) now implement
+`Collector::matches_invocation_scope(&CollectionScope)` using exact object
+identity. `scope::collect_scoped`, isolated collection and all host-pinned
+normalized/batch preflights check this before dispatching collectors. No public
+method exposes a captured `CollectionScope` or its file-root authority.
+
+Third-party `Collector` implementations without retained scope references
+remain source-compatible through the default `true` method. An external
+collector that captures a scope must override the predicate; host processes
+must still isolate untrusted plugin code. The raw trait method is not a
+security sandbox or a substitute for the scoped entrypoints.
+
+Regression:
+`cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked`
+uses different rooted files, identical scope IDs and source item names, and
+ensures raw, isolated, normalized and batch invocation reject mismatched grants
+while the original scope still permits valid evidence.

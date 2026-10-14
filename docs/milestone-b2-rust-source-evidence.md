@@ -8,6 +8,8 @@ A trusted host grants each explicitly chosen `.rs` file using `CollectionScope::
 
 The same file must have `.rs` as its actual granted relative extension; a request label alone cannot cause another file type to be parsed. Unsupported file types remain `Unsupported`, malformed or invalid-UTF8 files remain `Failed`, and exceeded byte/token/nesting budgets remain `Failed` with `ResourceLimit`. They are **never** `InspectedNoObservation`. A successfully inspected supported file with no reviewed calls legitimately has that no-observation coverage.
 
+The built-in Rust source collector binds its file grants to the exact host scope instance via the non-capability-exposing `Collector::matches_invocation_scope` predicate. Both raw scoped invocation and host-pinned canonical or batch preflight reject different scope objects, **even when their scope IDs and requested item names match**. Third-party in-process collectors that retain a scope must provide this binding themselves; an untrusted plugin still requires OS isolation.
+
 The source extension must be enabled explicitly. For untrusted third-party collectors, `CollectionScope` is **not a process sandbox**; isolate foreign code at the OS boundary. Source digests provide content integrity correlation, not producer authentication. Normalize via a host-pinned `PipelineInput`, then verify the snapshot against the independently trusted scope.
 
 ## What the parser currently detects

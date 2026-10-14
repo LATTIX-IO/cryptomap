@@ -2,5 +2,5 @@
 pub mod dependency;
 
 /// Optional parser-backed explicitly authorized source evidence collectors.
-#[cfg(feature = "rust-source")]
+#[cfg(any(feature = "rust-source", feature = "json-tls-config"))]
 pub mod source;
