@@ -133,14 +133,14 @@ class ExactReleaseGateTests(unittest.TestCase):
                     '--source-ref refs/heads/main',
                     '--source-digest "$GITHUB_SHA"',
                     "--predicate-type https://spdx.dev/Document/v2.3",
-                    'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
+                    'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
                 ):
                     self.assertIn(vital, section)
                     with self.assertRaises(AssertionError, msg=f"{workflow}: {vital}"):
                         self._require_exact_attestation_contract(section.replace(vital, "REMOVED", 1))
                 # Regressions that keep both command substrings but silently
                 # switch the first/default SLSA verification to SPDX.
-                first = 'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
+                first = 'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
                 poisoned = section.replace(
                     first + "\n", first + " --predicate-type https://spdx.dev/Document/v2.3\n", 1
                 )
@@ -183,6 +183,15 @@ class ExactReleaseGateTests(unittest.TestCase):
                 )
                 with self.assertRaises(AssertionError):
                     self._require_exact_attestation_contract(mutated)
+                # Even a function installed *before* scope declaration must
+                # not bypass the vetted GH CLI binary.
+                shadow = section.replace(
+                    '          set -euo pipefail\n',
+                    '          gh() { return 0; }\n          set -euo pipefail\n',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(shadow)
                 # Indirect writes cannot be detected by checking only lines
                 # that *begin* with attestation_scope.
                 for injection in [
@@ -207,12 +216,39 @@ class ExactReleaseGateTests(unittest.TestCase):
             '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
             '--source-ref refs/heads/main',
             '--source-digest "$GITHUB_SHA"',
-            'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
-            'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \\\n'
+            'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
+            'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \\\n'
             '            --predicate-type https://spdx.dev/Document/v2.3',
         )
         for phrase in required:
             self.assertIn(phrase, step)
+        # Freeze the full executable preamble as well: a prior 'gh()' shell
+        # function could otherwise shadow the binary while the verifier
+        # invocations and source-bound array still looked correct.
+        script = "        run: |\n"
+        start = step.index(script) + len(script)
+        end = step.index("          attestation_scope=(", start)
+        actual_prelude = step[start:end]
+        common = (
+            '          # Pin identity as well as the subject digest: same bytes from a\n'
+            '          # different source revision, ref or signer are not sufficient.\n'
+        )
+        candidate_preludes = (
+            '          set -euo pipefail\n'
+            '          shopt -s nullglob\n'
+            '          candidates=(candidate/cryptomap-*.crate)\n'
+            '          test "DOLLAR{#candidates[@]}" -eq 1\n'
+            + common,
+            '          set -euo pipefail\n'
+            '          gh run download "$VERIFIED_CI_RUN" --repo "$GITHUB_REPOSITORY" \\\n'
+            '            --name cryptomap-tested-crate --dir "$RUNNER_TEMP/cryptomap-candidate"\n'
+            '          shopt -s nullglob\n'
+            '          candidates=("$RUNNER_TEMP"/cryptomap-candidate/cryptomap-*.crate)\n'
+            '          test "DOLLAR{#candidates[@]}" -eq 1\n'
+            + common,
+        )
+        self.assertIn(actual_prelude, tuple(p.replace("DOLLAR", "$") for p in candidate_preludes))
+
         # Freeze every executable line from declaration through BOTH checks:
         # a valid-looking array can otherwise be overwritten by 'printf -v',
         # eval or an indirect Bash assignment before the verifier executes.
@@ -232,14 +268,14 @@ class ExactReleaseGateTests(unittest.TestCase):
             '            --source-ref refs/heads/main',
             '            --source-digest "$GITHUB_SHA"',
             '          )',
-            '          gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}"',
+            '          command gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}"',
         ]
         ci_comment = [
             '          # GitHub CLI defaults to SLSA; verify SPDX separately or the SBOM',
             '          # signature may be missing while the provenance check still passes.',
         ]
         spdx = [
-            '          gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}" \\',
+            '          command gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}" \\',
             '            --predicate-type https://spdx.dev/Document/v2.3',
         ]
         expected = [
@@ -254,9 +290,9 @@ class ExactReleaseGateTests(unittest.TestCase):
         commands = [
             shlex.split(line.strip())
             for line in joined.splitlines()
-            if line.strip().startswith("gh attestation verify ")
+            if line.strip().startswith("command gh attestation verify ")
         ]
-        command = ["gh", "attestation", "verify",
+        command = ["command", "gh", "attestation", "verify",
                    "${candidates[0]}", "${attestation_scope[@]}"]
         self.assertEqual(commands, [
             command,

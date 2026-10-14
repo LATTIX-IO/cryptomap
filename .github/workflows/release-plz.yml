@@ -86,8 +86,8 @@ jobs:
             --source-ref refs/heads/main
             --source-digest "$GITHUB_SHA"
           )
-          gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"
-          gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \
+          command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"
+          command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \
             --predicate-type https://spdx.dev/Document/v2.3
           cargo package --package cryptomap --locked
           packages=(target/package/cryptomap-*.crate)
