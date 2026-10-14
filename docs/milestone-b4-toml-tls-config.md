@@ -24,7 +24,7 @@ Each source is capped at 16 KiB; list limits are enforced while deserializing. P
 
 ## Dependency and supply-chain boundary
 
-The feature `toml-tls-config` activates the B3 `json-tls-config` profile semantic implementation and optional pinned `toml = 0.8.23` decoder with `default-features = false` and `parse` only. The maintained `toml-rs` parser provides real TOML duplicate-key validation; no ad-hoc hand-rolled TOML grammar or YAML/network interpreters are introduced. Default Cryptomap builds do not depend on this optional parser. The exact Cargo.lock must be reviewed and the direct dependency added to locked SPDX dependency checks. Parser/source semantics and frozen snapshot-v2 identity remain unchanged.
+The feature `toml-tls-config` activates the B3 `json-tls-config` profile semantic implementation and optional pinned `toml = 0.8.23` decoder with `default-features = false` and `parse` only, plus pinned optional `toml_edit = 0.22.27` (also parse-only) for parsed syntax inspection. This ensures comments and quoted explicit table headers work while inline/dotted implicit tables remain rejected. Both packages are in the reviewed Cargo.lock; the maintained `toml-rs` parser provides real TOML duplicate-key validation; no ad-hoc hand-rolled TOML grammar or YAML/network interpreters are introduced. Default Cryptomap builds do not depend on this optional parser. The exact Cargo.lock must be reviewed and the direct dependency added to locked SPDX dependency checks. Parser/source semantics and frozen snapshot-v2 identity remain unchanged.
 
 ## Runnable exact-file example and acceptance gates
 

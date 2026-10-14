@@ -102,6 +102,7 @@ dependencies = [
  "sha2",
  "syn",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]

@@ -235,6 +235,33 @@ fn supported_empty_tls_table_is_inspected_no_observation() {
     assert!(out.diagnostics.is_empty());
 }
 #[test]
+fn equivalent_explicit_toml_table_headers_are_accepted() {
+    for header in ["[tls] # authenticated policy", "['tls']", "[\"tls\"]"] {
+        let valid = format!(
+            "profile = \"cryptomap:tls-config:v1\"\n{header}\nversions = [\"1.3\"]\n"
+        );
+        let (_box, scope) = single_input(valid);
+        let out = raw(&scope, &["tls:one"], RawLimits::default());
+        assert_eq!(out.status, CollectionStatus::Complete, "{header}");
+        assert_eq!(out.coverage["tls:one"], CoverageState::InspectedObserved);
+        assert_eq!(out.observations.len(), 1);
+    }
+}
+
+#[test]
+fn dotted_implicit_tables_and_inline_tables_are_not_explicit_grants() {
+    for bad in [
+        "tls.versions = [\"1.3\"]\n",
+        "tls = { versions = [\"1.3\"] }\n",
+    ] {
+        assert_failed(
+            format!("profile = \"cryptomap:tls-config:v1\"\n{bad}"),
+            CollectorDiagnosticCode::MalformedSource,
+        );
+    }
+}
+
+#[test]
 fn unsupported_profile_is_not_reported_clean() {
     let (_dir, scope) = single_input("profile = \"cryptomap:tls-config:v2\"\n[tls]\n");
     let out = raw(&scope, &["tls:one"], RawLimits::default());

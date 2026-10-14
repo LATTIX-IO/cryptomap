@@ -23,7 +23,7 @@ rust-source = ["dep:syn", "dep:proc-macro2"]
 # No new runtime dependencies: bounded, strict JSON TLS profile only.
 json-tls-config = []
 # Strict maintained TOML parser, reusing the reviewed B3 profile semantics.
-toml-tls-config = ["json-tls-config", "dep:toml"]
+toml-tls-config = ["json-tls-config", "dep:toml", "dep:toml_edit"]
 
 [[example]]
 name = "json_scoped_tls"
@@ -43,6 +43,8 @@ required-features = ["rust-source"]
 [dependencies]
 # Parser only: disable display, unbounded recursion and preserved ordering.
 toml = { version = "=0.8.23", default-features = false, features = ["parse"], optional = true }
+# Inspect parsed table syntax rather than brittle raw header text.
+toml_edit = { version = "=0.22.27", default-features = false, features = ["parse"], optional = true }
 syn = { version = "=3.0.7", default-features = false, features = ["full", "parsing", "visit"], optional = true }
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"], optional = true }
 serde = { version = "1", features = ["derive"] }

@@ -26,9 +26,16 @@ fn validated_facts(
     bytes: &[u8],
 ) -> Result<Vec<(&'static str, &'static str)>, CollectorDiagnosticCode> {
     let text = std::str::from_utf8(bytes).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
-    // Require the table *syntax*, not merely a root inline-table value.
-    // The profile and whitelist reject attempted multiline-value ambiguity.
-    if !text.lines().any(|line| line.trim() == "[tls]") {
+    // Inspect parser AST, not raw lines: comments, whitespace and quoted
+    // table headers are legal, while an inline/dotted implicit table is not.
+    // Never interpret a lexical "[tls]" appearing inside a string as a grant.
+    let syntax: toml_edit::DocumentMut =
+        text.parse().map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    let explicit = syntax
+        .get("tls")
+        .and_then(toml_edit::Item::as_table)
+        .is_some_and(|table| !table.is_implicit() && !table.is_dotted());
+    if !explicit {
         return Err(CollectorDiagnosticCode::MalformedSource);
     }
     let document: super::config_json::ProfileDocument =
