@@ -186,6 +186,10 @@ impl<'a> NpmLockfileCollector<'a> {
 }
 
 impl Collector for NpmLockfileCollector<'_> {
+    fn matches_invocation_scope(&self, scope: &CollectionScope) -> bool {
+        std::ptr::eq(self.scope, scope)
+    }
+
     fn descriptor(&self) -> CollectorDescriptor {
         CollectorDescriptor {
             contract_version: COLLECTOR_CONTRACT_VERSION,
