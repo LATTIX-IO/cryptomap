@@ -32,12 +32,22 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct TempRoot(PathBuf);
 impl TempRoot {
     fn new(file: &str) -> Self {
-        let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "cryptomap-dependency-scope-{}-{n}",
-            std::process::id()
-        ));
-        fs::create_dir(&root).unwrap();
+        // Atomic mkdir, not a guessed reusable path: another process or a
+        // stale root from an interrupted test must never be adopted/deleted.
+        let root = (0..128)
+            .find_map(|_| {
+                let n = NEXT.fetch_add(1, Ordering::Relaxed);
+                let candidate = std::env::temp_dir().join(format!(
+                    "cryptomap-dependency-scope-{}-{n}",
+                    std::process::id()
+                ));
+                match fs::create_dir(&candidate) {
+                    Ok(()) => Some(candidate),
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => None,
+                    Err(error) => panic!("cannot create isolated test root: {error}"),
+                }
+            })
+            .expect("unable to allocate isolated test root");
         // This file is an actual grant but must never be opened by
         // the collector captured under a different CollectionScope.
         fs::write(root.join(file), b"untrusted-but-authorized-other-scope").unwrap();
