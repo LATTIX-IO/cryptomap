@@ -4,7 +4,7 @@
 
 This gate reports the **software dependencies used to build Cryptomap itself**; it does not export Cryptomap's cryptographic inventory as a CBOM. The SPDX 2.3 document is produced by Syft from the crate's packaged Cargo manifest plus the reviewed workspace Cargo.lock. It may include extra locked workspace dependencies not reachable from the shipped library; do not treat the report as an exact runtime execution trace or a vulnerability assessment.
 
-The previous inspection gate independently records the exact packaged .crate SHA-256 and source commit. This increment requires the SPDX document to contain the reviewed direct SDK dependencies (serde, serde_json, sha2, cap-std, cap-fs-ext, plus feature-gated syn and proc-macro2) with exact locked versions. Failing to detect those packages is a build failure, not a clean/empty SBOM.
+The previous inspection gate independently records the exact packaged .crate SHA-256 and source commit. This increment requires the SPDX document to contain the reviewed direct SDK dependencies (serde, serde_json, sha2, cap-std, cap-fs-ext, plus feature-gated syn, proc-macro2 and toml) with exact locked versions. Failing to detect those packages is a build failure, not a clean/empty SBOM.
 
 ## CI execution model
 
@@ -23,7 +23,7 @@ The generator uses the pinned anchore/sbom-action/Syft release (SPDX JSON). veri
 Critical acceptance:
 
 1. Source archive remains create-only/safe and is tested as a *crate* in a separate offline consumer.
-2. Software SBOM must be nonempty, well-structured SPDX 2.3, bounded (16 MiB max), with unique SPDX package identifiers, and contain all seven reviewed direct SDK dependencies, including optional parser crates with versions.
+2. Software SBOM must be nonempty, well-structured SPDX 2.3, bounded (16 MiB max), with unique SPDX package identifiers, and contain all eight reviewed direct SDK dependencies, including optional parser crates with versions.
 3. Regression tests reject invalid SPDX version, document identity, missing metadata, missing/empty package set, duplicate package identity, missing/versionless direct dependencies and over-budget files.
 4. No OIDC signing permission exists on PR checkout/execution paths. Main attestations require successful exact-head Linux/Windows/MSRV and attest only the artifact that those jobs built and tested.
 5. Successful main-run attestation ID and verification output must be recorded in the release checklist. A successful PR test alone does **not** establish that signing worked.
