@@ -47,7 +47,7 @@ impl TempRoot {
                     Err(error) => panic!("cannot create isolated test root: {error}"),
                 }
             })
-            .expect("unable to allocate isolated test root");
+            .unwrap(); // Test-only failure when no safe temporary directory is available.
         // This file is an actual grant but must never be opened by
         // the collector captured under a different CollectionScope.
         fs::write(root.join(file), b"untrusted-but-authorized-other-scope").unwrap();
