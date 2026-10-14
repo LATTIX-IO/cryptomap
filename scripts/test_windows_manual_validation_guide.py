@@ -49,6 +49,31 @@ class ManualAcceptanceGuideTests(unittest.TestCase):
                                           r"gh\s+variable\s+set)\b", stripped),
                                  msg=line)
 
+    def test_exact_main_ci_workflow_selected(self):
+        body = GUIDE.read_text(encoding="utf-8")
+        for term in ["--json headSha,status,conclusion,event,headBranch,workflowName,workflowDatabaseId",
+                     "gh api repos/LATTIX-IO/cryptomap/actions/workflows/ci.yml",
+                     "$ci.headBranch -ne 'main'", "$ci.workflowName -ne 'Rust CI'",
+                     "$ci.workflowDatabaseId -ne $workflow.id",
+                     "$workflow.path -ne '.github/workflows/ci.yml'"]:
+            self.assertIn(term, body)
+
+    def test_both_attestation_predicates_pin_main_commit_and_signer(self):
+        body = GUIDE.read_text(encoding="utf-8")
+        self.assertIn("'--source-digest', $approvedMainSha", body)
+        self.assertIn("'--source-ref', 'refs/heads/main'", body)
+        self.assertIn("'--signer-workflow', 'LATTIX-IO/cryptomap/.github/workflows/ci.yml'", body)
+        self.assertIn("gh attestation verify $ciCrates[0].FullName @attestationScope\n", body)
+        self.assertIn("gh attestation verify $ciCrates[0].FullName @attestationScope --predicate-type https://spdx.dev/Document/v2.3", body)
+        self.assertEqual(body.count("gh attestation verify $ciCrates[0].FullName @attestationScope"), 2)
+
+    def test_offline_preconditions_pin_both_toolchains(self):
+        body = GUIDE.read_text(encoding="utf-8")
+        self.assertIn("both Rust 1.99.0", body)
+        self.assertIn("Rust 1.85.0", body)
+        self.assertIn("rust-toolchain.toml", body)
+        self.assertIn("network download", body)
+
     def test_scope_and_supply_chain_invariants_are_not_erased(self):
         body = GUIDE.read_text(encoding="utf-8")
         for term in ["same verified snapshot", "Tenant separation",

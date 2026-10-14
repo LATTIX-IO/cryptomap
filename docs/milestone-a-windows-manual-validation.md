@@ -6,9 +6,13 @@ Execute each block individually in **PowerShell 7** from the checked-out
 values. The code exercises the shipped passive Cargo/npm collectors, the
 canonical snapshot contract, and the exact local package archive.
 
-**Prerequisites:** Git; Rust/Cargo with the Rust 1.85.0 toolchain installed;
-PowerShell 7; Python 3.11+ (for `tomllib`); tar; and optionally `gh` with
-authorized read access to this repository. Rust 1.99.0 is used by main CI.
+**Prerequisites:** Git; Rustup/Cargo with **both Rust 1.99.0 (including rustfmt
+and Clippy) and Rust 1.85.0** already installed; PowerShell 7; Python 3.11+
+(for `tomllib`); tar; and optionally `gh` with authorized read access to this
+repository. `rust-toolchain.toml` selects 1.99.0 for unqualified `cargo`
+commands; Rust 1.85.0 is used *only* when explicitly selected by `+1.85.0`.
+Install both toolchains deliberately before an offline validation: otherwise
+Rustup will attempt an unplanned network download.
 Run in an isolated development workspace, not on a production source tree.
 This walkthrough performs no registry publication or credential operations.
 
@@ -261,11 +265,20 @@ and the corresponding 40-character commit SHA. These values must match:
 ~~~powershell
 $ciRun = Read-Host 'Successful main-push Rust CI run ID'
 $approvedMainSha = Read-Host 'Reviewed exact main commit SHA'
-$ci = gh run view $ciRun --repo LATTIX-IO/cryptomap --json headSha,status,conclusion,event | ConvertFrom-Json
+if ($ciRun -notmatch '^[0-9]+$' -or $approvedMainSha -cnotmatch '^[0-9a-f]{40}$') {
+    throw 'Expected a numeric run ID and a full lowercase 40-character commit SHA'
+}
+$ci = gh run view $ciRun --repo LATTIX-IO/cryptomap --json headSha,status,conclusion,event,headBranch,workflowName,workflowDatabaseId | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Unable to retrieve GitHub Actions run metadata' }
+$workflow = gh api repos/LATTIX-IO/cryptomap/actions/workflows/ci.yml | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Unable to retrieve the pinned Rust CI workflow identity' }
 $ci
-if ($ci.headSha -ne $approvedMainSha -or $ci.status -ne 'completed' -or
-    $ci.conclusion -ne 'success' -or $ci.event -ne 'push') {
-    throw 'This is not completed, successful, exact-SHA main-push evidence'
+if ($ci.headSha -cne $approvedMainSha -or $ci.status -ne 'completed' -or
+    $ci.conclusion -ne 'success' -or $ci.event -ne 'push' -or
+    $ci.headBranch -ne 'main' -or $ci.workflowName -ne 'Rust CI' -or
+    $ci.workflowDatabaseId -ne $workflow.id -or
+    $workflow.path -ne '.github/workflows/ci.yml') {
+    throw 'This is not completed, successful, exact-SHA main-push Rust CI workflow evidence'
 }
 
 $ciArtifactDir = Join-Path (Get-Location).Path 'target/attested-main-artifact'
@@ -276,10 +289,16 @@ $ciCrates = @(Get-ChildItem -File $ciArtifactDir -Filter 'cryptomap-*.crate')
 if ($ciCrates.Count -ne 1) { throw 'CI artifact count is not exactly one' }
 Get-FileHash -LiteralPath $ciCrates[0].FullName -Algorithm SHA256
 
-gh attestation verify $ciCrates[0].FullName --repo LATTIX-IO/cryptomap
-if ($LASTEXITCODE -ne 0) { throw 'CI SLSA attestation failed verification' }
-gh attestation verify $ciCrates[0].FullName --repo LATTIX-IO/cryptomap --predicate-type https://spdx.dev/Document/v2.3
-if ($LASTEXITCODE -ne 0) { throw 'CI SPDX SBOM attestation failed verification' }
+$attestationScope = @(
+    '--repo', 'LATTIX-IO/cryptomap',
+    '--signer-workflow', 'LATTIX-IO/cryptomap/.github/workflows/ci.yml',
+    '--source-ref', 'refs/heads/main',
+    '--source-digest', $approvedMainSha
+)
+gh attestation verify $ciCrates[0].FullName @attestationScope
+if ($LASTEXITCODE -ne 0) { throw 'CI SLSA attestation failed source-bound verification' }
+gh attestation verify $ciCrates[0].FullName @attestationScope --predicate-type https://spdx.dev/Document/v2.3
+if ($LASTEXITCODE -ne 0) { throw 'CI SPDX SBOM attestation failed source-bound verification' }
 ~~~
 
 Record the exact run URL, candidate checksum, verified attestations and
