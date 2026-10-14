@@ -109,6 +109,51 @@ class ExactReleaseGateTests(unittest.TestCase):
             )
             self.assertNotIn("toolchain: stable", definition)
 
+    def test_both_workflows_require_exact_source_bound_dual_attestations(self):
+        """Never accept a valid signature for the wrong signer, ref or commit."""
+        root = Path(__file__).resolve().parents[1]
+        for workflow, anchor in (
+            (".github/workflows/ci.yml", "      - name: Verify published provenance and SBOM signatures"),
+            (".github/workflows/release-plz.yml",
+             "      - name: Verify exact CI-tested crate and both main attestations"),
+        ):
+            content = (root / workflow).read_text(encoding="utf-8")
+            section = content.split(anchor, 1)[1]
+            if workflow.endswith("release-plz.yml"):
+                section = section.split("      - name: Registry dry-run of reviewed version", 1)[0]
+            with self.subTest(workflow=workflow):
+                self._require_exact_attestation_contract(section)
+
+                # Adversarial mutation: all identity dimensions are required,
+                # including BOTH distinct verified predicates.
+                for vital in (
+                    '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+                    '--source-ref refs/heads/main',
+                    '--source-digest "$GITHUB_SHA"',
+                    "--predicate-type https://spdx.dev/Document/v2.3",
+                    'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
+                ):
+                    self.assertIn(vital, section)
+                    with self.assertRaises(AssertionError, msg=f"{workflow}: {vital}"):
+                        self._require_exact_attestation_contract(section.replace(vital, "REMOVED", 1))
+
+    def _require_exact_attestation_contract(self, step):
+        """Ensure both predicates use the same exact-host and source identity."""
+        required = (
+            'attestation_scope=(',
+            '--repo "$GITHUB_REPOSITORY"',
+            '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+            '--source-ref refs/heads/main',
+            '--source-digest "$GITHUB_SHA"',
+            'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
+            'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \\\n'
+            '            --predicate-type https://spdx.dev/Document/v2.3',
+        )
+        for phrase in required:
+            self.assertIn(phrase, step)
+        self.assertEqual(step.count("gh attestation verify "), 2)
+        self.assertEqual(step.count('gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'), 2)
+
     def test_reject_accidentally_disabled_or_widened_registry(self):
         """Only the exact, deliberate crates.io allowlist permits this alpha."""
         for setting in ("false", "true", '["other-registry"]', '["crates-io","other"]'):
