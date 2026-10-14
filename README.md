@@ -47,6 +47,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 ## Documentation and development
 
 - [Milestone A user journey, security bounds and release procedure](docs/milestone-a-release-readiness.md)
+- [Windows hands-on Milestone A verification: inspect collectors, negative cases, archive and attestations](docs/milestone-a-windows-manual-validation.md)
 - [Milestone B2 optional Rust source-evidence collector, boundaries and quickstart](docs/milestone-b2-rust-source-evidence.md)
 - [Milestone B3 opt-in JSON TLS configuration evidence and security boundaries](docs/milestone-b3-json-tls-config.md)
 - [Milestone B4 opt-in TOML TLS configuration evidence and security boundaries](docs/milestone-b4-toml-tls-config.md)

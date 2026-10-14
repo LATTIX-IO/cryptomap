@@ -4,7 +4,7 @@
 
 A passive, evidence-backed **Rust inventory SDK**. The supported feature slice includes typed assets, observations, explicit collector scope and coverage, immutable SHA-256-bound snapshots, query and diff APIs, and conservative Cargo/npm dependency inventory. Dependency presence proves a package exists in approved evidence; it does **not** prove an algorithm was called. Neither source code execution nor network/package-manager access is performed by the supplied passive collectors.
 
-This release is **not** full repository cryptographic-use discovery, vulnerability/compliance evaluation, post-quantum migration planning, or CycloneDX CBOM import/export. Certificate, TLS, source-code and telemetry collectors, CBOM adapters, and cryptopolicy/cryptoshift projections are planned separately.
+This **Milestone A profile** is not full repository cryptographic-use discovery, vulnerability/compliance evaluation, post-quantum migration planning, or CycloneDX CBOM import/export. Certificate, live TLS and telemetry collectors, CBOM adapters, and cryptopolicy/cryptoshift projections remain separate. An optional bounded Rust source-call syntax collector was subsequently added under Milestone B2; it is not part of the frozen A acceptance contract and cannot prove runtime execution.
 
 ## Reproducible user journey
 
@@ -51,6 +51,8 @@ For a real repository with unsupported profiles, a failed command **does not mea
 - Source URLs and paths may contain sensitive material. The demonstration prints only snapshot IDs and aggregate counts. Do not publish unredacted raw inventory snapshots without a separate privacy review.
 - Imported snapshots require independent scope authorization; hashes detect changes but are not signatures or provenance authentication.
 - Collection confidence, partial/unsupported status and direct/inferred evidence are not compliance findings or cryptographic-use assertions.
+
+For transparent, step-by-step **PowerShell 7 on Windows** validation of actual source files, deterministic and negative-case collector behavior, archive inspection, and CI-produced signed evidence, follow the [manual acceptance walkthrough](milestone-a-windows-manual-validation.md). It does not publish anything and does not replace the Linux clean-room/attestation jobs.
 
 ## Quality gates — executable
 
