@@ -1,4 +1,6 @@
 """Adversarial unit tests for exact-commit protected release approval."""
+import re
+import shlex
 import tempfile
 import tomllib
 import unittest
@@ -151,6 +153,16 @@ class ExactReleaseGateTests(unittest.TestCase):
                 )
                 with self.assertRaises(AssertionError):
                     self._require_exact_attestation_contract(poisoned_scope)
+                # A later predicate flag overrides the earlier SPDX flag.
+                # The contract must validate whole continued shell commands.
+                poisoned_second = section.replace(
+                    '--predicate-type https://spdx.dev/Document/v2.3',
+                    '--predicate-type https://spdx.dev/Document/v2.3 '
+                    '--predicate-type https://slsa.dev/provenance/v1',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(poisoned_second)
 
     def _require_exact_attestation_contract(self, step):
         """Ensure both predicates use the same exact-host and source identity."""
@@ -166,17 +178,22 @@ class ExactReleaseGateTests(unittest.TestCase):
         )
         for phrase in required:
             self.assertIn(phrase, step)
-        # Inspect complete invocations, not substrings: a second SPDX flag
-        # on the first command would silently drop SLSA verification.
-        first = 'gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
+        # Compare the FULL shell invocations, including continuation lines.
+        # Substring checks miss later overriding --predicate-type flags.
+        joined = re.sub(r"\\\r?\n[ \t]*", " ", step)
         commands = [
-            line.strip() for line in step.splitlines()
+            shlex.split(line.strip())
+            for line in joined.splitlines()
             if line.strip().startswith("gh attestation verify ")
         ]
-        self.assertEqual(commands, [first, first + " \\"])
+        command = ["gh", "attestation", "verify",
+                   "\${candidates[0]}", "\${attestation_scope[@]}"]
+        self.assertEqual(commands, [
+            command,
+            command + ["--predicate-type", "https://spdx.dev/Document/v2.3"],
+        ])
         shared = step.split("attestation_scope=(", 1)[1].split("\n          )", 1)[0]
         self.assertNotIn("--predicate-type", shared)
-        self.assertIn('            --predicate-type https://spdx.dev/Document/v2.3', step)
 
     def test_reject_accidentally_disabled_or_widened_registry(self):
         """Only the exact, deliberate crates.io allowlist permits this alpha."""
