@@ -183,6 +183,21 @@ class ExactReleaseGateTests(unittest.TestCase):
                 )
                 with self.assertRaises(AssertionError):
                     self._require_exact_attestation_contract(mutated)
+                # Indirect writes cannot be detected by checking only lines
+                # that *begin* with attestation_scope.
+                for injection in [
+                    "printf -v 'attestation_scope[7]' %s ffffffffffffffffffffffffffffffffffffffff",
+                    'eval \'attestation_scope[7]="$OTHER_SHA"\'',
+                    'declare -a attestation_scope=()',
+                ]:
+                    mutated = section.replace(
+                        '          )\n',
+                        '          )\n          ' + injection + '\n',
+                        1,
+                    )
+                    with self.assertRaises(AssertionError, msg=injection):
+                        self._require_exact_attestation_contract(mutated)
+
 
     def _require_exact_attestation_contract(self, step):
         """Ensure both predicates use the same exact-host and source identity."""
@@ -198,6 +213,41 @@ class ExactReleaseGateTests(unittest.TestCase):
         )
         for phrase in required:
             self.assertIn(phrase, step)
+        # Freeze every executable line from declaration through BOTH checks:
+        # a valid-looking array can otherwise be overwritten by 'printf -v',
+        # eval or an indirect Bash assignment before the verifier executes.
+        # This gate intentionally requires deliberate code review for changes
+        # in this security-sensitive invocation block.
+        marker = "          attestation_scope=(\n"
+        second = "            --predicate-type https://spdx.dev/Document/v2.3"
+        self.assertEqual(step.count(marker), 1)
+        self.assertEqual(step.count(second), 1)
+        start = step.index(marker)
+        stop = step.index(second, start) + len(second)
+        actual_block = step[start:stop]
+        common = [
+            '          attestation_scope=(',
+            '            --repo "$GITHUB_REPOSITORY"',
+            '            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+            '            --source-ref refs/heads/main',
+            '            --source-digest "$GITHUB_SHA"',
+            '          )',
+            '          gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}"',
+        ]
+        ci_comment = [
+            '          # GitHub CLI defaults to SLSA; verify SPDX separately or the SBOM',
+            '          # signature may be missing while the provenance check still passes.',
+        ]
+        spdx = [
+            '          gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}" \\',
+            '            --predicate-type https://spdx.dev/Document/v2.3',
+        ]
+        expected = [
+            "\n".join(common + spdx).replace("DOLLAR", "$"),
+            "\n".join(common + ci_comment + spdx).replace("DOLLAR", "$"),
+        ]
+        self.assertIn(actual_block, expected)
+
         # Compare the FULL shell invocations, including continuation lines.
         # Substring checks miss later overriding --predicate-type flags.
         joined = re.sub(r"\\\r?\n[ \t]*", " ", step)
