@@ -11,7 +11,8 @@ Rust 1.85+, Edition 2024. This first developer preview provides a **passive, emb
 | Cargo.toml exact pins + Cargo.lock v3/v4 | Passive | Explicitly grant two named local files | Source evidence, verified direct dependencies; no target/workspace/dev/optional/range resolution |
 | npm package.json exact pins + package-lock v2/v3 | Passive | Explicitly grant two named local files | Source-bound installed/direct evidence; no script execution, peer/dev/workspace/alias/range coverage |
 | Custom `Collector` implementation | Host supplied | Declare accurate sources/modes and independent grants | Trusted in-process extension, **not** sandboxed arbitrary code |
-| TLS/X.509/source-call/runtime telemetry | Not available | None | No claims or automatic detection |
+| TLS/X.509/live telemetry | Not part of Milestone A | None | No runtime/negotiation claims or automatic detection |
+| Rust syntax calls | Separate opt-in Milestone B2 increment | Exact granted Rust source files | Syntactic call-site evidence only, not execution proof or part of A freeze |
 | CycloneDX CBOM import/export | Not available | None | No CBOM claims |
 | Cryptopolicy/Cryptoshift integration | Not available | None | No policy/migration decisions |
 
@@ -48,6 +49,8 @@ The golden values were derived from the documented identity domain separator, ca
 The vectors pin BTreeMap order independence, exact canonical content encoding, verified JSON round trips, and rejection of hash/metadata tampering and unsupported future schema versions. Full reinspection of every previously covered source confirms an asset removal; missing coverage keeps the same absence **tentative**. The CI checks exact added/removed/tentative/unchanged sets and coverage-changed identifiers.
 
 Any changed SHA-256 fixture must be reviewed with the canonical tuple/schema implementation and explicit migration rationale; never auto-refresh normative hashes to accommodate a regression. These vectors are a high-risk release gate, not proof that all future CBOM extensions are compatible.
+
+A reproducible PowerShell 7 hands-on acceptance walkthrough for these fixtures and the guarded release process is available in [Milestone A Windows manual validation](milestone-a-windows-manual-validation.md). It is a developer-operational aid, not a replacement for signed release-gate CI.
 
 ## Release and future compatibility
 
