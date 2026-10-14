@@ -9,7 +9,7 @@ use cryptomap::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
         CollectorDiagnosticCode, RequestedSource,
     },
-    collectors::source::config_toml::{TomlTlsConfigCollector, MAX_TOML_TLS_BYTES},
+    collectors::source::config_toml::{MAX_TOML_TLS_BYTES, TomlTlsConfigCollector},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
     pipeline::{PipelineError, PipelineInput},
@@ -168,7 +168,10 @@ fn exact_toml_profile_reports_only_configured_source_evidence() {
         assert_eq!(event.source_sha256.as_deref(), Some(digest.as_str()));
         assert!(event.event_id.starts_with("toml-tls:v1:"));
         assert_eq!(event.evidence_kind, EvidenceKind::Direct);
-        assert_eq!(event.attributes["source:evidence-semantics"], "configured-only");
+        assert_eq!(
+            event.attributes["source:evidence-semantics"],
+            "configured-only"
+        );
         match &event.fact {
             RawFactKind::Protocol { family, state, .. } => {
                 assert_eq!(family, "TLS");
@@ -184,22 +187,50 @@ fn exact_toml_profile_reports_only_configured_source_evidence() {
     }
     assert_eq!((protocols, suites), (2, 2));
     let snapshot = normalized(&scope, &["tls:one"], "toml-tls-tenant").unwrap();
-    snapshot.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    snapshot
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(snapshot.evidence.len(), 4);
-    assert_eq!(snapshot.query_assets(|a| matches!(
-        a.kind, AssetKind::Protocol { state: ProtocolState::Configured, .. }
-    )).count(), 2);
-    assert_eq!(snapshot.query_assets(|a| matches!(
-        a.kind, AssetKind::Protocol { state: ProtocolState::Negotiated, .. }
-    )).count(), 0);
-    assert_eq!(snapshot.query_assets(|a| matches!(a.kind, AssetKind::AlgorithmUse { .. })).count(), 0);
+    assert_eq!(
+        snapshot
+            .query_assets(|a| matches!(
+                a.kind,
+                AssetKind::Protocol {
+                    state: ProtocolState::Configured,
+                    ..
+                }
+            ))
+            .count(),
+        2
+    );
+    assert_eq!(
+        snapshot
+            .query_assets(|a| matches!(
+                a.kind,
+                AssetKind::Protocol {
+                    state: ProtocolState::Negotiated,
+                    ..
+                }
+            ))
+            .count(),
+        0
+    );
+    assert_eq!(
+        snapshot
+            .query_assets(|a| matches!(a.kind, AssetKind::AlgorithmUse { .. }))
+            .count(),
+        0
+    );
 }
 #[test]
 fn supported_empty_tls_table_is_inspected_no_observation() {
     let (_dir, scope) = single_input("profile = \"cryptomap:tls-config:v1\"\n[tls]\n");
     let out = raw(&scope, &["tls:one"], RawLimits::default());
     assert_eq!(out.status, CollectionStatus::Complete);
-    assert_eq!(out.coverage["tls:one"], CoverageState::InspectedNoObservation);
+    assert_eq!(
+        out.coverage["tls:one"],
+        CoverageState::InspectedNoObservation
+    );
     assert!(out.observations.is_empty());
     assert!(out.diagnostics.is_empty());
 }
@@ -209,7 +240,10 @@ fn unsupported_profile_is_not_reported_clean() {
     let out = raw(&scope, &["tls:one"], RawLimits::default());
     assert_eq!(out.coverage["tls:one"], CoverageState::Unsupported);
     assert!(out.observations.is_empty());
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::UnsupportedSource);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::UnsupportedSource
+    );
 }
 #[test]
 fn missing_marker_missing_table_and_inline_table_are_malformed() {
@@ -237,7 +271,10 @@ fn secret_bearing_fields_and_duplicate_table_keys_fail_without_leakage() {
         let (_dir, scope) = single_input(bad);
         let out = raw(&scope, &["tls:one"], RawLimits::default());
         assert_eq!(out.coverage["tls:one"], CoverageState::Failed);
-        assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::MalformedSource);
+        assert_eq!(
+            out.diagnostics[0].code,
+            CollectorDiagnosticCode::MalformedSource
+        );
         assert!(out.observations.is_empty());
         for report in [serde_json::to_string(&out).unwrap(), format!("{out:?}")] {
             assert!(!report.contains("do-not-echo"));
@@ -264,19 +301,28 @@ fn array_limits_and_raw_budget_prevent_partial_false_evidence() {
     let many = vec!["\"1.3\""; 50].join(", ");
     assert_failed(
         format!("profile = \"cryptomap:tls-config:v1\"\n[tls]\nversions = [{many}]\n"),
-        CollectorDiagnosticCode::MalformedSource
+        CollectorDiagnosticCode::MalformedSource,
     );
     let (_dir, scope) = single_input(BASIC);
-    let budget = RawLimits { observations: 1, ..RawLimits::default() };
+    let budget = RawLimits {
+        observations: 1,
+        ..RawLimits::default()
+    };
     let out = raw(&scope, &["tls:one"], budget);
     assert_eq!(out.coverage["tls:one"], CoverageState::Failed);
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
     assert!(out.observations.is_empty());
 }
 #[test]
 fn invalid_utf8_bad_syntax_and_oversized_file_fail_closed() {
     assert_failed(b"\xff\xff", CollectorDiagnosticCode::MalformedSource);
-    assert_failed("profile =\n[tls]\n", CollectorDiagnosticCode::MalformedSource);
+    assert_failed(
+        "profile =\n[tls]\n",
+        CollectorDiagnosticCode::MalformedSource,
+    );
     assert_failed("[".repeat(140), CollectorDiagnosticCode::MalformedSource);
     let huge = format!("{BASIC}{}", " ".repeat(MAX_TOML_TLS_BYTES + 1));
     assert_failed(huge, CollectorDiagnosticCode::ResourceLimit);
@@ -289,7 +335,10 @@ fn extension_comes_from_grant_not_untrusted_item_name() {
     let out = raw(&scope, &["trusted.toml"], RawLimits::default());
     assert_eq!(out.coverage["trusted.toml"], CoverageState::Unsupported);
     assert!(out.observations.is_empty());
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::UnsupportedSource);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::UnsupportedSource
+    );
 }
 #[test]
 fn mixed_valid_and_malformed_sources_keep_partial_with_explicit_failure() {
@@ -303,26 +352,39 @@ fn mixed_valid_and_malformed_sources_keep_partial_with_explicit_failure() {
     assert_eq!(out.coverage["bad"], CoverageState::Failed);
     assert_eq!(out.observations.len(), 4);
     let snapshot = normalized(&scope, &["good", "bad"], "toml-tls-tenant").unwrap();
-    snapshot.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    snapshot
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(snapshot.evidence.len(), 4);
 }
 #[test]
 fn deterministic_order_and_changed_source_digest_are_visible() {
     let sandbox = Sandbox::new();
     sandbox.write("a.toml", BASIC);
-    sandbox.write("b.toml", "profile = \"cryptomap:tls-config:v1\"\n[tls]\nversions = [\"1.3\"]\n");
+    sandbox.write(
+        "b.toml",
+        "profile = \"cryptomap:tls-config:v1\"\n[tls]\nversions = [\"1.3\"]\n",
+    );
     let scope = scope_for(&sandbox.root, &[("a", "a.toml"), ("b", "b.toml")]);
-    assert_eq!(raw(&scope, &["a", "b"], RawLimits::default()),
-               raw(&scope, &["b", "a"], RawLimits::default()));
+    assert_eq!(
+        raw(&scope, &["a", "b"], RawLimits::default()),
+        raw(&scope, &["b", "a"], RawLimits::default())
+    );
     let a = normalized(&scope, &["a", "b"], "toml-tls-tenant").unwrap();
     let b = normalized(&scope, &["b", "a"], "toml-tls-tenant").unwrap();
     assert_eq!(a, b);
     assert!(normalized(&scope, &["a", "b"], "other-tenant").is_err());
     let before = raw(&scope, &["a"], RawLimits::default());
-    sandbox.write("a.toml", BASIC.replace("TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_256_GCM_SHA384"));
+    sandbox.write(
+        "a.toml",
+        BASIC.replace("TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_256_GCM_SHA384"),
+    );
     let after = raw(&scope, &["a"], RawLimits::default());
     assert_ne!(before.observations, after.observations);
-    assert_ne!(before.observations[0].source_sha256, after.observations[0].source_sha256);
+    assert_ne!(
+        before.observations[0].source_sha256,
+        after.observations[0].source_sha256
+    );
 }
 #[test]
 fn unauthorized_request_rejected_before_any_files_are_opened() {
@@ -331,11 +393,20 @@ fn unauthorized_request_rejected_before_any_files_are_opened() {
     let scope = scope_for(&sandbox.root, &[("allowed", "removed.toml")]);
     fs::remove_file(sandbox.root.join("removed.toml")).unwrap();
     let collector = TomlTlsConfigCollector::new(&scope, AT);
-    assert!(collect_scoped(&scope, &collector,
-        request(&["allowed", "ungranted"], RawLimits::default()),
-        &CancellationToken::default()).is_err());
+    assert!(
+        collect_scoped(
+            &scope,
+            &collector,
+            request(&["allowed", "ungranted"], RawLimits::default()),
+            &CancellationToken::default()
+        )
+        .is_err()
+    );
     assert!(normalized(&scope, &["ungranted"], "toml-tls-tenant").is_err());
-    assert_eq!(raw(&scope, &["allowed"], RawLimits::default()).coverage["allowed"], CoverageState::Failed);
+    assert_eq!(
+        raw(&scope, &["allowed"], RawLimits::default()).coverage["allowed"],
+        CoverageState::Failed
+    );
 }
 #[test]
 fn cancellation_is_uninspected_not_negative_evidence() {
@@ -357,16 +428,33 @@ fn symlink_targets_are_not_extended_into_approved_grants() {
     use std::os::unix::fs::symlink;
     let sandbox = Sandbox::new();
     sandbox.write("real.toml", BASIC);
-    symlink(sandbox.root.join("real.toml"), sandbox.root.join("link.toml")).unwrap();
+    symlink(
+        sandbox.root.join("real.toml"),
+        sandbox.root.join("link.toml"),
+    )
+    .unwrap();
     let mut scope = CollectionScope::new(CollectionScopeId::new("toml-tls-tenant").unwrap());
-    assert!(scope.grant_file(RawSourceKind::Source, "link", &sandbox.root, "link.toml", 4096).is_err());
+    assert!(
+        scope
+            .grant_file(
+                RawSourceKind::Source,
+                "link",
+                &sandbox.root,
+                "link.toml",
+                4096
+            )
+            .is_err()
+    );
 }
 #[test]
 fn collector_scope_mismatch_rejected_in_raw_isolated_normalized_and_batch() {
     let a = Sandbox::new();
     let b = Sandbox::new();
     a.write("tls.toml", BASIC);
-    b.write("tls.toml", "profile = \"cryptomap:tls-config:v1\"\n[tls]\nversions = [\"1.3\"]\n");
+    b.write(
+        "tls.toml",
+        "profile = \"cryptomap:tls-config:v1\"\n[tls]\nversions = [\"1.3\"]\n",
+    );
     let scope_a = scope_for(&a.root, &[("same", "tls.toml")]);
     let scope_b = scope_for(&b.root, &[("same", "tls.toml")]);
     let collector = TomlTlsConfigCollector::new(&scope_a, AT);
@@ -374,8 +462,14 @@ fn collector_scope_mismatch_rejected_in_raw_isolated_normalized_and_batch() {
     assert!(!collector.matches_invocation_scope(&scope_b));
     let req = request(&["same"], RawLimits::default());
     let cancel = CancellationToken::default();
-    assert!(matches!(collect_scoped(&scope_b, &collector, req.clone(), &cancel), Err(ScopeError::OutOfScope)));
-    assert!(matches!(collect_scoped_isolated(&scope_b, &collector, req.clone(), &cancel), Err(ScopeError::OutOfScope)));
+    assert!(matches!(
+        collect_scoped(&scope_b, &collector, req.clone(), &cancel),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(matches!(
+        collect_scoped_isolated(&scope_b, &collector, req.clone(), &cancel),
+        Err(ScopeError::OutOfScope)
+    ));
     let descriptor = collector.descriptor();
     let run = req.run.clone();
     let identity = IdentityContext::new("toml-tls-tenant").unwrap();
@@ -392,13 +486,22 @@ fn collector_scope_mismatch_rejected_in_raw_isolated_normalized_and_batch() {
             sources: &sources,
             raw_limits: RawLimits::default(),
             inventory_limits: InventoryLimits::default(),
-            started_at: AT, ended_at: AT,
+            started_at: AT,
+            ended_at: AT,
         },
     };
-    assert!(matches!(collect_normalized(inv(), &cancel),
-        Err(PipelineError::Scope(ScopeError::OutOfScope))));
-    assert!(matches!(collect_normalized_batch(vec![inv()], BatchLimits::default(), &cancel),
-        Err(PipelineError::Scope(ScopeError::OutOfScope))));
-    assert_eq!(collect_scoped(&scope_a, &collector, req, &cancel).unwrap().status,
-               CollectionStatus::Complete);
+    assert!(matches!(
+        collect_normalized(inv(), &cancel),
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+    assert!(matches!(
+        collect_normalized_batch(vec![inv()], BatchLimits::default(), &cancel),
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+    assert_eq!(
+        collect_scoped(&scope_a, &collector, req, &cancel)
+            .unwrap()
+            .status,
+        CollectionStatus::Complete
+    );
 }

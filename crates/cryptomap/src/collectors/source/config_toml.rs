@@ -13,9 +13,7 @@ use crate::{
     scope::{CollectionScope, ScopeError},
 };
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum bytes per exact TOML profile.
 pub const MAX_TOML_TLS_BYTES: usize = 16 * 1024;

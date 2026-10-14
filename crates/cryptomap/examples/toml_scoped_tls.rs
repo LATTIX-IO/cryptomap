@@ -5,7 +5,7 @@
 use cryptomap::{
     AssetKind, CollectionRunId, IdentityContext, InventoryLimits, ProtocolState,
     collector::{CancellationToken, Collector, RequestedSource},
-    collectors::source::config_toml::{TomlTlsConfigCollector, MAX_TOML_TLS_BYTES},
+    collectors::source::config_toml::{MAX_TOML_TLS_BYTES, TomlTlsConfigCollector},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized},
     pipeline::PipelineInput,
