@@ -5,7 +5,7 @@
 use cryptomap::{
     AssetKind, CollectionRunId, IdentityContext, InventoryLimits,
     collector::{CancellationToken, Collector, RequestedSource},
-    collectors::certificate::{MAX_CERT_FILE_BYTES, CertificateFileCollector},
+    collectors::certificate::{CertificateFileCollector, MAX_CERT_FILE_BYTES},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized},
     pipeline::PipelineInput,
@@ -81,12 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let run = run.to_str().ok_or("run must be UTF-8")?;
     let snapshot = run_certificate(Path::new(&root), Path::new(&relative), at, tenant, run)?;
     let public_certificates = snapshot
-        .query_assets(|asset| {
-            matches!(
-                asset.kind,
-                AssetKind::Certificate { .. }
-            )
-        })
+        .query_assets(|asset| matches!(asset.kind, AssetKind::Certificate { .. }))
         .count();
     println!(
         "verified snapshot={} public_certificates={} evidence={} coverage={}",
@@ -95,7 +90,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         snapshot.evidence.len(),
         snapshot.coverage_records.len()
     );
-    println!("public certificate bytes do not establish trust, revocation status or private key possession");
+    println!(
+        "public certificate bytes do not establish trust, revocation status or private key possession"
+    );
     Ok(())
 }
 
@@ -127,7 +124,9 @@ mod tests {
         assert_eq!(first.evidence.len(), 1);
         assert_eq!(first.coverage_records.len(), 1);
         assert_eq!(
-            first.query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. })).count(),
+            first
+                .query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. }))
+                .count(),
             1,
         );
     }

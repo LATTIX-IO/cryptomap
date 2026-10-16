@@ -32,10 +32,7 @@ struct PublicCertificate {
 }
 
 fn public_oid(oid: String) -> Result<String, CollectorDiagnosticCode> {
-    if oid.is_empty()
-        || oid.len() > 128
-        || !oid.bytes().all(|b| b.is_ascii_digit() || b == b'.')
-    {
+    if oid.is_empty() || oid.len() > 128 || !oid.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
         return Err(CollectorDiagnosticCode::MalformedSource);
     }
     Ok(oid)
@@ -80,8 +77,8 @@ fn parse_public_certificates(
 ) -> Result<(Vec<PublicCertificate>, &'static str), CollectorDiagnosticCode> {
     // PEM block headers are inspected BEFORE decoding any base64. A private
     // key, CSR, encrypted key or unknown PEM label is never parsed or emitted.
-    let pem = extension == "pem"
-        || (extension != "der" && trim_ascii(source).starts_with(b"-----BEGIN"));
+    let pem =
+        extension == "pem" || (extension != "der" && trim_ascii(source).starts_with(b"-----BEGIN"));
     if pem {
         let mut rest = trim_ascii(source);
         if rest.is_empty() {
@@ -194,10 +191,18 @@ impl Collector for CertificateFileCollector<'_> {
                 )?;
                 continue;
             }
-            let file = match self.scope.open_file(RawSourceKind::Certificate, &source.item) {
+            let file = match self
+                .scope
+                .open_file(RawSourceKind::Certificate, &source.item)
+            {
                 Ok(file) => file,
                 Err(error) => {
-                    report(sink, &source.item, diagnostic(&error), CoverageState::Failed)?;
+                    report(
+                        sink,
+                        &source.item,
+                        diagnostic(&error),
+                        CoverageState::Failed,
+                    )?;
                     continue;
                 }
             };
@@ -218,7 +223,12 @@ impl Collector for CertificateFileCollector<'_> {
             let bytes = match file.read_limited(MAX_CERT_FILE_BYTES) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    report(sink, &source.item, diagnostic(&error), CoverageState::Failed)?;
+                    report(
+                        sink,
+                        &source.item,
+                        diagnostic(&error),
+                        CoverageState::Failed,
+                    )?;
                     continue;
                 }
             };

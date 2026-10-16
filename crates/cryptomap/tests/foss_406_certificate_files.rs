@@ -9,7 +9,7 @@ use cryptomap::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
         CollectorDiagnosticCode, RequestedSource,
     },
-    collectors::certificate::{MAX_CERT_FILE_BYTES, CertificateFileCollector},
+    collectors::certificate::{CertificateFileCollector, MAX_CERT_FILE_BYTES},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
     pipeline::{PipelineError, PipelineInput},
@@ -160,21 +160,42 @@ fn rsa_fingerprint_and_public_oid_metadata_are_source_backed() {
     assert_eq!(observation.source.offset, None);
     assert!(observation.event_id.starts_with("x509-file:v1:"));
     assert_eq!(observation.evidence_kind, EvidenceKind::Direct);
-    assert_eq!(observation.source_sha256.as_deref(),
-        Some(format!("{:x}", Sha256::digest(BASIC.as_bytes())).as_str()));
-    assert_eq!(observation.attributes["x509:public-key-algorithm-oid"], "1.2.840.113549.1.1.1");
-    assert_eq!(observation.attributes["x509:signature-algorithm-oid"], "1.2.840.113549.1.1.11");
+    assert_eq!(
+        observation.source_sha256.as_deref(),
+        Some(format!("{:x}", Sha256::digest(BASIC.as_bytes())).as_str())
+    );
+    assert_eq!(
+        observation.attributes["x509:public-key-algorithm-oid"],
+        "1.2.840.113549.1.1.1"
+    );
+    assert_eq!(
+        observation.attributes["x509:signature-algorithm-oid"],
+        "1.2.840.113549.1.1.11"
+    );
     match &observation.fact {
         RawFactKind::Certificate { fingerprint_sha256 } => assert_eq!(
             fingerprint_sha256,
-            "95975a1556fce045c69d7007c7c9926fc1087466046edefe38639929fa015f6e"),
+            "95975a1556fce045c69d7007c7c9926fc1087466046edefe38639929fa015f6e"
+        ),
         other => panic!("unexpected fact: {other:?}"),
     }
     let snapshot = normalized(&scope, &["cert:one"], "cert-tenant").unwrap();
-    snapshot.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    snapshot
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(snapshot.evidence.len(), 1);
-    assert_eq!(snapshot.query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. })).count(), 1);
-    assert_eq!(snapshot.query_assets(|a| matches!(a.kind, AssetKind::AlgorithmUse { .. })).count(), 0);
+    assert_eq!(
+        snapshot
+            .query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        snapshot
+            .query_assets(|a| matches!(a.kind, AssetKind::AlgorithmUse { .. }))
+            .count(),
+        0
+    );
 }
 #[test]
 fn ec_der_matches_pem_fingerprint_and_has_distinct_provenance() {
@@ -182,7 +203,10 @@ fn ec_der_matches_pem_fingerprint_and_has_distinct_provenance() {
     let sandbox = Sandbox::new();
     sandbox.write("public.pem", EC);
     sandbox.write("public.der", &pem.contents);
-    let scope = scope_for(&sandbox.root, &[("pem", "public.pem"), ("der", "public.der")]);
+    let scope = scope_for(
+        &sandbox.root,
+        &[("pem", "public.pem"), ("der", "public.der")],
+    );
     let out = raw(&scope, &["der", "pem"], RawLimits::default());
     assert_eq!(out.status, CollectionStatus::Complete);
     assert_eq!(out.observations.len(), 2);
@@ -190,15 +214,30 @@ fn ec_der_matches_pem_fingerprint_and_has_distinct_provenance() {
         let RawFactKind::Certificate { fingerprint_sha256 } = &obs.fact else {
             panic!("noncertificate fact")
         };
-        assert_eq!(fingerprint_sha256,
-            "8917ddbd31342a86dfbb705d0897af3b154d20dc3180c0f453bd6fccadcaefbc");
-        assert_eq!(obs.attributes["x509:public-key-algorithm-oid"], "1.2.840.10045.2.1");
-        assert_eq!(obs.attributes["x509:signature-algorithm-oid"], "1.2.840.10045.4.3.2");
+        assert_eq!(
+            fingerprint_sha256,
+            "8917ddbd31342a86dfbb705d0897af3b154d20dc3180c0f453bd6fccadcaefbc"
+        );
+        assert_eq!(
+            obs.attributes["x509:public-key-algorithm-oid"],
+            "1.2.840.10045.2.1"
+        );
+        assert_eq!(
+            obs.attributes["x509:signature-algorithm-oid"],
+            "1.2.840.10045.4.3.2"
+        );
     }
     assert_ne!(out.observations[0].event_id, out.observations[1].event_id);
     let snapshot = normalized(&scope, &["pem", "der"], "cert-tenant").unwrap();
-    snapshot.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
-    assert_eq!(snapshot.query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. })).count(), 1);
+    snapshot
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
+    assert_eq!(
+        snapshot
+            .query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. }))
+            .count(),
+        1
+    );
     assert_eq!(snapshot.evidence.len(), 2);
 }
 #[test]
@@ -211,11 +250,20 @@ fn two_public_pem_certificates_in_one_file_are_bounded() {
 }
 #[test]
 fn duplicate_certificates_are_not_silent_replayed_duplicates() {
-    assert_failed(format!("{BASIC}{BASIC}"), CollectorDiagnosticCode::MalformedSource);
+    assert_failed(
+        format!("{BASIC}{BASIC}"),
+        CollectorDiagnosticCode::MalformedSource,
+    );
 }
 #[test]
 fn reject_private_key_and_noncertificate_pem_headers_before_decoding() {
-    for header in ["PRIVATE KEY", "ENCRYPTED PRIVATE KEY", "RSA PRIVATE KEY", "PUBLIC KEY", "CERTIFICATE REQUEST"] {
+    for header in [
+        "PRIVATE KEY",
+        "ENCRYPTED PRIVATE KEY",
+        "RSA PRIVATE KEY",
+        "PUBLIC KEY",
+        "CERTIFICATE REQUEST",
+    ] {
         let private = format!("-----BEGIN {header}-----\nZG9udC1sb2c=\n-----END {header}-----\n");
         let (_dir, scope) = single_input(private);
         let out = raw(&scope, &["cert:one"], RawLimits::default());
@@ -253,12 +301,18 @@ fn malformed_and_trailing_der_are_rejected_without_partial_false_facts() {
     let sandbox = Sandbox::new();
     sandbox.write("bad.der", trailing);
     let scope = scope_for(&sandbox.root, &[("bad", "bad.der")]);
-    assert_eq!(raw(&scope, &["bad"], RawLimits::default()).coverage["bad"], CoverageState::Failed);
+    assert_eq!(
+        raw(&scope, &["bad"], RawLimits::default()).coverage["bad"],
+        CoverageState::Failed
+    );
 }
 #[test]
 fn empty_source_and_overbudget_source_fail_explicitly() {
     assert_failed("", CollectorDiagnosticCode::MalformedSource);
-    assert_failed("x".repeat(MAX_CERT_FILE_BYTES + 1), CollectorDiagnosticCode::ResourceLimit);
+    assert_failed(
+        "x".repeat(MAX_CERT_FILE_BYTES + 1),
+        CollectorDiagnosticCode::ResourceLimit,
+    );
 }
 #[test]
 fn unsupported_extension_uses_granted_real_file_not_item_label() {
@@ -273,7 +327,10 @@ fn unsupported_extension_uses_granted_real_file_not_item_label() {
 fn malformed_source_and_valid_source_keep_partial_coverage() {
     let sandbox = Sandbox::new();
     sandbox.write("good.pem", BASIC);
-    sandbox.write("bad.pem", "-----BEGIN PRIVATE KEY-----\nYWJj\n-----END PRIVATE KEY-----\n");
+    sandbox.write(
+        "bad.pem",
+        "-----BEGIN PRIVATE KEY-----\nYWJj\n-----END PRIVATE KEY-----\n",
+    );
     let scope = scope_for(&sandbox.root, &[("good", "good.pem"), ("bad", "bad.pem")]);
     let out = raw(&scope, &["bad", "good"], RawLimits::default());
     assert_eq!(out.status, CollectionStatus::Partial);
@@ -281,14 +338,18 @@ fn malformed_source_and_valid_source_keep_partial_coverage() {
     assert_eq!(out.coverage["good"], CoverageState::InspectedObserved);
     assert_eq!(out.observations.len(), 1);
     let snapshot = normalized(&scope, &["good", "bad"], "cert-tenant").unwrap();
-    snapshot.verify_for_scope(scope.id(), InventoryLimits::default()).unwrap();
+    snapshot
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .unwrap();
     assert_eq!(snapshot.evidence.len(), 1);
 }
 #[test]
 fn deterministic_replay_and_changed_source_digest() {
     let (_dir, scope) = single_input(BASIC);
-    assert_eq!(raw(&scope, &["cert:one"], RawLimits::default()),
-        raw(&scope, &["cert:one"], RawLimits::default()));
+    assert_eq!(
+        raw(&scope, &["cert:one"], RawLimits::default()),
+        raw(&scope, &["cert:one"], RawLimits::default())
+    );
     let first = normalized(&scope, &["cert:one"], "cert-tenant").unwrap();
     let second = normalized(&scope, &["cert:one"], "cert-tenant").unwrap();
     assert_eq!(first, second);
@@ -301,19 +362,36 @@ fn no_unauthorized_reads_even_when_other_granted_file_is_deleted() {
     let scope = scope_for(&sandbox.root, &[("granted", "deleted.pem")]);
     fs::remove_file(sandbox.root.join("deleted.pem")).unwrap();
     let collector = CertificateFileCollector::new(&scope, AT);
-    assert!(collect_scoped(&scope, &collector, request(&["granted", "ungranted"], RawLimits::default()),
-        &CancellationToken::default()).is_err());
-    assert_eq!(raw(&scope, &["granted"], RawLimits::default()).coverage["granted"], CoverageState::Failed);
+    assert!(
+        collect_scoped(
+            &scope,
+            &collector,
+            request(&["granted", "ungranted"], RawLimits::default()),
+            &CancellationToken::default()
+        )
+        .is_err()
+    );
+    assert_eq!(
+        raw(&scope, &["granted"], RawLimits::default()).coverage["granted"],
+        CoverageState::Failed
+    );
 }
 #[test]
 fn low_fact_budget_rejects_multicert_file_atomically() {
     let (_dir, scope) = single_input(format!("{BASIC}{EC}"));
-    let out = raw(&scope, &["cert:one"], RawLimits {
-        observations: 1,
-        ..RawLimits::default()
-    });
+    let out = raw(
+        &scope,
+        &["cert:one"],
+        RawLimits {
+            observations: 1,
+            ..RawLimits::default()
+        },
+    );
     assert_eq!(out.coverage["cert:one"], CoverageState::Failed);
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
     assert!(out.observations.is_empty());
 }
 #[test]
@@ -338,7 +416,17 @@ fn symlink_escape_is_rejected_before_cert_contents_are_read() {
     sandbox.write("real.pem", BASIC);
     symlink(sandbox.root.join("real.pem"), sandbox.root.join("link.pem")).unwrap();
     let mut scope = CollectionScope::new(CollectionScopeId::new("cert-tenant").unwrap());
-    assert!(scope.grant_file(RawSourceKind::Certificate, "link", &sandbox.root, "link.pem", 4096).is_err());
+    assert!(
+        scope
+            .grant_file(
+                RawSourceKind::Certificate,
+                "link",
+                &sandbox.root,
+                "link.pem",
+                4096
+            )
+            .is_err()
+    );
 }
 #[test]
 fn wrong_scope_is_rejected_across_strict_isolated_normalized_and_batch_paths() {
@@ -353,8 +441,14 @@ fn wrong_scope_is_rejected_across_strict_isolated_normalized_and_batch_paths() {
     assert!(!collector.matches_invocation_scope(&scope_b));
     let req = request(&["same"], RawLimits::default());
     let cancel = CancellationToken::default();
-    assert!(matches!(collect_scoped(&scope_b, &collector, req.clone(), &cancel), Err(ScopeError::OutOfScope)));
-    assert!(matches!(collect_scoped_isolated(&scope_b, &collector, req.clone(), &cancel), Err(ScopeError::OutOfScope)));
+    assert!(matches!(
+        collect_scoped(&scope_b, &collector, req.clone(), &cancel),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(matches!(
+        collect_scoped_isolated(&scope_b, &collector, req.clone(), &cancel),
+        Err(ScopeError::OutOfScope)
+    ));
     let descriptor = collector.descriptor();
     let run = req.run.clone();
     let identity = IdentityContext::new("cert-tenant").unwrap();
@@ -371,11 +465,22 @@ fn wrong_scope_is_rejected_across_strict_isolated_normalized_and_batch_paths() {
             sources: &sources,
             raw_limits: RawLimits::default(),
             inventory_limits: InventoryLimits::default(),
-            started_at: AT, ended_at: AT,
+            started_at: AT,
+            ended_at: AT,
         },
     };
-    assert!(matches!(collect_normalized(inv(), &cancel), Err(PipelineError::Scope(ScopeError::OutOfScope))));
-    assert!(matches!(collect_normalized_batch(vec![inv()], BatchLimits::default(), &cancel),
-        Err(PipelineError::Scope(ScopeError::OutOfScope))));
-    assert_eq!(collect_scoped(&scope_a, &collector, req, &cancel).unwrap().status, CollectionStatus::Complete);
+    assert!(matches!(
+        collect_normalized(inv(), &cancel),
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+    assert!(matches!(
+        collect_normalized_batch(vec![inv()], BatchLimits::default(), &cancel),
+        Err(PipelineError::Scope(ScopeError::OutOfScope))
+    ));
+    assert_eq!(
+        collect_scoped(&scope_a, &collector, req, &cancel)
+            .unwrap()
+            .status,
+        CollectionStatus::Complete
+    );
 }
