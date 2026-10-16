@@ -18,6 +18,7 @@ use cryptomap::{
     scope::{CollectionScope, ScopeError, collect_scoped, collect_scoped_isolated},
 };
 use sha2::{Digest, Sha256};
+use x509_cert::der::{DecodePem, Encode};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -199,10 +200,13 @@ fn rsa_fingerprint_and_public_oid_metadata_are_source_backed() {
 }
 #[test]
 fn ec_der_matches_pem_fingerprint_and_has_distinct_provenance() {
-    let (_, pem) = x509_parser::pem::parse_x509_pem(EC.as_bytes()).unwrap();
+    let der = x509_cert::Certificate::from_pem(EC.as_bytes())
+        .unwrap()
+        .to_der()
+        .unwrap();
     let sandbox = Sandbox::new();
     sandbox.write("public.pem", EC);
-    sandbox.write("public.der", &pem.contents);
+    sandbox.write("public.der", &der);
     let scope = scope_for(
         &sandbox.root,
         &[("pem", "public.pem"), ("der", "public.der")],
@@ -329,7 +333,10 @@ fn crt_encoding_supports_public_pem_but_rejects_private_armor() {
 
 #[test]
 fn malformed_and_trailing_der_are_rejected_without_partial_false_facts() {
-    let (_, pem) = x509_parser::pem::parse_x509_pem(BASIC.as_bytes()).unwrap();
+    let der = x509_cert::Certificate::from_pem(BASIC.as_bytes())
+        .unwrap()
+        .to_der()
+        .unwrap();
     for der in [vec![0x30, 0x82, 0xff, 0xff], vec![0x00, 0x01]] {
         let sandbox = Sandbox::new();
         sandbox.write("bad.der", der);
@@ -338,7 +345,7 @@ fn malformed_and_trailing_der_are_rejected_without_partial_false_facts() {
         assert_eq!(out.coverage["bad"], CoverageState::Failed);
         assert!(out.observations.is_empty());
     }
-    let mut trailing = pem.contents;
+    let mut trailing = der;
     trailing.extend_from_slice(b"not part of certificate");
     let sandbox = Sandbox::new();
     sandbox.write("bad.der", trailing);

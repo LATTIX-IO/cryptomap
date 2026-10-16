@@ -166,7 +166,7 @@ class SoftwareSbomTests(unittest.TestCase):
 
     def test_optional_parser_packages_require_exact_locked_spdx_versions(self):
         """Optional parser crates still require release SBOM evidence."""
-        for optional in ("syn", "proc-macro2", "toml", "toml_edit", "x509-parser"):
+        for optional in ("syn", "proc-macro2", "toml", "toml_edit", "x509-cert"):
             with self.subTest(package=optional):
                 doc = sample()
                 doc["packages"] = [

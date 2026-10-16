@@ -13,7 +13,7 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use x509_parser::{parse_x509_certificate, pem::parse_x509_pem};
+use x509_cert::{Certificate, der::{Decode, DecodePem, Encode}};
 
 /// Maximum source bytes permitted in one explicitly granted certificate file.
 pub const MAX_CERT_FILE_BYTES: usize = 256 * 1024;
@@ -45,13 +45,21 @@ fn parse_der(der: &[u8]) -> Result<PublicCertificate, CollectorDiagnosticCode> {
     if der.len() > MAX_CERT_DER_BYTES {
         return Err(CollectorDiagnosticCode::ResourceLimit);
     }
-    let (remaining, certificate) =
-        parse_x509_certificate(der).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
-    if !remaining.is_empty() {
+    // A complete, canonical DER certificate is required. Decoding into a
+    // typed RustCrypto certificate and verifying canonical re-encoding
+    // rejects trailing bytes, BER and ambiguous alternate encodings.
+    let certificate =
+        Certificate::from_der(der).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    let canonical = certificate
+        .to_der()
+        .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    if canonical.as_slice() != der {
         return Err(CollectorDiagnosticCode::MalformedSource);
     }
-    let signature_oid = public_oid(certificate.signature_algorithm.algorithm.to_id_string())?;
-    let public_key_oid = public_oid(certificate.public_key().algorithm.algorithm.to_id_string())?;
+    let signature_oid = public_oid(certificate.signature_algorithm.oid.to_string())?;
+    let public_key_oid = public_oid(
+        certificate.tbs_certificate.subject_public_key_info.algorithm.oid.to_string()
+    )?;
     Ok(PublicCertificate {
         fingerprint: format!("{:x}", Sha256::digest(der)),
         signature_oid,
@@ -93,10 +101,9 @@ fn parse_public_certificates(
             if certificates.len() >= MAX_CERTS_PER_FILE {
                 return Err(CollectorDiagnosticCode::ResourceLimit);
             }
-            // x509-parser decodes certificate bytes but may accept a loose
-            // PEM footer. Establish the exact approved ASCII armor boundary
-            // *before* parsing; an incomplete END label must not become a
-            // successful public-certificate observation.
+            // Validate exact public-only PEM armor independently of the
+            // decoder. Its label and framing may never substitute for the
+            // host's explicit Certificate file grant.
             const BEGIN: &[u8] = b"-----BEGIN CERTIFICATE-----";
             const END: &[u8] = b"-----END CERTIFICATE-----";
             let end_start = rest[BEGIN.len()..]
@@ -124,12 +131,12 @@ fn parse_public_certificates(
                 0
             };
             let block_end = footer_end + after_newline;
-            let (unparsed, pem) = parse_x509_pem(&rest[..block_end])
+            let decoded = Certificate::from_pem(&rest[..block_end])
                 .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
-            if !trim_ascii(unparsed).is_empty() || pem.label != "CERTIFICATE" {
-                return Err(CollectorDiagnosticCode::MalformedSource);
-            }
-            let certificate = parse_der(&pem.contents)?;
+            let der = decoded
+                .to_der()
+                .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+            let certificate = parse_der(&der)?;
             if !seen.insert(certificate.fingerprint.clone()) {
                 return Err(CollectorDiagnosticCode::MalformedSource);
             }
