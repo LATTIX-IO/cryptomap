@@ -48,7 +48,7 @@ def _locked_contract(lockfile: Path) -> tuple[dict[str, str], dict[str, set[str]
         if (len(parts) not in (1, 2) or parts[0] not in EXPECTED_DIRECT
                 or parts[0] in root_refs
                 or (len(parts) == 2 and not re.fullmatch(
-                    r"[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", parts[1]
+                    r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", parts[1]
                 ))):
             raise ValueError("direct dependency contract changed or ambiguous")
         root_refs[parts[0]] = parts[1] if len(parts) == 2 else None
