@@ -93,9 +93,40 @@ fn parse_public_certificates(
             if certificates.len() >= MAX_CERTS_PER_FILE {
                 return Err(CollectorDiagnosticCode::ResourceLimit);
             }
-            let (remaining, pem) =
-                parse_x509_pem(rest).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
-            if pem.label != "CERTIFICATE" {
+            // x509-parser decodes certificate bytes but may accept a loose
+            // PEM footer. Establish the exact approved ASCII armor boundary
+            // *before* parsing; an incomplete END label must not become a
+            // successful public-certificate observation.
+            const BEGIN: &[u8] = b"-----BEGIN CERTIFICATE-----";
+            const END: &[u8] = b"-----END CERTIFICATE-----";
+            let end_start = rest[BEGIN.len()..]
+                .windows(END.len())
+                .position(|window| window == END)
+                .map(|position| position + BEGIN.len())
+                .ok_or(CollectorDiagnosticCode::MalformedSource)?;
+            let encoded = &rest[BEGIN.len()..end_start];
+            if !(encoded.starts_with(b"\n") || encoded.starts_with(b"\r\n"))
+                || !encoded.ends_with(b"\n")
+                || !encoded.iter().all(|byte| {
+                    byte.is_ascii_alphanumeric()
+                        || matches!(*byte, b'+' | b'/' | b'=' | b'\n' | b'\r')
+                })
+            {
+                return Err(CollectorDiagnosticCode::MalformedSource);
+            }
+            let footer_end = end_start + END.len();
+            let tail = &rest[footer_end..];
+            let after_newline = if tail.starts_with(b"\r\n") {
+                2
+            } else if tail.starts_with(b"\n") {
+                1
+            } else {
+                0
+            };
+            let block_end = footer_end + after_newline;
+            let (unparsed, pem) = parse_x509_pem(&rest[..block_end])
+                .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+            if !trim_ascii(unparsed).is_empty() || pem.label != "CERTIFICATE" {
                 return Err(CollectorDiagnosticCode::MalformedSource);
             }
             let certificate = parse_der(&pem.contents)?;
@@ -103,7 +134,7 @@ fn parse_public_certificates(
                 return Err(CollectorDiagnosticCode::MalformedSource);
             }
             certificates.push(certificate);
-            rest = trim_ascii(remaining);
+            rest = trim_ascii(&rest[block_end..]);
         }
         Ok((certificates, "pem"))
     } else {
