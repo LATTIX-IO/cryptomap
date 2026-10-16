@@ -129,6 +129,17 @@ fn parse_public_certificates(
             {
                 return Err(CollectorDiagnosticCode::MalformedSource);
             }
+            // Bound the decoded certificate BEFORE invoking the ASN.1/PEM
+            // decoder. Base64 expands at most 3 bytes per four characters;
+            // a file under the 256 KiB source cap may still contain a much
+            // larger certificate than the permitted 64 KiB DER budget.
+            let base64_bytes = encoded
+                .iter()
+                .filter(|&&byte| byte != b'\n' && byte != b'\r')
+                .count();
+            if base64_bytes > MAX_CERT_DER_BYTES.div_ceil(3) * 4 {
+                return Err(CollectorDiagnosticCode::ResourceLimit);
+            }
             let footer_end = end_start + END.len();
             let tail = &rest[footer_end..];
             let after_newline = if tail.starts_with(b"\r\n") {

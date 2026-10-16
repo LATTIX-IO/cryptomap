@@ -9,7 +9,7 @@ use cryptomap::{
         CancellationToken, CollectionRequest, CollectionSink, CollectionStatus, Collector,
         CollectorDiagnosticCode, RequestedSource,
     },
-    collectors::certificate::{CertificateFileCollector, MAX_CERT_FILE_BYTES},
+    collectors::certificate::{CertificateFileCollector, MAX_CERT_DER_BYTES, MAX_CERT_FILE_BYTES},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized, collect_normalized_batch},
     pipeline::{PipelineError, PipelineInput},
@@ -355,6 +355,18 @@ fn malformed_and_trailing_der_are_rejected_without_partial_false_facts() {
         CoverageState::Failed
     );
 }
+#[test]
+fn oversized_pem_der_payload_is_bounded_before_certificate_decode() {
+    // ASCII/base64 armor remains below the source-file byte ceiling, but
+    // its decoded payload exceeds the per-certificate DER ceiling.
+    let encoded = "A".repeat(MAX_CERT_DER_BYTES.div_ceil(3) * 4 + 4);
+    let oversized = format!(
+        "-----BEGIN CERTIFICATE-----\n{encoded}\n-----END CERTIFICATE-----\n"
+    );
+    assert!(oversized.len() < MAX_CERT_FILE_BYTES);
+    assert_failed(oversized, CollectorDiagnosticCode::ResourceLimit);
+}
+
 #[test]
 fn empty_source_and_overbudget_source_fail_explicitly() {
     assert_failed("", CollectorDiagnosticCode::MalformedSource);
