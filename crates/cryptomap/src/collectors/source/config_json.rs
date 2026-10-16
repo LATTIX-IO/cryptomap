@@ -72,7 +72,7 @@ fn read_suites<'de, D: Deserializer<'de>>(input: D) -> Result<Vec<String>, D::Er
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ProfileDocument {
+pub(super) struct ProfileDocument {
     profile: String,
     tls: TlsSettings,
 }
@@ -115,6 +115,13 @@ fn validated_facts(
 ) -> Result<Vec<(&'static str, &'static str)>, CollectorDiagnosticCode> {
     let document: ProfileDocument =
         serde_json::from_slice(bytes).map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    validated_document(document)
+}
+
+/// Shared reviewed profile semantics for JSON and strict TOML.
+pub(super) fn validated_document(
+    document: ProfileDocument,
+) -> Result<Vec<(&'static str, &'static str)>, CollectorDiagnosticCode> {
     if document.profile != PROFILE {
         return Err(CollectorDiagnosticCode::UnsupportedSource);
     }

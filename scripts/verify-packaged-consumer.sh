@@ -24,6 +24,9 @@ for expected in \
     examples/npm_scoped_inventory.rs \
     examples/rust_scoped_source.rs \
     examples/fixtures/source/crypto_calls.rs \
+    examples/toml_scoped_tls.rs \
+    examples/fixtures/config/tls.toml \
+    examples/fixtures/config/tls-empty.toml \
     examples/json_scoped_tls.rs \
     examples/fixtures/config/tls.json \
     examples/fixtures/config/empty-tls.json \
@@ -130,3 +133,13 @@ CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
     --example json_scoped_tls -- \
     "$scratch/json-tls-input" "tls.json" "2026-10-13T15:00:00Z" \
     "packaged-json-tenant" "packaged-json-run"
+
+# Exercise the opt-in bounded TOML parser from the actual packaged .crate.
+# No shell parsing of untrusted profile values, target-side execution or network.
+mkdir -p "$scratch/toml-tls-input"
+cp "$package/examples/fixtures/config/tls.toml" "$scratch/toml-tls-input/tls.toml"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" --features toml-tls-config \
+    --example toml_scoped_tls -- \
+    "$scratch/toml-tls-input" "tls.toml" "2026-10-13T15:00:00Z" \
+    "packaged-toml-tenant" "packaged-toml-run"
