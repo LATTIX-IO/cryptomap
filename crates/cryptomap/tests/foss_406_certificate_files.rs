@@ -18,12 +18,12 @@ use cryptomap::{
     scope::{CollectionScope, ScopeError, collect_scoped, collect_scoped_isolated},
 };
 use sha2::{Digest, Sha256};
-use x509_cert::der::{DecodePem, Encode};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
 };
+use x509_cert::der::{DecodePem, Encode};
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const AT: &str = "2026-10-13T15:00:00Z";
 const BASIC: &str = include_str!("../examples/fixtures/certificate/rsa.pem");

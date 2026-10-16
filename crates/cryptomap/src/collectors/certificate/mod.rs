@@ -13,7 +13,10 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use x509_cert::{Certificate, der::{Decode, DecodePem, Encode}};
+use x509_cert::{
+    Certificate,
+    der::{Decode, DecodePem, Encode},
+};
 
 /// Maximum source bytes permitted in one explicitly granted certificate file.
 pub const MAX_CERT_FILE_BYTES: usize = 256 * 1024;
@@ -58,7 +61,12 @@ fn parse_der(der: &[u8]) -> Result<PublicCertificate, CollectorDiagnosticCode> {
     }
     let signature_oid = public_oid(certificate.signature_algorithm.oid.to_string())?;
     let public_key_oid = public_oid(
-        certificate.tbs_certificate.subject_public_key_info.algorithm.oid.to_string()
+        certificate
+            .tbs_certificate
+            .subject_public_key_info
+            .algorithm
+            .oid
+            .to_string(),
     )?;
     Ok(PublicCertificate {
         fingerprint: format!("{:x}", Sha256::digest(der)),
