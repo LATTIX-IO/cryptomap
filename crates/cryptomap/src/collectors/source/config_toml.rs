@@ -1,6 +1,6 @@
 //! Passive, exact-file, fail-closed TOML TLS configuration evidence.
 //!
-//! Only the explicit versioned profile with a [tls] table is inspected.
+//! Only the explicit versioned profile with a `[tls]` table is inspected.
 //! Configured-only evidence is not live negotiation, execution or compliance.
 use crate::{
     CollectorId, Confidence, CoverageState, EvidenceKind, InventoryError, ProtocolState,
