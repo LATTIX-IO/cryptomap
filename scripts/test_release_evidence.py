@@ -120,6 +120,54 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect(self.path, SHA, "0.1.0")
 
+    def test_accept_exact_reviewed_public_certificate_fixtures(self):
+        """The two reviewed public PEM fixtures are not secret material."""
+        root = Path(__file__).resolve().parents[1]
+        fixtures = {
+            name: (root / "crates/cryptomap" / name).read_bytes()
+            for name in (
+                "examples/fixtures/certificate/rsa.pem",
+                "examples/fixtures/certificate/ec.pem",
+            )
+        }
+        archive_at(self.path, fixtures)
+        report = inspect(self.path, SHA, "0.1.0")
+        paths = {entry["path"] for entry in report["files"]}
+        self.assertTrue(fixtures.keys() <= paths)
+
+    def test_reject_private_or_unknown_certificate_fixture_even_under_allowlist(self):
+        """A file's approved *name* never authorizes private or altered bytes."""
+        root = Path(__file__).resolve().parents[1]
+        name = "examples/fixtures/certificate/rsa.pem"
+        public = (root / "crates/cryptomap" / name).read_bytes()
+        private = b"-----BEGIN PRIVATE KEY-----\nZG9udC1sb2c=\n-----END PRIVATE KEY-----\n"
+        variants = (
+            ("private pem", name, private),
+            ("mixed private material", name, public + private),
+            ("truncated footer", name,
+             public.replace(b"-----END CERTIFICATE-----", b"-----END CERT")),
+            ("extra bytes", name, public + b"undisclosed contents"),
+            ("unapproved pem path", "examples/fixtures/certificate/secret.pem", public),
+            ("forbidden key suffix", "examples/fixtures/certificate/secret.key", b"secret"),
+        )
+        for scenario, path, body in variants:
+            with self.subTest(scenario=scenario):
+                archive_at(self.path, {path: body})
+                with self.assertRaisesRegex(
+                    ValueError, "public certificate fixture|secret-bearing"
+                ):
+                    inspect(self.path, SHA, "0.1.0")
+
+        lines = public.splitlines()
+        self.assertGreaterEqual(len(lines), 5)
+        line = bytearray(lines[2])
+        line[0] = ord("A") if line[0] != ord("A") else ord("B")
+        lines[2] = bytes(line)
+        changed = b"\n".join(lines) + b"\n"
+        archive_at(self.path, {name: changed})
+        with self.assertRaisesRegex(ValueError, "public certificate fixture"):
+            inspect(self.path, SHA, "0.1.0")
+
     def test_reject_path_traversal(self):
         """Prevent parent-directory references in archive entries."""
         archive_at(self.path)
