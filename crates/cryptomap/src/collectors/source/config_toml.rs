@@ -29,8 +29,9 @@ fn validated_facts(
     // Inspect parser AST, not raw lines: comments, whitespace and quoted
     // table headers are legal, while an inline/dotted implicit table is not.
     // Never interpret a lexical "[tls]" appearing inside a string as a grant.
-    let syntax: toml_edit::DocumentMut =
-        text.parse().map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+    let syntax: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
     let explicit = syntax
         .get("tls")
         .and_then(toml_edit::Item::as_table)

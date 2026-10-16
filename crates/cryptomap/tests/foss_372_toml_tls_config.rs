@@ -237,9 +237,8 @@ fn supported_empty_tls_table_is_inspected_no_observation() {
 #[test]
 fn equivalent_explicit_toml_table_headers_are_accepted() {
     for header in ["[tls] # authenticated policy", "['tls']", "[\"tls\"]"] {
-        let valid = format!(
-            "profile = \"cryptomap:tls-config:v1\"\n{header}\nversions = [\"1.3\"]\n"
-        );
+        let valid =
+            format!("profile = \"cryptomap:tls-config:v1\"\n{header}\nversions = [\"1.3\"]\n");
         let (_box, scope) = single_input(valid);
         let out = raw(&scope, &["tls:one"], RawLimits::default());
         assert_eq!(out.status, CollectionStatus::Complete, "{header}");
