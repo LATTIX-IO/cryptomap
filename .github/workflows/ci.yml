@@ -42,7 +42,7 @@ jobs:
           cargo metadata --format-version 1 --all-features > /dev/null
           printf 'B5_LOCK_B64_BEGIN\n'
           base64 -w0 Cargo.lock
-          printf '\nB5_LOCK_B64_END\n
+          printf '\nB5_LOCK_B64_END\n'
 
       - name: Format
         run: cargo fmt --all -- --check
