@@ -4,6 +4,8 @@
 This is an inspection manifest, NOT an SBOM or an authenticity attestation.
 """
 import argparse
+import base64
+import binascii
 import gzip
 import hashlib
 import json
@@ -19,6 +21,51 @@ MAX_TAR_STREAM = MAX_ARCHIVE + MAX_ENTRIES * 2048 + 2 * 1024 * 1024
 BAD_PARTS = {".git", ".env", "__pycache__", "target", ".ssh"}
 BAD_SUFFIXES = {".pem", ".p12", ".pfx", ".key", ".env"}
 REQUIRED = {"Cargo.toml", "README.md", "LICENSE-APACHE", "LICENSE-MIT"}
+
+# Two reviewed PUBLIC X.509 fixture identities; no generic PEM allowlist.
+# Each digest is over decoded certificate DER and independently verified by
+# the Rust X.509 regression fixtures. Introducing/replacing a fixture requires
+# a deliberate signed-release policy review, not merely a filename change.
+PUBLIC_CERT_FIXTURE_SHA256 = {
+    "examples/fixtures/certificate/rsa.pem":
+        "95975a1556fce045c69d7007c7c9926fc1087466046edefe38639929fa015f6e",
+    "examples/fixtures/certificate/ec.pem":
+        "8917ddbd31342a86dfbb705d0897af3b154d20dc3180c0f453bd6fccadcaefbc",
+}
+MAX_PUBLIC_CERT_FIXTURE_BYTES = 16 * 1024
+
+
+def validate_public_certificate_fixture(data: bytes, expected_digest: str) -> None:
+    """Allow ONLY a reviewed public certificate's exact DER fingerprint.
+
+    This bounded stdlib-only check is a package secret-leak guard, not X.509
+    trust validation. The separate packaged Rust consumer parses certificates.
+    """
+    if not 0 < len(data) <= MAX_PUBLIC_CERT_FIXTURE_BYTES:
+        raise ValueError("invalid public certificate fixture size")
+    try:
+        text = data.decode("ascii").replace("\r\n", "\n")
+    except UnicodeDecodeError as exc:
+        raise ValueError("non-ASCII public certificate fixture") from exc
+    if "\r" in text:
+        raise ValueError("invalid public certificate fixture line endings")
+    lines = text.rstrip("\n").split("\n")
+    if (len(lines) < 3 or lines[0] != "-----BEGIN CERTIFICATE-----"
+            or lines[-1] != "-----END CERTIFICATE-----"):
+        raise ValueError("unapproved public certificate fixture armor")
+    payload_lines = lines[1:-1]
+    if any(not re.fullmatch(r"[A-Za-z0-9+/=]{1,76}", line) for line in payload_lines):
+        raise ValueError("unexpected public certificate fixture payload")
+    encoded = "".join(payload_lines)
+    try:
+        der = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("malformed public certificate fixture encoding") from exc
+    if (not der or der[0] != 0x30 or base64.b64encode(der).decode("ascii") != encoded
+            or hashlib.sha256(der).hexdigest() != expected_digest):
+        raise ValueError("unreviewed public certificate fixture identity")
+
+
 
 
 class BoundedDecompressedStream:
@@ -205,8 +252,21 @@ def inspect(archive: Path, commit: str, expected_version: str) -> dict:
                 names.add(rel)
                 if any(part in BAD_PARTS or part.startswith(".env") for part in path.parts[1:]):
                     raise ValueError("forbidden packaged directory or file")
-                if member.isfile() and (path.suffix.lower() in BAD_SUFFIXES):
-                    raise ValueError("potential secret-bearing packaged filename")
+                if member.isfile() and path.suffix.lower() in BAD_SUFFIXES:
+                    # All PEM/PKCS#12/private-key files remain denied except
+                    # the two reviewed *public* certificate fixtures. Verify
+                    # their actual bytes before allowing them into a release.
+                    if rel not in PUBLIC_CERT_FIXTURE_SHA256 or path.suffix.lower() != ".pem":
+                        raise ValueError("potential secret-bearing packaged filename")
+                    if member.size > MAX_PUBLIC_CERT_FIXTURE_BYTES:
+                        raise ValueError("oversized public certificate fixture")
+                    content = tar.extractfile(member)
+                    if content is None:
+                        raise ValueError("unreadable public certificate fixture")
+                    validate_public_certificate_fixture(
+                        content.read(MAX_PUBLIC_CERT_FIXTURE_BYTES + 1),
+                        PUBLIC_CERT_FIXTURE_SHA256[rel],
+                    )
                 if member.isfile():
                     files.add(rel)
                     expanded += member.size
