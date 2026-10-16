@@ -24,6 +24,8 @@ rust-source = ["dep:syn", "dep:proc-macro2"]
 json-tls-config = []
 # Strict maintained TOML parser, reusing the reviewed B3 profile semantics.
 toml-tls-config = ["json-tls-config", "dep:toml", "dep:toml_edit"]
+# Passive X.509 file decoder; no signature verification or platform store scanning.
+certificate-files = ["dep:x509-parser"]
 
 [[example]]
 name = "json_scoped_tls"
@@ -41,6 +43,8 @@ path = "examples/rust_scoped_source.rs"
 required-features = ["rust-source"]
 
 [dependencies]
+# Maintained bounded public X.509 DER and PEM parser; no verify features.
+x509-parser = { version = "=0.18.1", default-features = false, optional = true }
 # Parser only: disable display, unbounded recursion and preserved ordering.
 toml = { version = "=0.8.23", default-features = false, features = ["parse"], optional = true }
 # Inspect parsed table syntax rather than brittle raw header text.
