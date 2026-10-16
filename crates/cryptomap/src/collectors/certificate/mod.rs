@@ -227,6 +227,10 @@ impl Collector for CertificateFileCollector<'_> {
             .validate_request(request)
             .map_err(|_| InventoryError::InvalidMetadata)?;
         let descriptor = self.descriptor();
+        // RawLimits.observations applies to the entire requested collection,
+        // not independently to each file. Preflight each file's observations
+        // before emission to avoid partially emitting a source on exhaustion.
+        let mut total_emitted = 0_usize;
         for source in &request.sources {
             if cancel.is_cancelled() {
                 report(
@@ -285,7 +289,7 @@ impl Collector for CertificateFileCollector<'_> {
                     continue;
                 }
             };
-            if certificates.len() > request.limits.observations {
+            if certificates.len() > request.limits.observations.saturating_sub(total_emitted) {
                 report(
                     sink,
                     &source.item,
@@ -344,6 +348,7 @@ impl Collector for CertificateFileCollector<'_> {
                     ]),
                 })?;
                 emitted += 1;
+                total_emitted += 1;
             }
             if cancel.is_cancelled() {
                 report(

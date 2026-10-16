@@ -444,6 +444,31 @@ fn low_fact_budget_rejects_multicert_file_atomically() {
     assert!(out.observations.is_empty());
 }
 #[test]
+fn observation_limit_is_global_across_authorized_certificate_files() {
+    let sandbox = Sandbox::new();
+    sandbox.write("first.pem", BASIC);
+    sandbox.write("second.pem", EC);
+    let scope = scope_for(
+        &sandbox.root,
+        &[("cert:first", "first.pem"), ("cert:second", "second.pem")],
+    );
+    let out = raw(
+        &scope,
+        &["cert:first", "cert:second"],
+        RawLimits {
+            observations: 1,
+            ..RawLimits::default()
+        },
+    );
+    assert_eq!(out.status, CollectionStatus::Partial);
+    assert_eq!(out.coverage["cert:first"], CoverageState::InspectedObserved);
+    assert_eq!(out.coverage["cert:second"], CoverageState::Failed);
+    assert_eq!(out.observations.len(), 1);
+    assert_eq!(out.diagnostics.len(), 1);
+    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+}
+
+#[test]
 fn cancellation_does_not_turn_certificate_into_absence() {
     let (_dir, scope) = single_input(BASIC);
     let collector = CertificateFileCollector::new(&scope, AT);
