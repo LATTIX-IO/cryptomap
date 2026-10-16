@@ -1,4 +1,6 @@
 """Adversarial unit tests for exact-commit protected release approval."""
+import re
+import shlex
 import tempfile
 import tomllib
 import unittest
@@ -108,6 +110,215 @@ class ExactReleaseGateTests(unittest.TestCase):
                 f"candidate/release toolchain drift in {workflow}",
             )
             self.assertNotIn("toolchain: stable", definition)
+
+    def test_both_workflows_require_exact_source_bound_dual_attestations(self):
+        """Never accept a valid signature for the wrong signer, ref or commit."""
+        root = Path(__file__).resolve().parents[1]
+        for workflow, anchor in (
+            (".github/workflows/ci.yml", "      - name: Verify published provenance and SBOM signatures"),
+            (".github/workflows/release-plz.yml",
+             "      - name: Verify exact CI-tested crate and both main attestations"),
+        ):
+            content = (root / workflow).read_text(encoding="utf-8")
+            section = content.split(anchor, 1)[1]
+            if workflow.endswith("release-plz.yml"):
+                section = section.split("      - name: Registry dry-run of reviewed version", 1)[0]
+            with self.subTest(workflow=workflow):
+                self._require_exact_attestation_contract(section)
+
+                # Adversarial mutation: all identity dimensions are required,
+                # including BOTH distinct verified predicates.
+                for vital in (
+                    '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+                    '--source-ref refs/heads/main',
+                    '--source-digest "$GITHUB_SHA"',
+                    "--predicate-type https://spdx.dev/Document/v2.3",
+                    'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
+                ):
+                    self.assertIn(vital, section)
+                    with self.assertRaises(AssertionError, msg=f"{workflow}: {vital}"):
+                        self._require_exact_attestation_contract(section.replace(vital, "REMOVED", 1))
+                # Regressions that keep both command substrings but silently
+                # switch the first/default SLSA verification to SPDX.
+                first = 'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
+                poisoned = section.replace(
+                    first + "\n", first + " --predicate-type https://spdx.dev/Document/v2.3\n", 1
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(poisoned)
+                poisoned_scope = section.replace(
+                    '--source-digest "$GITHUB_SHA"',
+                    '--source-digest "$GITHUB_SHA" --predicate-type https://spdx.dev/Document/v2.3',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(poisoned_scope)
+                # A later predicate flag overrides the earlier SPDX flag.
+                # The contract must validate whole continued shell commands.
+                poisoned_second = section.replace(
+                    '--predicate-type https://spdx.dev/Document/v2.3',
+                    '--predicate-type https://spdx.dev/Document/v2.3 '
+                    '--predicate-type https://slsa.dev/provenance/v1',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(poisoned_second)
+                # Repeated selectors must not supersede approved earlier values.
+                for suffix in [
+                    '            --source-digest "$OTHER_SHA"\n',
+                    '            --source-ref refs/heads/untrusted\n',
+                    '            --predicate-type https://spdx.dev/Document/v2.3\n',
+                ]:
+                    mutated = section.replace(
+                        '            --source-digest "$GITHUB_SHA"\n',
+                        '            --source-digest "$GITHUB_SHA"\n' + suffix,
+                        1,
+                    )
+                    with self.assertRaises(AssertionError):
+                        self._require_exact_attestation_contract(mutated)
+                mutated = section.replace(
+                    '\n          )\n',
+                    '\n          )\n          attestation_scope+=(--source-digest "$OTHER_SHA")\n',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(mutated)
+                # Even a function installed *before* scope declaration must
+                # not bypass the vetted GH CLI binary.
+                shadow = section.replace(
+                    '          set -euo pipefail\n',
+                    '          gh() { return 0; }\n          set -euo pipefail\n',
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    self._require_exact_attestation_contract(shadow)
+                # Indirect writes cannot be detected by checking only lines
+                # that *begin* with attestation_scope.
+                for injection in [
+                    "printf -v 'attestation_scope[7]' %s ffffffffffffffffffffffffffffffffffffffff",
+                    'eval \'attestation_scope[7]="$OTHER_SHA"\'',
+                    'declare -a attestation_scope=()',
+                ]:
+                    mutated = section.replace(
+                        '          )\n',
+                        '          )\n          ' + injection + '\n',
+                        1,
+                    )
+                    with self.assertRaises(AssertionError, msg=injection):
+                        self._require_exact_attestation_contract(mutated)
+
+
+    def _require_exact_attestation_contract(self, step):
+        """Ensure both predicates use the same exact-host and source identity."""
+        required = (
+            'attestation_scope=(',
+            '--repo "$GITHUB_REPOSITORY"',
+            '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+            '--source-ref refs/heads/main',
+            '--source-digest "$GITHUB_SHA"',
+            'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"',
+            'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \\\n'
+            '            --predicate-type https://spdx.dev/Document/v2.3',
+        )
+        for phrase in required:
+            self.assertIn(phrase, step)
+        # Freeze the full executable preamble as well: a prior 'gh()' shell
+        # function could otherwise shadow the binary while the verifier
+        # invocations and source-bound array still looked correct.
+        script = "        run: |\n"
+        start = step.index(script) + len(script)
+        end = step.index("          attestation_scope=(", start)
+        actual_prelude = step[start:end]
+        common = (
+            '          # Pin identity as well as the subject digest: same bytes from a\n'
+            '          # different source revision, ref or signer are not sufficient.\n'
+        )
+        candidate_preludes = (
+            '          set -euo pipefail\n'
+            '          shopt -s nullglob\n'
+            '          candidates=(candidate/cryptomap-*.crate)\n'
+            '          test "DOLLAR{#candidates[@]}" -eq 1\n'
+            + common,
+            '          set -euo pipefail\n'
+            '          gh run download "$VERIFIED_CI_RUN" --repo "$GITHUB_REPOSITORY" \\\n'
+            '            --name cryptomap-tested-crate --dir "$RUNNER_TEMP/cryptomap-candidate"\n'
+            '          shopt -s nullglob\n'
+            '          candidates=("$RUNNER_TEMP"/cryptomap-candidate/cryptomap-*.crate)\n'
+            '          test "DOLLAR{#candidates[@]}" -eq 1\n'
+            + common,
+        )
+        self.assertIn(actual_prelude, tuple(p.replace("DOLLAR", "$") for p in candidate_preludes))
+
+        # Freeze every executable line from declaration through BOTH checks:
+        # a valid-looking array can otherwise be overwritten by 'printf -v',
+        # eval or an indirect Bash assignment before the verifier executes.
+        # This gate intentionally requires deliberate code review for changes
+        # in this security-sensitive invocation block.
+        marker = "          attestation_scope=(\n"
+        second = "            --predicate-type https://spdx.dev/Document/v2.3"
+        self.assertEqual(step.count(marker), 1)
+        self.assertEqual(step.count(second), 1)
+        start = step.index(marker)
+        stop = step.index(second, start) + len(second)
+        actual_block = step[start:stop]
+        common = [
+            '          attestation_scope=(',
+            '            --repo "$GITHUB_REPOSITORY"',
+            '            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+            '            --source-ref refs/heads/main',
+            '            --source-digest "$GITHUB_SHA"',
+            '          )',
+            '          command gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}"',
+        ]
+        ci_comment = [
+            '          # GitHub CLI defaults to SLSA; verify SPDX separately or the SBOM',
+            '          # signature may be missing while the provenance check still passes.',
+        ]
+        spdx = [
+            '          command gh attestation verify "DOLLAR{candidates[0]}" "DOLLAR{attestation_scope[@]}" \\',
+            '            --predicate-type https://spdx.dev/Document/v2.3',
+        ]
+        expected = [
+            "\n".join(common + spdx).replace("DOLLAR", "$"),
+            "\n".join(common + ci_comment + spdx).replace("DOLLAR", "$"),
+        ]
+        self.assertIn(actual_block, expected)
+
+        # Compare the FULL shell invocations, including continuation lines.
+        # Substring checks miss later overriding --predicate-type flags.
+        joined = re.sub(r"\\\r?\n[ \t]*", " ", step)
+        commands = [
+            shlex.split(line.strip())
+            for line in joined.splitlines()
+            if line.strip().startswith("command gh attestation verify ")
+        ]
+        command = ["command", "gh", "attestation", "verify",
+                   "${candidates[0]}", "${attestation_scope[@]}"]
+        self.assertEqual(commands, [
+            command,
+            command + ["--predicate-type", "https://spdx.dev/Document/v2.3"],
+        ])
+        # Parse the effective shell array, not the opaque reference: later
+        # duplicate flags could override the approved identities.
+        scope = re.search(
+            r"(?m)^ {10}attestation_scope=\(\n((?: {12}[^\n]*\n)+) {10}\)$",
+            step,
+        )
+        self.assertIsNotNone(scope)
+        self.assertEqual(
+            shlex.split(scope.group(1)),
+            ["--repo", "$GITHUB_REPOSITORY",
+             "--signer-workflow", "$GITHUB_REPOSITORY/.github/workflows/ci.yml",
+             "--source-ref", "refs/heads/main",
+             "--source-digest", "$GITHUB_SHA"],
+        )
+        # Reject subsequent array reassignments/appends before verification.
+        mutations = [
+            line.strip() for line in step.splitlines()
+            if line.strip().startswith(("attestation_scope=", "attestation_scope+=",
+                                        "attestation_scope["))
+        ]
+        self.assertEqual(mutations, ["attestation_scope=("])
 
     def test_reject_accidentally_disabled_or_widened_registry(self):
         """Only the exact, deliberate crates.io allowlist permits this alpha."""
