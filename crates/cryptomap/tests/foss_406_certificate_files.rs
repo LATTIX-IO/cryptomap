@@ -286,6 +286,48 @@ fn reject_trailing_junk_mixed_private_or_truncated_pem() {
     }
 }
 #[test]
+fn exact_pem_footer_and_public_only_armor_are_required() {
+    for bad in [
+        BASIC.replace("-----END CERTIFICATE-----", "-----END CERT"),
+        BASIC.replace("-----END CERTIFICATE-----", "-----END PUBLIC KEY-----"),
+        BASIC.replace("-----END CERTIFICATE-----", ""),
+        BASIC.replace(
+            "-----END CERTIFICATE-----",
+            "-----END CERTIFICATE-----trailing content",
+        ),
+        BASIC.replace(
+            "-----END CERTIFICATE-----",
+            "-----END CERTIFICATE-----\n-----BEGIN PRIVATE KEY-----",
+        ),
+        BASIC.replace(
+            "\n-----END CERTIFICATE-----",
+            "\nnot-base64:secret\n-----END CERTIFICATE-----",
+        ),
+    ] {
+        assert_failed(bad, CollectorDiagnosticCode::MalformedSource);
+    }
+}
+
+#[test]
+fn crt_encoding_supports_public_pem_but_rejects_private_armor() {
+    let sandbox = Sandbox::new();
+    sandbox.write("public.crt", BASIC);
+    sandbox.write(
+        "not-public.cer",
+        "-----BEGIN PRIVATE KEY-----\nZG9udC1sb2c=\n-----END PRIVATE KEY-----\n",
+    );
+    let scope = scope_for(
+        &sandbox.root,
+        &[("public", "public.crt"), ("private", "not-public.cer")],
+    );
+    let out = raw(&scope, &["private", "public"], RawLimits::default());
+    assert_eq!(out.status, CollectionStatus::Partial);
+    assert_eq!(out.coverage["public"], CoverageState::InspectedObserved);
+    assert_eq!(out.coverage["private"], CoverageState::Failed);
+    assert_eq!(out.observations.len(), 1);
+}
+
+#[test]
 fn malformed_and_trailing_der_are_rejected_without_partial_false_facts() {
     let (_, pem) = x509_parser::pem::parse_x509_pem(BASIC.as_bytes()).unwrap();
     for der in [vec![0x30, 0x82, 0xff, 0xff], vec![0x00, 0x01]] {

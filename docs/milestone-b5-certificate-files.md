@@ -11,7 +11,7 @@ A default-off Cargo feature `certificate-files` enables `x509-parser 0.18.1` wit
 ## Supported source profiles
 
 - Explicit file extensions: `.pem`, `.der`, `.crt`, `.cer` under a granted file path. The grant identity is authoritative; no guesses from request item names.
-- PEM: only `-----BEGIN CERTIFICATE-----` blocks with matching end markers. Leading/trailing ASCII whitespace is permitted. Multiple public certificates are allowed up to **16** per file. Duplicates or mixed/private-key PEM labels fail the entire file without emitting partial false-success facts. No private block is base64-decoded.
+- PEM: require exact `-----BEGIN CERTIFICATE-----` and `-----END CERTIFICATE-----` armor, with bounded ASCII base64 payload; the decoder's more permissive footer handling is not an authorization or validation shortcut. Only approved certificate blocks may be parsed. Leading/trailing ASCII whitespace is permitted. Multiple public certificates are allowed up to **16** per file. Duplicates or mixed/private-key PEM labels fail the entire file without emitting partial false-success facts. No private block is base64-decoded.
 - DER: exactly one RFC 5280 X.509 certificate with no trailing data. No implicit PKCS#7, PKCS#12, CSR or key decoding.
 - Maximum file: **256 KiB**; maximum decoded certificate: **64 KiB**. Scope-level grants and raw observation limits still apply before I/O and emission.
 
