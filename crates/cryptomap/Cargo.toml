@@ -33,6 +33,11 @@ path = "examples/json_scoped_tls.rs"
 required-features = ["json-tls-config"]
 
 [[example]]
+name = "certificate_scoped_inventory"
+path = "examples/certificate_scoped_inventory.rs"
+required-features = ["certificate-files"]
+
+[[example]]
 name = "toml_scoped_tls"
 path = "examples/toml_scoped_tls.rs"
 required-features = ["toml-tls-config"]

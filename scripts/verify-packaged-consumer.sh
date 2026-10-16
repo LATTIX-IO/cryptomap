@@ -25,6 +25,9 @@ for expected in \
     examples/rust_scoped_source.rs \
     examples/fixtures/source/crypto_calls.rs \
     examples/toml_scoped_tls.rs \
+    examples/certificate_scoped_inventory.rs \
+    examples/fixtures/certificate/rsa.pem \
+    examples/fixtures/certificate/ec.pem \
     examples/fixtures/config/tls.toml \
     examples/fixtures/config/tls-empty.toml \
     examples/json_scoped_tls.rs \
@@ -143,3 +146,13 @@ CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
     --example toml_scoped_tls -- \
     "$scratch/toml-tls-input" "tls.toml" "2026-10-13T15:00:00Z" \
     "packaged-toml-tenant" "packaged-toml-run"
+
+# Exercise the opt-in public X.509 certificate collector from the packed archive.
+# Source is explicitly granted. No private keys, host stores or networks.
+mkdir -p "$scratch/cert-input"
+cp "$package/examples/fixtures/certificate/rsa.pem" "$scratch/cert-input/public.pem"
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" --features certificate-files \
+    --example certificate_scoped_inventory -- \
+    "$scratch/cert-input" "public.pem" "2026-10-16T12:00:00Z" \
+    "packaged-cert-tenant" "packaged-cert-run"

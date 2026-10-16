@@ -33,6 +33,17 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@258712b0b7b1ddf8bddc9fc3b0faca682b2736c3 # v2.9.2
 
+      # TEMPORARY B5 PR dependency lock handoff, remove once Cargo.lock is committed.
+      - name: Generate B5 reviewed Cargo.lock candidate (temporary)
+        if: github.event_name == 'pull_request' && github.head_ref == 'feature/foss-406-b5-certificate-file-evidence'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --format-version 1 --all-features > /dev/null
+          printf 'B5_LOCK_B64_BEGIN\n'
+          base64 -w0 Cargo.lock
+          printf '\nB5_LOCK_B64_END\n
+
       - name: Format
         run: cargo fmt --all -- --check
 
@@ -59,6 +70,9 @@ jobs:
 
       - name: Bounded TOML TLS configuration, replay and security regressions
         run: cargo test -p cryptomap --test foss_372_toml_tls_config --features toml-tls-config --locked
+
+      - name: Passive public X.509 PEM/DER certificate regression and security tests
+        run: cargo test -p cryptomap --test foss_406_certificate_files --features certificate-files --locked
 
       - name: Exact host-scope binding for all built-in Cargo and npm collectors
         run: cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked
