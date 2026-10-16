@@ -1,11 +1,11 @@
-//! Exact-file configured TLS evidence, not negotiated transport or crypto use.
+//! Passive exact-file public X.509 certificate evidence, not chain validation or private-key access.
 //!
 //! cargo run --locked --features certificate-files --example certificate_scoped_inventory --
 //!   ROOT RELATIVE-CERTIFICATE-FILE RFC3339-TIME TENANT-SCOPE RUN-ID
 use cryptomap::{
     AssetKind, CollectionRunId, IdentityContext, InventoryLimits,
     collector::{CancellationToken, Collector, RequestedSource},
-    collectors::certificate::{MAX_certificate_TLS_BYTES, CertificateFileCollector},
+    collectors::certificate::{MAX_CERT_FILE_BYTES, CertificateFileCollector},
     coverage::CollectionScopeId,
     orchestration::{ScopedInvocation, collect_normalized},
     pipeline::PipelineInput,
@@ -16,7 +16,7 @@ use cryptomap::{
 use std::{error::Error, path::Path};
 
 /// Read one exact authorized certificate profile through the scoped SDK.
-pub fn run_config(
+pub fn run_certificate(
     root: &Path,
     relative: &Path,
     observed_at: &str,
@@ -30,7 +30,7 @@ pub fn run_config(
         item,
         root,
         relative,
-        MAX_certificate_TLS_BYTES,
+        MAX_CERT_FILE_BYTES,
     )?;
     let collector = CertificateFileCollector::new(&scope, observed_at);
     let expected_descriptor = collector.descriptor();
@@ -74,13 +74,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.next(),
         args.next(),
     ) else {
-        return Err("usage: certificate_scoped_inventory ROOT RELATIVE-certificate RFC3339-TIME TENANT RUN-ID".into());
+        return Err("usage: certificate_scoped_inventory ROOT RELATIVE-CERTIFICATE-FILE RFC3339-TIME TENANT RUN-ID".into());
     };
     let at = at.to_str().ok_or("timestamp must be UTF-8 RFC3339")?;
     let tenant = tenant.to_str().ok_or("tenant must be UTF-8")?;
     let run = run.to_str().ok_or("run must be UTF-8")?;
-    let snapshot = run_config(Path::new(&root), Path::new(&relative), at, tenant, run)?;
-    let configured_protocols = snapshot
+    let snapshot = run_certificate(Path::new(&root), Path::new(&relative), at, tenant, run)?;
+    let public_certificates = snapshot
         .query_assets(|asset| {
             matches!(
                 asset.kind,
@@ -91,11 +91,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "verified snapshot={} public_certificates={} evidence={} coverage={}",
         snapshot.id,
-        configured_protocols,
+        public_certificates,
         snapshot.evidence.len(),
         snapshot.coverage_records.len()
     );
-    println!("configured capabilities do not establish negotiated TLS or executed algorithms");
+    println!("public certificate bytes do not establish trust, revocation status or private key possession");
     Ok(())
 }
 
@@ -105,26 +105,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn packaged_toml_fixture_round_trips_with_exact_evidence() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixtures/config");
-        let first = run_config(
+    fn packaged_public_rsa_fixture_round_trips_without_trust_claims() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/fixtures/certificate");
+        let first = run_certificate(
             &root,
-            Path::new("tls.toml"),
-            "2026-10-13T15:00:00Z",
-            "toml-tenant",
-            "toml-run",
+            Path::new("rsa.pem"),
+            "2026-10-16T12:00:00Z",
+            "cert-tenant",
+            "cert-run",
         )
         .unwrap();
-        let second = run_config(
+        let second = run_certificate(
             &root,
-            Path::new("tls.toml"),
-            "2026-10-13T15:00:00Z",
-            "toml-tenant",
-            "toml-run",
+            Path::new("rsa.pem"),
+            "2026-10-16T12:00:00Z",
+            "cert-tenant",
+            "cert-run",
         )
         .unwrap();
         assert_eq!(first, second);
-        assert_eq!(first.evidence.len(), 4);
+        assert_eq!(first.evidence.len(), 1);
         assert_eq!(first.coverage_records.len(), 1);
+        assert_eq!(
+            first.query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. })).count(),
+            1,
+        );
     }
 }
