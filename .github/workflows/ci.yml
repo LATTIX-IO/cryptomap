@@ -250,8 +250,16 @@ jobs:
           shopt -s nullglob
           candidates=(candidate/cryptomap-*.crate)
           test "${#candidates[@]}" -eq 1
-          gh attestation verify "${candidates[0]}" --repo "$GITHUB_REPOSITORY"
+          # Pin identity as well as the subject digest: same bytes from a
+          # different source revision, ref or signer are not sufficient.
+          attestation_scope=(
+            --repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"
+            --source-ref refs/heads/main
+            --source-digest "$GITHUB_SHA"
+          )
+          command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"
           # GitHub CLI defaults to SLSA; verify SPDX separately or the SBOM
           # signature may be missing while the provenance check still passes.
-          gh attestation verify "${candidates[0]}" --repo "$GITHUB_REPOSITORY" \
+          command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \
             --predicate-type https://spdx.dev/Document/v2.3
