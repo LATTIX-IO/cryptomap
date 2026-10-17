@@ -3,6 +3,7 @@ resolver = "3"
 
 members = [
     "crates/cryptomap",
+    "crates/cryptomap-windows-store",
 ]
 
 [workspace.package]

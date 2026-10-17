@@ -167,6 +167,14 @@ jobs:
           cargo install --locked cargo-deny
           cargo install --locked cargo-semver-checks
 
+      - name: Reject native private-key APIs and preserve safe SDK core
+        run: |
+          grep -Fx '#![forbid(unsafe_code)]' crates/cryptomap/src/lib.rs
+          if grep -REn 'CertAcquireCertificatePrivateKey|CertDeleteCertificateFromStore|PFXExport|NCryptExportKey' crates/cryptomap-windows-store/src; then
+            echo 'Forbidden private-key or destructive Windows certificate API' >&2
+            exit 1
+          fi
+
       - name: RustSec audit
         run: cargo audit
 
@@ -214,6 +222,8 @@ jobs:
         run: cargo check --workspace --all-targets --all-features --locked
       - name: Windows integration tests
         run: cargo test --workspace --all-features --locked
+      - name: Native Windows in-memory CryptoAPI conformance
+        run: cargo test -p cryptomap-windows-store --locked
 
   release-attestations:
     name: Main-only signed release provenance

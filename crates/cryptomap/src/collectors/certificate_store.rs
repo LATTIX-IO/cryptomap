@@ -87,11 +87,7 @@ pub struct CertificateStoreCollector<'a, B: PublicCertificateStoreBackend + ?Siz
 }
 impl<'a, B: PublicCertificateStoreBackend + ?Sized> CertificateStoreCollector<'a, B> {
     /// Pin the exact host authorization object and an independently chosen provider.
-    pub fn new(
-        scope: &'a CollectionScope,
-        backend: &'a B,
-        observed_at: impl Into<String>,
-    ) -> Self {
+    pub fn new(scope: &'a CollectionScope, backend: &'a B, observed_at: impl Into<String>) -> Self {
         Self {
             scope,
             backend,
@@ -130,7 +126,9 @@ fn cover_failure(
         CoverageState::Partial
     } else {
         match error {
-            StoreProviderError::Cancelled | StoreProviderError::Timeout => CoverageState::NotInspected,
+            StoreProviderError::Cancelled | StoreProviderError::Timeout => {
+                CoverageState::NotInspected
+            }
             StoreProviderError::Unsupported => CoverageState::Unsupported,
             _ => CoverageState::Failed,
         }
@@ -188,7 +186,9 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                 if let Some(error) = self.interrupted(cancel) {
                     return Err(error);
                 }
-                visited = visited.checked_add(1).ok_or(StoreProviderError::ResourceLimit)?;
+                visited = visited
+                    .checked_add(1)
+                    .ok_or(StoreProviderError::ResourceLimit)?;
                 if visited > max_entries || bytes.len() > MAX_CERT_DER_BYTES {
                     return Err(StoreProviderError::ResourceLimit);
                 }
@@ -203,7 +203,8 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     _ => StoreProviderError::Malformed,
                 })?;
                 if unique.insert(cert.fingerprint_sha256().to_owned()) {
-                    if collected.len() >= request.limits.observations.saturating_sub(total_emitted) {
+                    if collected.len() >= request.limits.observations.saturating_sub(total_emitted)
+                    {
                         return Err(StoreProviderError::ResourceLimit);
                     }
                     collected.push(cert);
@@ -248,8 +249,14 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     attributes: BTreeMap::from([
                         ("x509:source-encoding".into(), "der".into()),
                         ("x509:store-target".into(), target.id().into()),
-                        ("x509:public-key-algorithm-oid".into(), cert.public_key_oid().into()),
-                        ("x509:signature-algorithm-oid".into(), cert.signature_oid().into()),
+                        (
+                            "x509:public-key-algorithm-oid".into(),
+                            cert.public_key_oid().into(),
+                        ),
+                        (
+                            "x509:signature-algorithm-oid".into(),
+                            cert.signature_oid().into(),
+                        ),
                     ]),
                 })?;
                 emitted += 1;
