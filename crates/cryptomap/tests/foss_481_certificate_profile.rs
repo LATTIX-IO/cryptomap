@@ -86,7 +86,10 @@ fn fixture_fingerprints_and_existing_algorithm_oid_keys_remain_frozen() {
         assert_eq!(metadata.serial, Observed::Unknown);
         assert_eq!(metadata.issuer, Observed::Unknown);
         assert_eq!(metadata.subject, Observed::Unknown);
-        assert_eq!(metadata.not_before, Observed::Known(p.not_before_utc.clone()));
+        assert_eq!(
+            metadata.not_before,
+            Observed::Known(p.not_before_utc.clone())
+        );
         assert_eq!(metadata.not_after, Observed::Known(p.not_after_utc.clone()));
         assert_eq!(p.version, 3);
         assert_eq!(p.signature_oid, parsed.signature_oid());
@@ -388,14 +391,27 @@ fn same_public_profile_file_and_store_keep_distinct_provenance_and_no_private_fi
     // switching AssetKind to DetailedCertificate or changing its identity.
     for (property, key) in [
         ("certificate:x509-version", "x509:profile:v1:version"),
-        ("certificate:not-before-utc", "x509:profile:v1:not-before-utc"),
+        (
+            "certificate:not-before-utc",
+            "x509:profile:v1:not-before-utc",
+        ),
         ("certificate:not-after-utc", "x509:profile:v1:not-after-utc"),
-        ("certificate:public-key-family", "x509:profile:v1:public-key-family"),
-        ("certificate:signature-algorithm-oid", "x509:signature-algorithm-oid"),
+        (
+            "certificate:public-key-family",
+            "x509:profile:v1:public-key-family",
+        ),
+        (
+            "certificate:signature-algorithm-oid",
+            "x509:signature-algorithm-oid",
+        ),
     ] {
-        assert!(snapshot.observations.values().any(|obs| {
-            obs.property == property && obs.value == from_file.attributes[key]
-        }), "missing normalized public field: {property}");
+        assert!(
+            snapshot
+                .observations
+                .values()
+                .any(|obs| { obs.property == property && obs.value == from_file.attributes[key] }),
+            "missing normalized public field: {property}"
+        );
     }
     let serialized = serde_json::to_string(&snapshot).unwrap();
     assert!(!serialized.contains("-----BEGIN CERTIFICATE"));
@@ -412,21 +428,30 @@ fn normalization_rejects_forged_inconsistent_public_profile_attributes() {
     let registry = Registry::builtin();
     let identity = IdentityContext::new("b54-tenant").unwrap();
     let run = CollectionRunId::new("b54-run").unwrap();
-    let sources = [RequestedSource { kind: RawSourceKind::Certificate, item: "b54:file".into() }];
+    let sources = [RequestedSource {
+        kind: RawSourceKind::Certificate,
+        item: "b54:file".into(),
+    }];
     for (key, value) in [
         ("x509:profile:v1:version", "9"),
         ("x509:profile:v1:not-before-utc", "2026-02-30T00:00:00Z"),
         ("x509:profile:v1:public-key-family", "ed25519"),
         ("x509:profile:v1:public-key-bits", "4096"),
-        ("x509:profile:v1:unexpected", "malicious-unreviewed-attribute"),
+        (
+            "x509:profile:v1:unexpected",
+            "malicious-unreviewed-attribute",
+        ),
     ] {
         let mut outcome = collect_scoped(
             &scope,
             &collector,
             collection_request("b54:file", RawSourceKind::Certificate),
             &CancellationToken::default(),
-        ).unwrap();
-        outcome.observations[0].attributes.insert(key.into(), value.into());
+        )
+        .unwrap();
+        outcome.observations[0]
+            .attributes
+            .insert(key.into(), value.into());
         let result = cryptomap::pipeline::normalize(
             PipelineInput {
                 scope: &scope,
@@ -443,7 +468,10 @@ fn normalization_rejects_forged_inconsistent_public_profile_attributes() {
             outcome,
         );
         assert!(
-            matches!(result, Err(cryptomap::pipeline::PipelineError::InvalidOutcome)),
+            matches!(
+                result,
+                Err(cryptomap::pipeline::PipelineError::InvalidOutcome)
+            ),
             "forged profile field incorrectly trusted: {key}"
         );
     }
