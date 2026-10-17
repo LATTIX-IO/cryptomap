@@ -169,8 +169,18 @@ jobs:
 
       - name: Reject native private-key APIs and preserve safe SDK core
         run: |
+          set -euo pipefail
           grep -Fx '#![forbid(unsafe_code)]' crates/cryptomap/src/lib.rs
-          if grep -REn 'CertAcquireCertificatePrivateKey|CertDeleteCertificateFromStore|PFXExport|NCryptExportKey' crates/cryptomap-windows-store/src; then
+          forbidden='CryptAcquireCertificatePrivateKey|CertAcquireCertificatePrivateKey|CryptExportKey|NCryptExportKey|PFXExport|CertDeleteCertificateFromStore|NCryptOpenKey|NCryptCreatePersistedKey'
+          # Ensure the source guard actually catches the Win32 private-key
+          # acquisition/export symbols it is intended to reject.
+          for symbol in CryptAcquireCertificatePrivateKey CryptExportKey NCryptExportKey; do
+            if ! printf '%s\n' "$symbol" | grep -Eq "$forbidden"; then
+              echo "Native API safety guard failed to match expected symbol" >&2
+              exit 1
+            fi
+          done
+          if grep -REn "$forbidden" crates/cryptomap-windows-store/src; then
             echo 'Forbidden private-key or destructive Windows certificate API' >&2
             exit 1
           fi
