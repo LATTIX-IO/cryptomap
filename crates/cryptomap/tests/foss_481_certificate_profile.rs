@@ -482,3 +482,51 @@ fn normalization_rejects_forged_inconsistent_public_profile_attributes() {
         );
     }
 }
+
+#[test]
+fn ec_named_curve_oid_must_parse_canonically_before_normalization() {
+    let (_sandbox, scope) = scope_and_input(EC_PEM);
+    let collector = CertificateFileCollector::new(&scope, AT);
+    let descriptor = collector.descriptor();
+    let registry = Registry::builtin();
+    let identity = IdentityContext::new("b54-tenant").unwrap();
+    let run = CollectionRunId::new("b54-run").unwrap();
+    let sources = [RequestedSource {
+        kind: RawSourceKind::Certificate,
+        item: "b54:file".into(),
+    }];
+    for malformed in ["1..2", "1.02.3", ".", "3.1.2"] {
+        let mut outcome = collect_scoped(
+            &scope,
+            &collector,
+            collection_request("b54:file", RawSourceKind::Certificate),
+            &CancellationToken::default(),
+        )
+        .unwrap();
+        // A P-256 profile has valid EC family and public-key bits, so the
+        // curve's ASN.1 OID parser (not an RSA-only family mismatch)
+        // must independently reject this injected noncanonical value.
+        outcome.observations[0]
+            .attributes
+            .insert("x509:profile:v1:named-curve-oid".into(), malformed.into());
+        let result = cryptomap::pipeline::normalize(
+            PipelineInput {
+                scope: &scope,
+                identity: &identity,
+                registry: &registry,
+                expected_descriptor: &descriptor,
+                expected_run: &run,
+                sources: &sources,
+                raw_limits: RawLimits::default(),
+                inventory_limits: InventoryLimits::default(),
+                started_at: AT,
+                ended_at: AT,
+            },
+            outcome,
+        );
+        assert!(
+            matches!(result, Err(cryptomap::pipeline::PipelineError::InvalidOutcome)),
+            "forged EC named-curve OID was accepted: {malformed}"
+        );
+    }
+}
