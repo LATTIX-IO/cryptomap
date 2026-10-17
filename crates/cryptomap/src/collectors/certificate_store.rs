@@ -18,10 +18,7 @@ use crate::{
     scope::CollectionScope,
 };
 use sha2::{Digest, Sha256};
-use std::{
-    collections::BTreeSet,
-    time::Instant,
-};
+use std::{collections::BTreeSet, time::Instant};
 
 const ID: &str = "cryptomap:x509-store";
 const VERSION: &str = "0.1.0";

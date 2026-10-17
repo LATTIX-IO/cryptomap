@@ -75,11 +75,23 @@ impl PublicCertificateProfile {
     /// Retains the original v1 algorithm OID keys for existing consumers.
     pub fn evidence_attributes(&self) -> BTreeMap<String, String> {
         let mut out = BTreeMap::from([
-            ("x509:signature-algorithm-oid".into(), self.signature_oid.clone()),
-            ("x509:public-key-algorithm-oid".into(), self.public_key_oid.clone()),
+            (
+                "x509:signature-algorithm-oid".into(),
+                self.signature_oid.clone(),
+            ),
+            (
+                "x509:public-key-algorithm-oid".into(),
+                self.public_key_oid.clone(),
+            ),
             ("x509:profile:v1:version".into(), self.version.to_string()),
-            ("x509:profile:v1:not-before-utc".into(), self.not_before_utc.clone()),
-            ("x509:profile:v1:not-after-utc".into(), self.not_after_utc.clone()),
+            (
+                "x509:profile:v1:not-before-utc".into(),
+                self.not_before_utc.clone(),
+            ),
+            (
+                "x509:profile:v1:not-after-utc".into(),
+                self.not_after_utc.clone(),
+            ),
         ]);
         if let Some(family) = self.public_key_family {
             out.insert("x509:profile:v1:public-key-family".into(), family.into());
@@ -111,7 +123,12 @@ fn normalized_utc(value: &Time) -> Result<String, CollectorDiagnosticCode> {
     }
     Ok(format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        dt.year(), dt.month(), dt.day(), dt.hour(), dt.minutes(), dt.seconds()
+        dt.year(),
+        dt.month(),
+        dt.day(),
+        dt.hour(),
+        dt.minutes(),
+        dt.seconds()
     ))
 }
 
@@ -131,8 +148,8 @@ fn public_key_profile(
                 .map(|oid| oid.to_string());
             let bits = match curve.as_deref() {
                 Some("1.2.840.10045.3.1.7") => Some(256), // secp256r1
-                Some("1.3.132.0.34") => Some(384),         // secp384r1
-                Some("1.3.132.0.35") => Some(521),         // secp521r1
+                Some("1.3.132.0.34") => Some(384),        // secp384r1
+                Some("1.3.132.0.35") => Some(521),        // secp521r1
                 _ => None,
             };
             (Some("ec"), curve, bits)
