@@ -441,6 +441,12 @@ fn normalization_rejects_forged_inconsistent_public_profile_attributes() {
             "x509:profile:v1:unexpected",
             "malicious-unreviewed-attribute",
         ),
+        ("x509:signature-algorithm-oid", "1..2"),
+        ("x509:signature-algorithm-oid", "1.02.3"),
+        ("x509:signature-algorithm-oid", "."),
+        ("x509:public-key-algorithm-oid", "3.1.2"),
+        ("x509:profile:v1:named-curve-oid", "1..2"),
+        ("x509:profile:v1:named-curve-oid", "1.02.3"),
     ] {
         let mut outcome = collect_scoped(
             &scope,

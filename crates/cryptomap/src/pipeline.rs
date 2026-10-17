@@ -303,11 +303,18 @@ fn validated_certificate_profile(
     if before > after {
         return Err(PipelineError::InvalidOutcome);
     }
+    // Parse untrusted identifiers using the same ASN.1 OID implementation
+    // used by RustCrypto DER. A digits-and-dots filter admits noncanonical
+    // and invalid arc encodings (e.g. 1..2, 1.02.3) into immutable inventory.
+    let canonical_oid = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 128
+            && const_oid::ObjectIdentifier::new(value)
+                .is_ok_and(|oid| oid.to_string() == value)
+    };
     let public_oid = required("x509:public-key-algorithm-oid")?;
     let signature_oid = required("x509:signature-algorithm-oid")?;
-    if ![public_oid, signature_oid].iter().all(|oid| {
-        !oid.is_empty() && oid.len() <= 128 && oid.bytes().all(|b| b.is_ascii_digit() || b == b'.')
-    }) {
+    if !canonical_oid(public_oid) || !canonical_oid(signature_oid) {
         return Err(PipelineError::InvalidOutcome);
     }
     let family = raw
@@ -333,11 +340,7 @@ fn validated_certificate_profile(
         .get("x509:profile:v1:public-key-bits")
         .map(String::as_str);
     if (family != Some("ec") && (curve.is_some() || bits.is_some()))
-        || curve.is_some_and(|oid| {
-            oid.is_empty()
-                || oid.len() > 128
-                || !oid.bytes().all(|b| b.is_ascii_digit() || b == b'.')
-        })
+        || curve.is_some_and(|oid| !canonical_oid(oid))
     {
         return Err(PipelineError::InvalidOutcome);
     }
