@@ -182,35 +182,53 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
             let mut copied_bytes = 0_usize;
             let mut collected: Vec<PublicCertificate> = Vec::new();
             let mut unique = BTreeSet::new();
-            let result = self.backend.visit(target, &mut |bytes| {
-                if let Some(error) = self.interrupted(cancel) {
+            // Latch every callback refusal. An injected provider MUST not
+            // be able to swallow a ResourceLimit, Cancelled or malformed
+            // certificate error and then report exhaustive enumeration.
+            let mut callback_failure: Option<StoreProviderError> = None;
+            let provider_result = self.backend.visit(target, &mut |bytes| {
+                if let Some(error) = callback_failure {
                     return Err(error);
                 }
-                visited = visited
-                    .checked_add(1)
-                    .ok_or(StoreProviderError::ResourceLimit)?;
-                if visited > max_entries || bytes.len() > MAX_CERT_DER_BYTES {
-                    return Err(StoreProviderError::ResourceLimit);
-                }
-                copied_bytes = copied_bytes
-                    .checked_add(bytes.len())
-                    .ok_or(StoreProviderError::ResourceLimit)?;
-                if copied_bytes > max_bytes {
-                    return Err(StoreProviderError::ResourceLimit);
-                }
-                let cert = parse_der(bytes).map_err(|code| match code {
-                    CollectorDiagnosticCode::ResourceLimit => StoreProviderError::ResourceLimit,
-                    _ => StoreProviderError::Malformed,
-                })?;
-                if unique.insert(cert.fingerprint_sha256().to_owned()) {
-                    if collected.len() >= request.limits.observations.saturating_sub(total_emitted)
-                    {
+                let checked = (|| -> Result<(), StoreProviderError> {
+                    if let Some(error) = self.interrupted(cancel) {
+                        return Err(error);
+                    }
+                    visited = visited
+                        .checked_add(1)
+                        .ok_or(StoreProviderError::ResourceLimit)?;
+                    if visited > max_entries || bytes.len() > MAX_CERT_DER_BYTES {
                         return Err(StoreProviderError::ResourceLimit);
                     }
-                    collected.push(cert);
+                    copied_bytes = copied_bytes
+                        .checked_add(bytes.len())
+                        .ok_or(StoreProviderError::ResourceLimit)?;
+                    if copied_bytes > max_bytes {
+                        return Err(StoreProviderError::ResourceLimit);
+                    }
+                    let cert = parse_der(bytes).map_err(|code| match code {
+                        CollectorDiagnosticCode::ResourceLimit => StoreProviderError::ResourceLimit,
+                        _ => StoreProviderError::Malformed,
+                    })?;
+                    if unique.insert(cert.fingerprint_sha256().to_owned()) {
+                        if collected.len()
+                            >= request.limits.observations.saturating_sub(total_emitted)
+                        {
+                            return Err(StoreProviderError::ResourceLimit);
+                        }
+                        collected.push(cert);
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = checked {
+                    callback_failure = Some(error);
                 }
-                Ok(())
+                checked
             });
+            let result = match callback_failure {
+                Some(error) => Err(error),
+                None => provider_result,
+            };
             let mut emitted = 0_usize;
             // Even after a provider error, retain previously verified public
             // evidence, but the source cannot be marked fully inspected.

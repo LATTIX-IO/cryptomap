@@ -103,6 +103,62 @@ impl PublicCertificateStoreBackend for FakeBackend {
         self.after
     }
 }
+/// Broken injected provider: deliberately ignores every callback failure.
+struct SwallowingBackend {
+    certs: Vec<Vec<u8>>,
+}
+impl PublicCertificateStoreBackend for SwallowingBackend {
+    fn visit(
+        &self,
+        target: CertificateStoreTarget,
+        visitor: &mut dyn FnMut(&[u8]) -> Result<(), StoreProviderError>,
+    ) -> Result<(), StoreProviderError> {
+        assert_eq!(target, approved_target());
+        for cert in &self.certs {
+            let _ignored = visitor(cert);
+        }
+        // Claims completion even when a record failed a security boundary.
+        Ok(())
+    }
+}
+
+#[test]
+fn callback_error_cannot_be_swallowed_into_false_empty_store() {
+    let scope = make_scope(2, 1);
+    let backend = SwallowingBackend { certs: vec![rsa()] };
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &backend, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Failed);
+    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert!(out.observations.is_empty());
+}
+
+#[test]
+fn swallowed_later_error_preserves_verified_partial_public_evidence() {
+    let first = rsa();
+    let later = ec();
+    let max_bytes = first.len() + later.len() - 1;
+    let scope = make_scope(3, max_bytes);
+    let backend = SwallowingBackend {
+        certs: vec![first, later, rsa()],
+    };
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &backend, TIME),
+        request(&[ITEM], 3),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Partial);
+    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(out.observations.len(), 1);
+}
+
 #[test]
 fn fully_inspected_public_der_has_canonical_identity_but_distinct_store_provenance() {
     let der = rsa();

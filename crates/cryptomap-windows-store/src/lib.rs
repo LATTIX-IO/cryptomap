@@ -21,6 +21,8 @@ pub struct WindowsCertificateStoreBackend<'a> {
     scope: &'a CollectionScope,
     item: String,
     target: CertificateStoreTarget,
+    max_entries: usize,
+    max_public_bytes: usize,
 }
 impl<'a> WindowsCertificateStoreBackend<'a> {
     /// Pin exactly one preauthorized source item before native access is possible.
@@ -30,6 +32,8 @@ impl<'a> WindowsCertificateStoreBackend<'a> {
             scope,
             item: item.to_owned(),
             target: grant.target(),
+            max_entries: grant.max_entries(),
+            max_public_bytes: grant.max_public_bytes(),
         })
     }
 
@@ -166,9 +170,13 @@ mod native {
 
     fn walk_store(
         store: &OwnedStore,
+        max_entries: usize,
+        max_public_bytes: usize,
         visitor: &mut dyn FnMut(&[u8]) -> Result<(), StoreProviderError>,
     ) -> Result<(), StoreProviderError> {
         let mut previous = OwnedContext::default();
+        let mut visited = 0_usize;
+        let mut public_bytes = 0_usize;
         loop {
             let prev = previous.transfer_to_enumerator();
             // SAFETY: the store handle is valid throughout this function.
@@ -184,11 +192,28 @@ mod native {
                 return Err(map_os_error());
             }
             previous = OwnedContext(next);
+            // Count *every* visited context, including duplicated public DER,
+            // before allowing data to flow into a direct caller's visitor.
+            visited = visited
+                .checked_add(1)
+                .ok_or(StoreProviderError::ResourceLimit)?;
+            if visited > max_entries {
+                return Err(StoreProviderError::ResourceLimit);
+            }
             // SAFETY: pointer returned from a successful Win32 enumeration is
             // live until next call or context release (both owned by cursor).
             let context = unsafe { &*next };
             let byte_count = context.cbCertEncoded as usize;
-            if byte_count == 0 || byte_count > MAX_CERT_DER_BYTES {
+            if byte_count == 0 {
+                return Err(StoreProviderError::Malformed);
+            }
+            if byte_count > MAX_CERT_DER_BYTES {
+                return Err(StoreProviderError::ResourceLimit);
+            }
+            public_bytes = public_bytes
+                .checked_add(byte_count)
+                .ok_or(StoreProviderError::ResourceLimit)?;
+            if public_bytes > max_public_bytes {
                 return Err(StoreProviderError::ResourceLimit);
             }
             if context.pbCertEncoded.is_null() {
@@ -211,7 +236,7 @@ mod native {
                 return Err(StoreProviderError::PermissionDenied);
             }
             let store = OwnedStore::open_system(target)?;
-            walk_store(&store, visitor)
+            walk_store(&store, self.max_entries, self.max_public_bytes, visitor)
         }
     }
 
@@ -260,7 +285,7 @@ mod native {
                 assert_ne!(ok, 0);
             }
             let mut seen = Vec::<Vec<u8>>::new();
-            walk_store(&store, &mut |bytes| {
+            walk_store(&store, 8, 256 * 1024, &mut |bytes| {
                 parse_der(bytes).map_err(|_| StoreProviderError::Malformed)?;
                 seen.push(bytes.to_vec());
                 Ok(())
@@ -290,15 +315,55 @@ mod native {
                 )
             };
             assert_ne!(added, 0);
-            let result = walk_store(&store, &mut |_| Err(StoreProviderError::Cancelled));
+            let result =
+                walk_store(&store, 8, 256 * 1024, &mut |_| Err(StoreProviderError::Cancelled));
             assert_eq!(result, Err(StoreProviderError::Cancelled));
+        }
+
+        #[test]
+        fn native_direct_walk_enforces_entry_and_public_der_budgets_before_callback() {
+            let der = public_der(include_bytes!(
+                "../../cryptomap/examples/fixtures/certificate/rsa.pem"
+            ));
+            let store = OwnedStore::open_memory().unwrap();
+            // Repeated identical public certs still consume entry/byte budgets;
+            // the fixture remains strictly in this ephemeral memory store.
+            for _ in 0..3 {
+                // SAFETY: add public DER only to the temporary, detached store.
+                let added = unsafe {
+                    CertAddEncodedCertificateToStore(
+                        store.0,
+                        X509_ASN_ENCODING,
+                        der.as_ptr(),
+                        u32::try_from(der.len()).unwrap(),
+                        CERT_STORE_ADD_ALWAYS,
+                        ptr::null_mut(),
+                    )
+                };
+                assert_ne!(added, 0);
+            }
+            let mut visited = 0_usize;
+            let count_limited = walk_store(&store, 1, 256 * 1024, &mut |_: &[u8]| {
+                visited += 1;
+                Ok(())
+            });
+            assert_eq!(count_limited, Err(StoreProviderError::ResourceLimit));
+            assert_eq!(visited, 1);
+
+            let mut byte_accepted = 0_usize;
+            let byte_limited = walk_store(&store, 8, der.len() - 1, &mut |_: &[u8]| {
+                byte_accepted += 1;
+                Ok(())
+            });
+            assert_eq!(byte_limited, Err(StoreProviderError::ResourceLimit));
+            assert_eq!(byte_accepted, 0);
         }
 
         #[test]
         fn empty_ephemeral_native_store_is_complete_not_access_error() {
             let store = OwnedStore::open_memory().unwrap();
             let mut count = 0;
-            walk_store(&store, &mut |_| {
+            walk_store(&store, 8, 256 * 1024, &mut |_| {
                 count += 1;
                 Ok(())
             })
@@ -330,6 +395,8 @@ mod authorization_tests {
             )
             .unwrap();
         let provider = WindowsCertificateStoreBackend::new(&scope, "selected-user-store").unwrap();
+        assert_eq!(provider.max_entries, 4);
+        assert_eq!(provider.max_public_bytes, 256 * 1024);
         let machine =
             CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My").unwrap();
         let mut never_called = |_: &[u8]| -> Result<(), StoreProviderError> {
