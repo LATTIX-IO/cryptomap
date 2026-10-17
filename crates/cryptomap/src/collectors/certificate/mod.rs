@@ -180,6 +180,25 @@ impl PublicCertificate {
     pub fn profile(&self) -> &PublicCertificateProfile {
         &self.profile
     }
+
+    /// Project into the SDK's existing nonsecret typed certificate metadata.
+    ///
+    /// This does not change AssetKind, certificate identity or policy state.
+    /// Privacy-sensitive identity fields remain explicitly Unknown until
+    /// a distinct host-authorized B5.5 projection is implemented.
+    pub fn certificate_metadata(&self) -> crate::metadata::CertificateMetadata {
+        use crate::metadata::{CertificateMetadata, Observed};
+        CertificateMetadata {
+            fingerprint_sha256: self.fingerprint.clone(),
+            serial: Observed::Unknown,
+            issuer: Observed::Unknown,
+            subject: Observed::Unknown,
+            not_before: Observed::Known(self.profile.not_before_utc.clone()),
+            not_after: Observed::Known(self.profile.not_after_utc.clone()),
+            public_key_profile: Observed::Known(self.profile.public_key_oid.clone()),
+            signature_profile: Observed::Known(self.profile.signature_oid.clone()),
+        }
+    }
 }
 
 fn public_oid(oid: String) -> Result<String, CollectorDiagnosticCode> {

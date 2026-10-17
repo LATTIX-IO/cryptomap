@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
     AssetKind, CollectionRunId, CollectionScopeId, CoverageState, IdentityContext, InventoryLimits,
+    Observed,
     certificate_store_scope::{
         CertificateStoreGrant, CertificateStoreLocation, CertificateStoreTarget,
     },
@@ -80,6 +81,13 @@ fn fixture_fingerprints_and_existing_algorithm_oid_keys_remain_frozen() {
         let parsed = parse_der(&der(&cert)).unwrap();
         assert_eq!(parsed.fingerprint_sha256(), identity);
         let p = parsed.profile();
+        let metadata = parsed.certificate_metadata();
+        assert_eq!(metadata.fingerprint_sha256, identity);
+        assert_eq!(metadata.serial, Observed::Unknown);
+        assert_eq!(metadata.issuer, Observed::Unknown);
+        assert_eq!(metadata.subject, Observed::Unknown);
+        assert_eq!(metadata.not_before, Observed::Known(p.not_before_utc.clone()));
+        assert_eq!(metadata.not_after, Observed::Known(p.not_after_utc.clone()));
         assert_eq!(p.version, 3);
         assert_eq!(p.signature_oid, parsed.signature_oid());
         assert_eq!(p.public_key_oid, parsed.public_key_oid());
@@ -376,9 +384,67 @@ fn same_public_profile_file_and_store_keep_distinct_provenance_and_no_private_fi
         .query_assets(|a| matches!(a.kind, AssetKind::Certificate { .. }))
         .collect();
     assert_eq!(assets.len(), 1);
+    // New public observations enrich the frozen certificate asset without
+    // switching AssetKind to DetailedCertificate or changing its identity.
+    for (property, key) in [
+        ("certificate:x509-version", "x509:profile:v1:version"),
+        ("certificate:not-before-utc", "x509:profile:v1:not-before-utc"),
+        ("certificate:not-after-utc", "x509:profile:v1:not-after-utc"),
+        ("certificate:public-key-family", "x509:profile:v1:public-key-family"),
+        ("certificate:signature-algorithm-oid", "x509:signature-algorithm-oid"),
+    ] {
+        assert!(snapshot.observations.values().any(|obs| {
+            obs.property == property && obs.value == from_file.attributes[key]
+        }), "missing normalized public field: {property}");
+    }
     let serialized = serde_json::to_string(&snapshot).unwrap();
     assert!(!serialized.contains("-----BEGIN CERTIFICATE"));
     assert!(!serialized.contains("\"issuer\""));
     assert!(!serialized.contains("\"subject\""));
     drop(sandbox);
+}
+
+#[test]
+fn normalization_rejects_forged_inconsistent_public_profile_attributes() {
+    let (_sandbox, scope) = scope_and_input(RSA_PEM);
+    let collector = CertificateFileCollector::new(&scope, AT);
+    let descriptor = collector.descriptor();
+    let registry = Registry::builtin();
+    let identity = IdentityContext::new("b54-tenant").unwrap();
+    let run = CollectionRunId::new("b54-run").unwrap();
+    let sources = [RequestedSource { kind: RawSourceKind::Certificate, item: "b54:file".into() }];
+    for (key, value) in [
+        ("x509:profile:v1:version", "9"),
+        ("x509:profile:v1:not-before-utc", "2026-02-30T00:00:00Z"),
+        ("x509:profile:v1:public-key-family", "ed25519"),
+        ("x509:profile:v1:public-key-bits", "4096"),
+        ("x509:profile:v1:unexpected", "malicious-unreviewed-attribute"),
+    ] {
+        let mut outcome = collect_scoped(
+            &scope,
+            &collector,
+            collection_request("b54:file", RawSourceKind::Certificate),
+            &CancellationToken::default(),
+        ).unwrap();
+        outcome.observations[0].attributes.insert(key.into(), value.into());
+        let result = cryptomap::pipeline::normalize(
+            PipelineInput {
+                scope: &scope,
+                identity: &identity,
+                registry: &registry,
+                expected_descriptor: &descriptor,
+                expected_run: &run,
+                sources: &sources,
+                raw_limits: RawLimits::default(),
+                inventory_limits: InventoryLimits::default(),
+                started_at: AT,
+                ended_at: AT,
+            },
+            outcome,
+        );
+        assert!(
+            matches!(result, Err(cryptomap::pipeline::PipelineError::InvalidOutcome)),
+            "forged profile field incorrectly trusted: {key}"
+        );
+    }
 }
