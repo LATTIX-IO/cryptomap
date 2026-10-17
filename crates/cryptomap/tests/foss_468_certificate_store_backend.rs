@@ -134,7 +134,10 @@ fn callback_error_cannot_be_swallowed_into_false_empty_store() {
     )
     .unwrap();
     assert_eq!(out.coverage[ITEM], CoverageState::Failed);
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
     assert!(out.observations.is_empty());
 }
 
@@ -155,7 +158,10 @@ fn swallowed_later_error_preserves_verified_partial_public_evidence() {
     )
     .unwrap();
     assert_eq!(out.coverage[ITEM], CoverageState::Partial);
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
     assert_eq!(out.observations.len(), 1);
 }
 

@@ -315,8 +315,9 @@ mod native {
                 )
             };
             assert_ne!(added, 0);
-            let result =
-                walk_store(&store, 8, 256 * 1024, &mut |_| Err(StoreProviderError::Cancelled));
+            let result = walk_store(&store, 8, 256 * 1024, &mut |_| {
+                Err(StoreProviderError::Cancelled)
+            });
             assert_eq!(result, Err(StoreProviderError::Cancelled));
         }
 
