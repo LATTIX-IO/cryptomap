@@ -39,10 +39,10 @@ mod native {
     use windows_sys::Win32::{
         Foundation::GetLastError,
         Security::Cryptography::{
-            CERT_CONTEXT, CERT_STORE_OPEN_EXISTING_FLAG,
-            CERT_STORE_PROV_SYSTEM_REGISTRY_W, CERT_STORE_READONLY_FLAG,
-            CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE, CertCloseStore,
-            CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, HCERTSTORE,
+            CERT_CONTEXT, CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_SYSTEM_REGISTRY_W,
+            CERT_STORE_READONLY_FLAG, CERT_SYSTEM_STORE_CURRENT_USER,
+            CERT_SYSTEM_STORE_LOCAL_MACHINE, CertCloseStore, CertEnumCertificatesInStore,
+            CertFreeCertificateContext, CertOpenStore, HCERTSTORE,
         },
     };
 
