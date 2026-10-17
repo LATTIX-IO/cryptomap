@@ -298,6 +298,74 @@ fn certificate_file_and_store_kinds_are_not_interchangeable() {
 }
 
 #[test]
+fn certificate_store_source_items_cannot_alias_any_file_grant_kind_in_either_order() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!(
+        "cryptomap-foss467-collision-{}",
+        std::process::id()
+    ));
+    // The temporary test file is intentionally public and never a certificate store.
+    // A pre-existing abandoned directory is a test error, not an input to reuse.
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("public.pem"), b"public-test-file").unwrap();
+    for kind in [
+        RawSourceKind::Dependency,
+        RawSourceKind::Source,
+        RawSourceKind::Telemetry,
+        RawSourceKind::Certificate,
+    ] {
+        let mut file_first = CollectionScope::new(CollectionScopeId::new("file-first").unwrap());
+        file_first
+            .grant_file(kind.clone(), ITEM, &root, "public.pem", 256)
+            .unwrap();
+        assert!(matches!(
+            file_first.grant_certificate_store(ITEM, grant()),
+            Err(ScopeError::InvalidInput)
+        ));
+        let mut store_first = scope(ITEM);
+        assert!(matches!(
+            store_first.grant_file(kind, ITEM, &root, "public.pem", 256),
+            Err(ScopeError::InvalidInput)
+        ));
+        assert!(store_first.validate_request(&request(&[ITEM])).is_ok());
+    }
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn certificate_store_item_is_disjoint_from_logical_and_network_grants() {
+    use cryptomap::network_scope::NetworkTarget;
+    for kind in [RawSourceKind::Telemetry, RawSourceKind::Certificate] {
+        let mut logical_first =
+            CollectionScope::new(CollectionScopeId::new("logical-first").unwrap());
+        logical_first.grant_logical(kind.clone(), ITEM).unwrap();
+        assert!(matches!(
+            logical_first.grant_certificate_store(ITEM, grant()),
+            Err(ScopeError::InvalidInput)
+        ));
+        let mut store_first = scope(ITEM);
+        assert!(matches!(
+            store_first.grant_logical(kind, ITEM),
+            Err(ScopeError::InvalidInput)
+        ));
+    }
+    let endpoint = NetworkTarget::new("127.0.0.1", 443, None, []).unwrap();
+    let name = endpoint.id();
+    let mut endpoint_first =
+        CollectionScope::new(CollectionScopeId::new("endpoint-first").unwrap());
+    endpoint_first.grant_endpoint(endpoint.clone()).unwrap();
+    assert!(matches!(
+        endpoint_first.grant_certificate_store(name.clone(), grant()),
+        Err(ScopeError::InvalidInput)
+    ));
+    let mut store_first = scope(&name);
+    assert!(matches!(
+        store_first.grant_endpoint(endpoint),
+        Err(ScopeError::InvalidInput)
+    ));
+}
+
+#[test]
 fn raw_and_isolated_paths_preflight_all_grants_before_fake_runs() {
     let s = scope(ITEM);
     let fake = InertStoreCollector::new(&s);

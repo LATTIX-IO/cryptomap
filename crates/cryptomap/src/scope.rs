@@ -132,8 +132,9 @@ impl CollectionScope {
         if self.files.contains_key(&key) || self.logical.contains(&key) {
             return Err(ScopeError::InvalidInput);
         }
+        // Source-item identity is shared by coverage across all kinds.
         #[cfg(feature = "certificate-store-grants")]
-        if key.0 == RawSourceKind::Certificate && self.certificate_stores.contains_key(&key.1) {
+        if self.certificate_stores.contains_key(&key.1) {
             return Err(ScopeError::InvalidInput);
         }
         let root = FileRoot::open(root)?;
@@ -152,6 +153,10 @@ impl CollectionScope {
 
     /// Grant one explicit network target with caller-pinned destination IPs.
     pub fn grant_endpoint(&mut self, target: NetworkTarget) -> Result<(), ScopeError> {
+        #[cfg(feature = "certificate-store-grants")]
+        if self.certificate_stores.contains_key(&target.id()) {
+            return Err(ScopeError::InvalidInput);
+        }
         self.network.grant(target)
     }
 
@@ -173,8 +178,9 @@ impl CollectionScope {
         if self.files.contains_key(&key) || self.logical.contains(&key) {
             return Err(ScopeError::InvalidInput);
         }
+        // Source-item identity is shared by coverage across all kinds.
         #[cfg(feature = "certificate-store-grants")]
-        if key.0 == RawSourceKind::Certificate && self.certificate_stores.contains_key(&key.1) {
+        if self.certificate_stores.contains_key(&key.1) {
             return Err(ScopeError::InvalidInput);
         }
         self.logical.insert(key);
@@ -193,10 +199,13 @@ impl CollectionScope {
         let item = item.into();
         check_source_id(&item)?;
         grant.validate()?;
-        let file_key = (RawSourceKind::Certificate, item.clone());
+        // Collector coverage, requested source items and provenance do not
+        // carry the source kind. Reject collisions with *all* authorized
+        // source families rather than only public certificate files.
         if self.certificate_stores.contains_key(&item)
-            || self.files.contains_key(&file_key)
-            || self.logical.contains(&file_key)
+            || self.files.keys().any(|(_, source_item)| source_item == &item)
+            || self.logical.iter().any(|(_, source_item)| source_item == &item)
+            || self.network.permits(&item)
         {
             return Err(ScopeError::InvalidInput);
         }
