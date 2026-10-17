@@ -360,9 +360,7 @@ fn oversized_pem_der_payload_is_bounded_before_certificate_decode() {
     // ASCII/base64 armor remains below the source-file byte ceiling, but
     // its decoded payload exceeds the per-certificate DER ceiling.
     let encoded = "A".repeat(MAX_CERT_DER_BYTES.div_ceil(3) * 4 + 4);
-    let oversized = format!(
-        "-----BEGIN CERTIFICATE-----\n{encoded}\n-----END CERTIFICATE-----\n"
-    );
+    let oversized = format!("-----BEGIN CERTIFICATE-----\n{encoded}\n-----END CERTIFICATE-----\n");
     assert!(oversized.len() < MAX_CERT_FILE_BYTES);
     assert_failed(oversized, CollectorDiagnosticCode::ResourceLimit);
 }
@@ -477,7 +475,10 @@ fn observation_limit_is_global_across_authorized_certificate_files() {
     assert_eq!(out.coverage["cert:second"], CoverageState::Failed);
     assert_eq!(out.observations.len(), 1);
     assert_eq!(out.diagnostics.len(), 1);
-    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::ResourceLimit);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
 }
 
 #[test]
