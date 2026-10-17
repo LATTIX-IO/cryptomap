@@ -19,7 +19,7 @@ use cryptomap::{
     },
     orchestration::{ScopedInvocation, collect_normalized},
     pipeline::PipelineInput,
-    raw::{RawFactKind, RawLimits, RawSourceKind},
+    raw::{RawLimits, RawSourceKind},
     registry::Registry,
     scope::{CollectionScope, collect_scoped},
 };
