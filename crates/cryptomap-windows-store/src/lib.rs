@@ -21,7 +21,9 @@ pub struct WindowsCertificateStoreBackend<'a> {
     scope: &'a CollectionScope,
     item: String,
     target: CertificateStoreTarget,
+    #[cfg(windows)]
     max_entries: usize,
+    #[cfg(windows)]
     max_public_bytes: usize,
 }
 impl<'a> WindowsCertificateStoreBackend<'a> {
@@ -32,7 +34,9 @@ impl<'a> WindowsCertificateStoreBackend<'a> {
             scope,
             item: item.to_owned(),
             target: grant.target(),
+            #[cfg(windows)]
             max_entries: grant.max_entries(),
+            #[cfg(windows)]
             max_public_bytes: grant.max_public_bytes(),
         })
     }
@@ -396,7 +400,9 @@ mod authorization_tests {
             )
             .unwrap();
         let provider = WindowsCertificateStoreBackend::new(&scope, "selected-user-store").unwrap();
+        #[cfg(windows)]
         assert_eq!(provider.max_entries, 4);
+        #[cfg(windows)]
         assert_eq!(provider.max_public_bytes, 256 * 1024);
         let machine =
             CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My").unwrap();
