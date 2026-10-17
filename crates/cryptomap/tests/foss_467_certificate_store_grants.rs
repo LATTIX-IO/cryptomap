@@ -235,8 +235,8 @@ fn source_item_grant_is_exact_unique_and_non_expanding() {
 #[test]
 fn multiple_exact_store_grants_use_global_budget_without_false_denial() {
     let mut s = scope(ITEM);
-    let machine = CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My")
-        .unwrap();
+    let machine =
+        CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My").unwrap();
     s.grant_certificate_store(
         "machine:My",
         CertificateStoreGrant::new(machine, 4, 512 * 1024).unwrap(),
