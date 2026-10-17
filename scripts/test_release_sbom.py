@@ -166,7 +166,7 @@ class SoftwareSbomTests(unittest.TestCase):
 
     def test_optional_parser_packages_require_exact_locked_spdx_versions(self):
         """Optional parser crates still require release SBOM evidence."""
-        for optional in ("syn", "proc-macro2", "toml", "toml_edit"):
+        for optional in ("syn", "proc-macro2", "toml", "toml_edit", "x509-cert"):
             with self.subTest(package=optional):
                 doc = sample()
                 doc["packages"] = [
@@ -190,6 +190,67 @@ class SoftwareSbomTests(unittest.TestCase):
                 self.write(doc)
                 with self.assertRaisesRegex(ValueError, "unversioned"):
                     self.check()
+
+    def test_explicit_direct_syn_version_with_transitive_syn_is_unambiguous(self):
+        """Keep root-selected syn 3 distinct from independently locked syn 2."""
+        self.lock.write_text(
+            lock_fixture().replace('"syn"', '"syn 1.0.0"', 1)
+            + '\n[[package]]\nname = "syn"\nversion = "2.0.0"\n',
+            encoding="utf-8",
+        )
+        self.write(sample())
+        self.assertEqual(self.check()["direct_dependency_versions"]["syn"], "1.0.0")
+        doc = sample()
+        doc["packages"].append({
+            "SPDXID": "SPDXRef-syn-transitive",
+            "name": "syn", "versionInfo": "2.0.0",
+            "downloadLocation": "NOASSERTION",
+        })
+        self.write(doc)
+        self.assertEqual(self.check()["direct_dependency_versions"]["syn"], "1.0.0")
+
+        # A transitive syn 2 entry can never stand in for direct syn 3.
+        for entry in doc["packages"]:
+            if entry["name"] == "syn" and entry["versionInfo"] == "1.0.0":
+                entry["versionInfo"] = "2.0.0"
+        self.write(doc)
+        with self.assertRaisesRegex(ValueError, "missing locked"):
+            self.check()
+
+        # An unrelated version in SPDX is not tolerated even when the
+        # required direct version is also present.
+        doc = sample()
+        doc["packages"].append({
+            "SPDXID": "SPDXRef-syn-forged",
+            "name": "syn", "versionInfo": "9.9.9",
+            "downloadLocation": "NOASSERTION",
+        })
+        self.write(doc)
+        with self.assertRaisesRegex(ValueError, "differs from Cargo.lock"):
+            self.check()
+
+    def test_reject_invalid_and_ambiguous_explicit_root_version(self):
+        """Root-specified lock versions must identify exactly one package."""
+        baseline = lock_fixture()
+        for ref in ('"syn 9.9.9"', '"syn not-a-version"', '"syn 1.0.0"',
+                    '"syn 1.0.0 (registry+untrusted)"'):
+            # With a single syn 1.0.0 package, only the valid exact form
+            # is admissible; the other forms cannot resolve.
+            modified = baseline.replace('"syn"', ref, 1)
+            if ref == '"syn 1.0.0"':
+                continue
+            self.lock.write_text(modified, encoding="utf-8")
+            self.write(sample())
+            with self.assertRaises(ValueError):
+                self.check()
+        self.lock.write_text(
+            baseline.replace('"syn"', '"syn 1.0.0"', 1)
+            + '\n[[package]]\nname = "syn"\nversion = "1.0.0"\n',
+            encoding="utf-8",
+        )
+        self.write(sample())
+        with self.assertRaisesRegex(ValueError, "ambiguous locked version"):
+            self.check()
 
     def test_extra_unreviewed_root_dependency_cannot_bypass_release_gate(self):
         """Do not silently approve a changed root dependency set."""

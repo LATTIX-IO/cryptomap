@@ -60,6 +60,9 @@ jobs:
       - name: Bounded TOML TLS configuration, replay and security regressions
         run: cargo test -p cryptomap --test foss_372_toml_tls_config --features toml-tls-config --locked
 
+      - name: Passive public X.509 PEM/DER certificate regression and security tests
+        run: cargo test -p cryptomap --test foss_406_certificate_files --features certificate-files --locked
+
       - name: Exact host-scope binding for all built-in Cargo and npm collectors
         run: cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked
 

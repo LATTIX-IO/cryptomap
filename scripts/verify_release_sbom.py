@@ -15,13 +15,18 @@ MAX_LOCK_BYTES = 8 * 1024 * 1024
 # Any addition requires explicit supply-chain review and adversarial tests.
 EXPECTED_DIRECT = {
     "serde", "serde_json", "sha2", "cap-std", "cap-fs-ext",
-    "proc-macro2", "syn", "toml", "toml_edit",
+    "proc-macro2", "syn", "toml", "toml_edit", "x509-cert",
 }
 CREATED = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
 
-def locked_direct_versions(lockfile: Path) -> dict[str, str]:
-    """Derive exact direct dependency versions from reviewed Cargo.lock v4."""
+def _locked_contract(lockfile: Path) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """Resolve exact *direct* versions, allowing explicitly pinned duplicates.
+
+    Cargo.lock can contain syn 2 (transitive) and syn 3 (direct). Cargo
+    qualifies the root reference as "syn 3.0.9" in that case. Never infer
+    which version is direct from its name or a sorted candidate list.
+    """
     if not lockfile.is_file() or not 0 < lockfile.stat().st_size <= MAX_LOCK_BYTES:
         raise ValueError("missing or oversized reviewed Cargo.lock")
     with lockfile.open("rb") as stream:
@@ -37,20 +42,41 @@ def locked_direct_versions(lockfile: Path) -> dict[str, str]:
     deps = roots[0].get("dependencies")
     if not isinstance(deps, list) or not all(isinstance(d, str) and d for d in deps):
         raise ValueError("invalid cryptomap root dependencies")
-    # A dependency can include a locked version suffix if multiple versions
-    # exist; reject that ambiguity rather than guessing the resolved artifact.
-    if any(len(d.split()) != 1 for d in deps) or set(deps) != EXPECTED_DIRECT:
+    root_refs: dict[str, str | None] = {}
+    for dependency in deps:
+        parts = dependency.split()
+        if (len(parts) not in (1, 2) or parts[0] not in EXPECTED_DIRECT
+                or parts[0] in root_refs
+                or (len(parts) == 2 and not re.fullmatch(
+                    r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", parts[1]
+                ))):
+            raise ValueError("direct dependency contract changed or ambiguous")
+        root_refs[parts[0]] = parts[1] if len(parts) == 2 else None
+    if set(root_refs) != EXPECTED_DIRECT:
         raise ValueError("direct dependency contract changed or ambiguous")
-    result = {}
+
+    direct: dict[str, str] = {}
+    all_versions: dict[str, set[str]] = {}
     for name in sorted(EXPECTED_DIRECT):
-        matches = [
-            item.get("version") for item in packages
-            if isinstance(item, dict) and item.get("name") == name
+        available = [
+            p.get("version") for p in packages
+            if isinstance(p, dict) and p.get("name") == name
         ]
-        if len(matches) != 1 or not isinstance(matches[0], str) or not matches[0]:
+        if not available or not all(isinstance(v, str) and v for v in available):
             raise ValueError(f"missing or ambiguous locked version for {name}")
-        result[name] = matches[0]
-    return result
+        all_versions[name] = set(available)
+        requested = root_refs[name]
+        candidates = available if requested is None else [v for v in available if v == requested]
+        if len(candidates) != 1:
+            raise ValueError(f"missing or ambiguous locked version for {name}")
+        direct[name] = candidates[0]
+    return direct, all_versions
+
+
+def locked_direct_versions(lockfile: Path) -> dict[str, str]:
+    """Derive the uniquely identified direct dependency versions."""
+    direct, _ = _locked_contract(lockfile)
+    return direct
 
 
 def validate(path: Path, lockfile: Path) -> dict:
@@ -80,7 +106,7 @@ def validate(path: Path, lockfile: Path) -> dict:
     if not isinstance(created, str) or not CREATED.fullmatch(created):
         raise ValueError("missing or invalid SPDX creation timestamp")
 
-    locked_versions = locked_direct_versions(lockfile)
+    locked_versions, allowed_versions = _locked_contract(lockfile)
     packages = report.get("packages")
     if not isinstance(packages, list) or not packages:
         raise ValueError("empty dependency inventory")
@@ -104,9 +130,13 @@ def validate(path: Path, lockfile: Path) -> dict:
         if name in locked_versions:
             if not isinstance(version, str) or not version:
                 raise ValueError(f"unversioned required Rust dependency {name}")
-            if version != locked_versions[name]:
+            # A second, *transitive* version is valid only when its exact
+            # version also occurs in the reviewed lockfile. Direct coverage
+            # still requires the explicit root-selected version.
+            if version not in allowed_versions[name]:
                 raise ValueError(f"SBOM version differs from Cargo.lock for {name}")
-            observed.add(name)
+            if version == locked_versions[name]:
+                observed.add(name)
     missing = EXPECTED_DIRECT - observed
     if missing:
         raise ValueError("missing locked direct dependencies: " + ", ".join(sorted(missing)))
