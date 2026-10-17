@@ -26,6 +26,13 @@ json-tls-config = []
 toml-tls-config = ["json-tls-config", "dep:toml", "dep:toml_edit"]
 # Passive X.509 file decoder; no signature verification or platform store scanning.
 certificate-files = ["dep:x509-cert"]
+# Inert, explicitly granted cross-platform certificate-store authorization only.
+certificate-store-grants = []
+
+[[example]]
+name = "certificate_store_authorization"
+path = "examples/certificate_store_authorization.rs"
+required-features = ["certificate-store-grants"]
 
 [[example]]
 name = "json_scoped_tls"

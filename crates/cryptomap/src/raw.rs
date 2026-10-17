@@ -18,8 +18,11 @@ pub const RAW_CONTRACT_VERSION: u32 = 1;
 pub enum RawSourceKind {
     /// Manifest or dependency lockfile supplied by the caller.
     Dependency,
-    /// Public certificate file or authorized certificate store.
+    /// Explicitly granted public certificate file.
     Certificate,
+    /// Exact named certificate store, never a certificate file grant.
+    #[cfg(feature = "certificate-store-grants")]
+    CertificateStore,
     /// Explicitly authorized TLS network endpoint.
     TlsEndpoint,
     /// Repository source code or configuration file.

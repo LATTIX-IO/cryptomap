@@ -15,6 +15,8 @@ use crate::{
     raw::RawSourceKind,
     validation,
 };
+#[cfg(feature = "certificate-store-grants")]
+use crate::certificate_store_scope::CertificateStoreGrant;
 use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
@@ -70,6 +72,8 @@ pub struct CollectionScope {
     files: BTreeMap<(RawSourceKind, String), FileGrant>,
     network: NetworkScope,
     logical: BTreeSet<(RawSourceKind, String)>,
+    #[cfg(feature = "certificate-store-grants")]
+    certificate_stores: BTreeMap<String, CertificateStoreGrant>,
 }
 
 fn check_source_id(item: &str) -> Result<(), ScopeError> {
@@ -91,6 +95,8 @@ impl CollectionScope {
             files: BTreeMap::new(),
             network: NetworkScope::new(),
             logical: BTreeSet::new(),
+            #[cfg(feature = "certificate-store-grants")]
+            certificate_stores: BTreeMap::new(),
         }
     }
 
@@ -124,6 +130,12 @@ impl CollectionScope {
         check_source_id(&item)?;
         let key = (kind, item);
         if self.files.contains_key(&key) || self.logical.contains(&key) {
+            return Err(ScopeError::InvalidInput);
+        }
+        #[cfg(feature = "certificate-store-grants")]
+        if key.0 == RawSourceKind::Certificate
+            && self.certificate_stores.contains_key(&key.1)
+        {
             return Err(ScopeError::InvalidInput);
         }
         let root = FileRoot::open(root)?;
@@ -160,10 +172,53 @@ impl CollectionScope {
         let item = item.into();
         check_source_id(&item)?;
         let key = (kind, item);
-        if self.files.contains_key(&key) || !self.logical.insert(key) {
+        if self.files.contains_key(&key) || self.logical.contains(&key) {
             return Err(ScopeError::InvalidInput);
         }
+        #[cfg(feature = "certificate-store-grants")]
+        if key.0 == RawSourceKind::Certificate
+            && self.certificate_stores.contains_key(&key.1)
+        {
+            return Err(ScopeError::InvalidInput);
+        }
+        self.logical.insert(key);
         Ok(())
+    }
+
+    /// Grant one exact certificate store, with typed hive, name and finite budgets.
+    ///
+    /// No OS store is opened, enumerated or authenticated by this grant.
+    #[cfg(feature = "certificate-store-grants")]
+    pub fn grant_certificate_store(
+        &mut self,
+        item: impl Into<String>,
+        grant: CertificateStoreGrant,
+    ) -> Result<(), ScopeError> {
+        let item = item.into();
+        check_source_id(&item)?;
+        grant.validate()?;
+        let file_key = (RawSourceKind::Certificate, item.clone());
+        if self.certificate_stores.contains_key(&item)
+            || self.files.contains_key(&file_key)
+            || self.logical.contains(&file_key)
+        {
+            return Err(ScopeError::InvalidInput);
+        }
+        self.certificate_stores.insert(item, grant);
+        Ok(())
+    }
+
+    /// Resolve an exact named store authorization, without accessing the OS.
+    ///
+    /// Callers must use the host-granted source item, not an untrusted store path.
+    #[cfg(feature = "certificate-store-grants")]
+    pub fn authorize_certificate_store(
+        &self,
+        item: &str,
+    ) -> Result<&CertificateStoreGrant, ScopeError> {
+        self.certificate_stores
+            .get(item)
+            .ok_or(ScopeError::OutOfScope)
     }
 
     /// Verify that every collector source item is an exact granted entry.
@@ -174,6 +229,16 @@ impl CollectionScope {
             return Err(ScopeError::InvalidInput);
         }
         for src in &req.sources {
+            #[cfg(feature = "certificate-store-grants")]
+            if src.kind == RawSourceKind::CertificateStore {
+                let grant = self.authorize_certificate_store(&src.item)?;
+                // This is an output-record limit; the independent public DER
+                // byte ceiling is enforced by the future native adapter.
+                if req.limits.observations > grant.max_entries() {
+                    return Err(ScopeError::ResourceLimit);
+                }
+                continue;
+            }
             let permitted = if src.kind == RawSourceKind::TlsEndpoint {
                 self.network.permits(&src.item)
             } else {
