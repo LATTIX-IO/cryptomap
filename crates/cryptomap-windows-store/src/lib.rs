@@ -39,13 +39,15 @@ mod native {
     use windows_sys::Win32::{
         Foundation::GetLastError,
         Security::Cryptography::{
-            CERT_CONTEXT, CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_MEMORY,
+            CERT_CONTEXT, CERT_STORE_OPEN_EXISTING_FLAG,
             CERT_STORE_PROV_SYSTEM_REGISTRY_W, CERT_STORE_READONLY_FLAG,
-            CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE,
-            CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext,
-            CertOpenStore, HCERTSTORE,
+            CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE, CertCloseStore,
+            CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, HCERTSTORE,
         },
     };
+
+    #[cfg(test)]
+    use windows_sys::Win32::Security::Cryptography::CERT_STORE_PROV_MEMORY;
 
     const CRYPT_E_NOT_FOUND: u32 = 0x8009_2004;
     const ERROR_NO_MORE_FILES: u32 = 18;
@@ -86,9 +88,7 @@ mod native {
         fn open_memory() -> Result<Self, StoreProviderError> {
             // SAFETY: Memory provider creates a detached, ephemeral store only,
             // with no associated HKCU/HKLM backing registry or key container.
-            let handle = unsafe {
-                CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, 0, ptr::null())
-            };
+            let handle = unsafe { CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, 0, ptr::null()) };
             if handle.is_null() {
                 return Err(map_os_error());
             }
@@ -193,23 +193,36 @@ mod native {
         };
 
         fn public_der(pem: &[u8]) -> Vec<u8> {
-            use x509_cert::{Certificate, der::{DecodePem, Encode}};
-            Certificate::from_pem(pem).expect("fixture PEM").to_der().expect("fixture DER")
+            use x509_cert::{
+                Certificate,
+                der::{DecodePem, Encode},
+            };
+            Certificate::from_pem(pem)
+                .expect("fixture PEM")
+                .to_der()
+                .expect("fixture DER")
         }
 
         #[test]
         fn in_memory_native_enumeration_returns_only_bounded_public_der() {
-            let rsa = public_der(include_bytes!("../../cryptomap/examples/fixtures/certificate/rsa.pem"));
-            let ec = public_der(include_bytes!("../../cryptomap/examples/fixtures/certificate/ec.pem"));
+            let rsa = public_der(include_bytes!(
+                "../../cryptomap/examples/fixtures/certificate/rsa.pem"
+            ));
+            let ec = public_der(include_bytes!(
+                "../../cryptomap/examples/fixtures/certificate/ec.pem"
+            ));
             let store = OwnedStore::open_memory().expect("ephemeral store");
             for bytes in [&rsa, &ec] {
                 // SAFETY: writes ONLY to ephemeral in-memory test store; the
                 // public DER bytes are validated fixtures and in-bounds.
                 let ok = unsafe {
                     CertAddEncodedCertificateToStore(
-                        store.0, X509_ASN_ENCODING, bytes.as_ptr(),
-                        u32::try_from(bytes.len()).unwrap(), CERT_STORE_ADD_ALWAYS,
-                        ptr::null_mut()
+                        store.0,
+                        X509_ASN_ENCODING,
+                        bytes.as_ptr(),
+                        u32::try_from(bytes.len()).unwrap(),
+                        CERT_STORE_ADD_ALWAYS,
+                        ptr::null_mut(),
                     )
                 };
                 assert_ne!(ok, 0);
@@ -219,7 +232,8 @@ mod native {
                 parse_der(bytes).map_err(|_| StoreProviderError::Malformed)?;
                 seen.push(bytes.to_vec());
                 Ok(())
-            }).unwrap();
+            })
+            .unwrap();
             seen.sort();
             let mut expected = vec![rsa, ec];
             expected.sort();
@@ -228,14 +242,19 @@ mod native {
 
         #[test]
         fn aborted_memory_store_walk_frees_context_and_never_reads_system_store() {
-            let der = public_der(include_bytes!("../../cryptomap/examples/fixtures/certificate/rsa.pem"));
+            let der = public_der(include_bytes!(
+                "../../cryptomap/examples/fixtures/certificate/rsa.pem"
+            ));
             let store = OwnedStore::open_memory().unwrap();
             // SAFETY: isolated in-memory test store only.
             let added = unsafe {
                 CertAddEncodedCertificateToStore(
-                    store.0, X509_ASN_ENCODING, der.as_ptr(),
-                    u32::try_from(der.len()).unwrap(), CERT_STORE_ADD_ALWAYS,
-                    ptr::null_mut()
+                    store.0,
+                    X509_ASN_ENCODING,
+                    der.as_ptr(),
+                    u32::try_from(der.len()).unwrap(),
+                    CERT_STORE_ADD_ALWAYS,
+                    ptr::null_mut(),
                 )
             };
             assert_ne!(added, 0);
@@ -247,7 +266,11 @@ mod native {
         fn empty_ephemeral_native_store_is_complete_not_access_error() {
             let store = OwnedStore::open_memory().unwrap();
             let mut count = 0;
-            walk_store(&store, &mut |_| { count += 1; Ok(()) }).unwrap();
+            walk_store(&store, &mut |_| {
+                count += 1;
+                Ok(())
+            })
+            .unwrap();
             assert_eq!(count, 0);
         }
     }

@@ -224,6 +224,8 @@ jobs:
         run: cargo test --workspace --all-features --locked
       - name: Native Windows in-memory CryptoAPI conformance
         run: cargo test -p cryptomap-windows-store --locked
+      - name: Native Windows Clippy strict
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   release-attestations:
     name: Main-only signed release provenance

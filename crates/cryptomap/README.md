@@ -93,6 +93,12 @@ cargo test --locked -p cryptomap --features certificate-store-grants --test foss
 
 See [B5.2 typed grant authority, budgets and failure semantics](../../docs/milestone-b5-certificate-store-grants.md). Actual read-only Windows store collection is planned in FOSS-468, not claimed in B5.2.
 
+## Opt-in read-only Windows certificate-store adapter (B5.3 draft)
+
+The separate `cryptomap-windows-store` workspace crate connects the exact B5.2 typed store-grant contract to the Windows CryptoAPI **read-only local registry** store for CurrentUser/My or separately approved LocalMachine/My. It supplies public DER certificates to the same canonical B5.1 decoder and emits typed coverage; no keys, subjects, issuer names, serials, or raw DER are included in normal reports. It remains in [draft PR #67](https://github.com/LATTIX-IO/cryptomap/pull/67), not a published artifact or completed release.
+
+The Linux/macOS provider reports `Unsupported` and does not pretend a store was inspected. The Windows CI suite uses only ephemeral **in-memory** stores. See [B5.3 trust boundaries, tests, and optional manual read-only UAT](../../docs/milestone-b5-windows-store.md).
+
 ## Concepts
 
 - **Asset** — a canonical logical identity; duplicate asset names are not enough to equate separate use sites.
@@ -105,7 +111,7 @@ See [B5.2 typed grant authority, budgets and failure semantics](../../docs/miles
 
 The passive Cargo subset supports lockfile v3/v4 and bounded, exact numeric direct dependency declarations; it accepts only specifically supported metadata and version-only inline-table syntax. Npm supports package-lock v2/v3 with strict exact-root and installation profiles. Unsupported version ranges, Cargo workspace/target/dev/optional/renamed declarations, and npm peer/dev/workspace/alias semantics are not silently interpreted.
 
-Windows certificate-store enumeration, live negotiated TLS, general multi-language source/config discovery, runtime telemetry, the CycloneDX CBOM adapter and cryptopolicy/cryptoshift bridges are **not yet available**. Public X.509 **file** evidence and inert named-store **authorization** are limited opt-in previews, not an automatic certificate discovery service.
+Windows read-only certificate-store enumeration is under development in B5.3, not merged or published. Live negotiated TLS, general multi-language source/config discovery, runtime telemetry, the CycloneDX CBOM adapter and cryptopolicy/cryptoshift bridges are **not yet available**. Public X.509 **file** evidence and inert named-store **authorization** are limited opt-in previews, not an automatic certificate discovery service.
 
 ## Security and contributor notes
 
