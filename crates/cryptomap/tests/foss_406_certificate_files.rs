@@ -313,6 +313,24 @@ fn exact_pem_footer_and_public_only_armor_are_required() {
 }
 
 #[test]
+fn reject_extra_der_bytes_inside_otherwise_valid_pem_armor() {
+    // PEM framing and base64 are valid, but the decoded payload has bytes
+    // after the canonical X.509 certificate sequence. No evidence may emit.
+    let mut der = x509_cert::Certificate::from_pem(BASIC.as_bytes())
+        .unwrap()
+        .to_der()
+        .unwrap();
+    der.extend_from_slice(&[0x00, 0x01, 0x02, 0x03]);
+    let pem = x509_cert::der::pem::encode_string(
+        "CERTIFICATE",
+        x509_cert::der::pem::LineEnding::LF,
+        &der,
+    )
+    .unwrap();
+    assert_failed(pem, CollectorDiagnosticCode::MalformedSource);
+}
+
+#[test]
 fn crt_encoding_supports_public_pem_but_rejects_private_armor() {
     let sandbox = Sandbox::new();
     sandbox.write("public.crt", BASIC);
