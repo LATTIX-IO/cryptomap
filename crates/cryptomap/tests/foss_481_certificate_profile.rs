@@ -525,7 +525,10 @@ fn ec_named_curve_oid_must_parse_canonically_before_normalization() {
             outcome,
         );
         assert!(
-            matches!(result, Err(cryptomap::pipeline::PipelineError::InvalidOutcome)),
+            matches!(
+                result,
+                Err(cryptomap::pipeline::PipelineError::InvalidOutcome)
+            ),
             "forged EC named-curve OID was accepted: {malformed}"
         );
     }
