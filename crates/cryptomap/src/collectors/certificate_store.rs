@@ -19,7 +19,7 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     time::Instant,
 };
 
@@ -264,18 +264,12 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     confidence: Confidence::High,
                     inference_rule: None,
                     source_sha256: Some(cert.fingerprint_sha256().to_owned()),
-                    attributes: BTreeMap::from([
-                        ("x509:source-encoding".into(), "der".into()),
-                        ("x509:store-target".into(), target.id().into()),
-                        (
-                            "x509:public-key-algorithm-oid".into(),
-                            cert.public_key_oid().into(),
-                        ),
-                        (
-                            "x509:signature-algorithm-oid".into(),
-                            cert.signature_oid().into(),
-                        ),
-                    ]),
+                    attributes: {
+                        let mut attributes = cert.profile().evidence_attributes();
+                        attributes.insert("x509:source-encoding".into(), "der".into());
+                        attributes.insert("x509:store-target".into(), target.id().into());
+                        attributes
+                    },
                 })?;
                 emitted += 1;
                 total_emitted += 1;

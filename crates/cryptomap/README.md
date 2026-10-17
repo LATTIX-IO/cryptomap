@@ -99,6 +99,19 @@ The separate `cryptomap-windows-store` workspace crate connects the exact B5.2 t
 
 The Linux/macOS provider reports `Unsupported` and does not pretend a store was inspected. The Windows CI suite uses only ephemeral **in-memory** stores. See [B5.3 trust boundaries, tests, and optional manual read-only UAT](../../docs/milestone-b5-windows-store.md).
 
+## Public X.509 profile and UTC validity (Milestone B5.4, draft)
+
+The opt-in `certificate-files` and `certificate-store-grants` collectors now share one privacy-allowlisted `PublicCertificateProfile`. B5.4 adds **observed** X.509 version, not-before/not-after UTC timestamps and recognized public key family/curve/field width to the legacy public SHA-256 and algorithm OIDs. It never asserts certificate trust, signature verification or validity relative to the current clock. A recognized RSA key's **modulus bits remain Unknown** until the exact modulus is safely decoded; its SPKI encoding size must not be used as a substitute.
+
+```sh
+cargo test --locked -p cryptomap --features certificate-store-grants --test foss_481_certificate_profile
+cargo run --locked -p cryptomap --features certificate-files --example certificate_scoped_inventory -- \
+  crates/cryptomap/examples/fixtures/certificate rsa.pem \
+  2026-10-17T12:00:00Z example-tenant example-run
+```
+
+The default-output projection excludes Subject, Issuer, serial, SAN, SKI/AKI, arbitrary extensions, raw DER/SPKI and key bytes. See [the B5.4 profile and calendar/negative test contract](../../docs/milestone-b5-public-profile.md). This is under PR review, not a published crate.
+
 ## Concepts
 
 - **Asset** — a canonical logical identity; duplicate asset names are not enough to equate separate use sites.
@@ -111,7 +124,7 @@ The Linux/macOS provider reports `Unsupported` and does not pretend a store was 
 
 The passive Cargo subset supports lockfile v3/v4 and bounded, exact numeric direct dependency declarations; it accepts only specifically supported metadata and version-only inline-table syntax. Npm supports package-lock v2/v3 with strict exact-root and installation profiles. Unsupported version ranges, Cargo workspace/target/dev/optional/renamed declarations, and npm peer/dev/workspace/alias semantics are not silently interpreted.
 
-Windows read-only certificate-store enumeration is under development in B5.3, not merged or published. Live negotiated TLS, general multi-language source/config discovery, runtime telemetry, the CycloneDX CBOM adapter and cryptopolicy/cryptoshift bridges are **not yet available**. Public X.509 **file** evidence and inert named-store **authorization** are limited opt-in previews, not an automatic certificate discovery service.
+Windows read-only certificate-store enumeration merged in B5.3 and remains opt-in/unpublished. Live negotiated TLS, general multi-language source/config discovery, runtime telemetry, the CycloneDX CBOM adapter and cryptopolicy/cryptoshift bridges are **not yet available**. Public X.509 **file** evidence and inert named-store **authorization** are limited opt-in previews, not an automatic certificate discovery service.
 
 ## Security and contributor notes
 

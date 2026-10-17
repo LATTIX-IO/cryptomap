@@ -15,7 +15,9 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use x509_cert::{
     Certificate,
-    der::{Decode, Encode, pem},
+    certificate::Version,
+    der::{Decode, Encode, asn1::ObjectIdentifier, pem},
+    time::Time,
 };
 
 /// Maximum source bytes permitted in one explicitly granted certificate file.
@@ -35,6 +37,110 @@ pub struct PublicCertificate {
     fingerprint: String,
     signature_oid: String,
     public_key_oid: String,
+    profile: PublicCertificateProfile,
+}
+
+/// Strictly allowlisted, non-identifying X.509 v1 metadata projection.
+///
+/// A validity interval is *observed certificate content*, not a statement of
+/// current validity, path building, signature verification, revocation or trust.
+/// Fields are derived from one bounded canonical DER decode. Private keys,
+/// distinguished names, SANs, SKI/AKI, serials and extensions are excluded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicCertificateProfile {
+    /// ASN.1 certificate version as human-readable 1, 2 or 3.
+    pub version: u8,
+    /// Observed not-before value normalized to RFC 3339 UTC second precision.
+    pub not_before_utc: String,
+    /// Observed not-after value normalized to RFC 3339 UTC second precision.
+    pub not_after_utc: String,
+    /// Public signature algorithm OID.
+    pub signature_oid: String,
+    /// Public SubjectPublicKeyInfo algorithm OID.
+    pub public_key_oid: String,
+    /// Known algorithm family; None if this OID is not explicitly recognized.
+    pub public_key_family: Option<&'static str>,
+    /// Known named curve OID, not a key or identifying certificate extension.
+    pub named_curve_oid: Option<String>,
+    /// Public key field width ONLY for explicitly recognized fixed-width curves.
+    ///
+    /// RSA modulus bits are Unknown rather than guessed from the encoded SPKI
+    /// BIT STRING length. No key material is exported to derive this value.
+    pub public_key_bits: Option<u16>,
+}
+
+impl PublicCertificateProfile {
+    /// Versioned, finite, privacy-allowlisted observation attributes.
+    ///
+    /// Retains the original v1 algorithm OID keys for existing consumers.
+    pub fn evidence_attributes(&self) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::from([
+            ("x509:signature-algorithm-oid".into(), self.signature_oid.clone()),
+            ("x509:public-key-algorithm-oid".into(), self.public_key_oid.clone()),
+            ("x509:profile:v1:version".into(), self.version.to_string()),
+            ("x509:profile:v1:not-before-utc".into(), self.not_before_utc.clone()),
+            ("x509:profile:v1:not-after-utc".into(), self.not_after_utc.clone()),
+        ]);
+        if let Some(family) = self.public_key_family {
+            out.insert("x509:profile:v1:public-key-family".into(), family.into());
+        }
+        if let Some(ref curve) = self.named_curve_oid {
+            out.insert("x509:profile:v1:named-curve-oid".into(), curve.clone());
+        }
+        if let Some(bits) = self.public_key_bits {
+            out.insert("x509:profile:v1:public-key-bits".into(), bits.to_string());
+        }
+        out
+    }
+}
+
+/// Normalize a validated ASN.1 Time without wall-clock lookups.
+///
+/// RFC 5280 requires UTCTime for dates through 2049 and GeneralizedTime
+/// starting with 2050; the chosen parser may reject older years itself.
+fn normalized_utc(value: &Time) -> Result<String, CollectorDiagnosticCode> {
+    let dt = value.to_date_time();
+    match value {
+        Time::UtcTime(_) if !(1950..=2049).contains(&dt.year()) => {
+            return Err(CollectorDiagnosticCode::MalformedSource);
+        }
+        Time::GeneralTime(_) if dt.year() < 2050 => {
+            return Err(CollectorDiagnosticCode::MalformedSource);
+        }
+        _ => {}
+    }
+    Ok(format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        dt.year(), dt.month(), dt.day(), dt.hour(), dt.minutes(), dt.seconds()
+    ))
+}
+
+/// Parse explicitly recognized, non-identifying SPKI algorithm parameters.
+///
+/// An unknown EC parameter OID remains Unknown rather than being interpreted
+/// as a key length. It is not valid to use SPKI encoded size as key strength.
+fn public_key_profile(
+    oid: &str,
+    params: Option<&x509_cert::der::asn1::Any>,
+) -> (Option<&'static str>, Option<String>, Option<u16>) {
+    match oid {
+        "1.2.840.113549.1.1.1" => (Some("rsa"), None, None),
+        "1.2.840.10045.2.1" => {
+            let curve = params
+                .and_then(|p| p.decode_as::<ObjectIdentifier>().ok())
+                .map(|oid| oid.to_string());
+            let bits = match curve.as_deref() {
+                Some("1.2.840.10045.3.1.7") => Some(256), // secp256r1
+                Some("1.3.132.0.34") => Some(384),         // secp384r1
+                Some("1.3.132.0.35") => Some(521),         // secp521r1
+                _ => None,
+            };
+            (Some("ec"), curve, bits)
+        }
+        "1.3.101.112" => (Some("ed25519"), None, None),
+        "1.3.101.113" => (Some("ed448"), None, None),
+        _ => (None, None, None),
+    }
 }
 
 impl PublicCertificate {
@@ -51,6 +157,11 @@ impl PublicCertificate {
     /// Certificate's SubjectPublicKeyInfo algorithm OID, not a key export.
     pub fn public_key_oid(&self) -> &str {
         &self.public_key_oid
+    }
+
+    /// Observed public-only profile without subject, issuer or serial.
+    pub fn profile(&self) -> &PublicCertificateProfile {
+        &self.profile
     }
 }
 
@@ -82,18 +193,37 @@ pub fn parse_der(der: &[u8]) -> Result<PublicCertificate, CollectorDiagnosticCod
         return Err(CollectorDiagnosticCode::MalformedSource);
     }
     let signature_oid = public_oid(certificate.signature_algorithm.oid.to_string())?;
-    let public_key_oid = public_oid(
-        certificate
-            .tbs_certificate
-            .subject_public_key_info
-            .algorithm
-            .oid
-            .to_string(),
-    )?;
+    let tbs = &certificate.tbs_certificate;
+    let spki = &tbs.subject_public_key_info;
+    let public_key_oid = public_oid(spki.algorithm.oid.to_string())?;
+    let version = match tbs.version {
+        Version::V1 => 1,
+        Version::V2 => 2,
+        Version::V3 => 3,
+    };
+    let not_before_utc = normalized_utc(&tbs.validity.not_before)?;
+    let not_after_utc = normalized_utc(&tbs.validity.not_after)?;
+    // Reject contradictory validity intervals; do not compare to current time.
+    if tbs.validity.not_before.to_date_time() > tbs.validity.not_after.to_date_time() {
+        return Err(CollectorDiagnosticCode::MalformedSource);
+    }
+    let (public_key_family, named_curve_oid, public_key_bits) =
+        public_key_profile(&public_key_oid, spki.algorithm.parameters.as_ref());
+    let profile = PublicCertificateProfile {
+        version,
+        not_before_utc,
+        not_after_utc,
+        signature_oid: signature_oid.clone(),
+        public_key_oid: public_key_oid.clone(),
+        public_key_family,
+        named_curve_oid,
+        public_key_bits,
+    };
     Ok(PublicCertificate {
         fingerprint: format!("{:x}", Sha256::digest(der)),
         signature_oid,
         public_key_oid,
+        profile,
     })
 }
 
@@ -378,11 +508,11 @@ impl Collector for CertificateFileCollector<'_> {
                     confidence: Confidence::High,
                     inference_rule: None,
                     source_sha256: Some(source_sha256.clone()),
-                    attributes: BTreeMap::from([
-                        ("x509:source-encoding".into(), encoding.into()),
-                        ("x509:public-key-algorithm-oid".into(), cert.public_key_oid),
-                        ("x509:signature-algorithm-oid".into(), cert.signature_oid),
-                    ]),
+                    attributes: {
+                        let mut attributes = cert.profile.evidence_attributes();
+                        attributes.insert("x509:source-encoding".into(), encoding.into());
+                        attributes
+                    },
                 })?;
                 emitted += 1;
                 total_emitted += 1;
