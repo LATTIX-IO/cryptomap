@@ -18,8 +18,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut scope = CollectionScope::new(CollectionScopeId::new("example-tenant")?);
     scope.grant_certificate_store("example:personal-certificates", grant)?;
 
-    let mut limits = RawLimits::default();
-    limits.observations = 4;
+    let limits = RawLimits {
+        observations: 4,
+        ..RawLimits::default()
+    };
     let req = CollectionRequest {
         run: CollectionRunId::new("example-store-run")?,
         sources: vec![RequestedSource {

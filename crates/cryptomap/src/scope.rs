@@ -224,15 +224,22 @@ impl CollectionScope {
         if req.sources.is_empty() {
             return Err(ScopeError::InvalidInput);
         }
+        // RawLimits.observations is a request-wide budget, whereas store
+        // entry ceilings are per exact grant. Never compare the full global
+        // budget against each individual store (which would reject valid
+        // multi-store requests). Native adapters also enforce each ceiling.
+        #[cfg(feature = "certificate-store-grants")]
+        let mut store_capacity = 0_usize;
+        #[cfg(feature = "certificate-store-grants")]
+        let mut store_sources = 0_usize;
         for src in &req.sources {
             #[cfg(feature = "certificate-store-grants")]
             if src.kind == RawSourceKind::CertificateStore {
                 let grant = self.authorize_certificate_store(&src.item)?;
-                // This is an output-record limit; the independent public DER
-                // byte ceiling is enforced by the future native adapter.
-                if req.limits.observations > grant.max_entries() {
-                    return Err(ScopeError::ResourceLimit);
-                }
+                store_capacity = store_capacity
+                    .checked_add(grant.max_entries())
+                    .ok_or(ScopeError::ResourceLimit)?;
+                store_sources += 1;
                 continue;
             }
             let permitted = if src.kind == RawSourceKind::TlsEndpoint {
@@ -244,6 +251,10 @@ impl CollectionScope {
             if !permitted {
                 return Err(ScopeError::OutOfScope);
             }
+        }
+        #[cfg(feature = "certificate-store-grants")]
+        if store_sources == req.sources.len() && req.limits.observations > store_capacity {
+            return Err(ScopeError::ResourceLimit);
         }
         Ok(())
     }

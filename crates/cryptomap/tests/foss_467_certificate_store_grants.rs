@@ -233,6 +233,36 @@ fn source_item_grant_is_exact_unique_and_non_expanding() {
 }
 
 #[test]
+fn multiple_exact_store_grants_use_global_budget_without_false_denial() {
+    let mut s = scope(ITEM);
+    let machine = CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My")
+        .unwrap();
+    s.grant_certificate_store(
+        "machine:My",
+        CertificateStoreGrant::new(machine, 4, 512 * 1024).unwrap(),
+    )
+    .unwrap();
+    let fake = InertStoreCollector::new(&s);
+    let cancel = CancellationToken::default();
+    let mut request = request(&[ITEM, "machine:My"]);
+    // Each store permits 4 certificate contexts; the complete request may
+    // permit 8 even though no individual store grants 8.
+    request.limits.observations = 8;
+    assert!(s.validate_request(&request).is_ok());
+    let out = collect_scoped(&s, &fake, request.clone(), &cancel).unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Unsupported);
+    assert_eq!(out.coverage["machine:My"], CoverageState::Unsupported);
+    assert!(out.observations.is_empty());
+    assert_eq!(fake.calls(), 1);
+    request.limits.observations = 9;
+    assert!(matches!(
+        s.validate_request(&request),
+        Err(ScopeError::ResourceLimit)
+    ));
+    assert_eq!(fake.calls(), 1);
+}
+
+#[test]
 fn certificate_file_and_store_kinds_are_not_interchangeable() {
     let mut s = scope(ITEM);
     let mut file_spoof = request(&[ITEM]);
