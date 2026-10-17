@@ -175,7 +175,7 @@ fn contradictory_or_non_rfc5280_time_encodings_fail_closed() {
     let mut invalid = der(&cert);
     let time = b"20500101000000Z";
     let position = invalid.windows(time.len()).position(|w| w == time).unwrap();
-    invalid[position + 6] = b'3'; // Day 31 in January? actually 31 is valid; create February 30 instead.
+    // Create the impossible calendar date 2050-02-30 in canonical-looking DER.
     invalid[position + 4] = b'0';
     invalid[position + 5] = b'2';
     invalid[position + 6] = b'3';
@@ -277,7 +277,11 @@ fn collection_request(item: &str, kind: RawSourceKind) -> CollectionRequest {
             kind,
             item: item.into(),
         }],
-        limits: RawLimits::default(),
+        // Store-only requests must fit the host grant's aggregate entry cap.
+        limits: RawLimits {
+            observations: 4,
+            ..RawLimits::default()
+        },
         options: BTreeMap::new(),
     }
 }
