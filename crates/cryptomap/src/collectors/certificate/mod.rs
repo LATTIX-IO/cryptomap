@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use x509_cert::{
     Certificate,
-    der::{Decode, DecodePem, Encode},
+    der::{Decode, Encode, pem},
 };
 
 /// Maximum source bytes permitted in one explicitly granted certificate file.
@@ -150,11 +150,15 @@ fn parse_public_certificates(
                 0
             };
             let block_end = footer_end + after_newline;
-            let decoded = Certificate::from_pem(&rest[..block_end])
+            // Decode the ORIGINAL PEM payload, not a certificate re-encoding.
+            // A certificate decoder may consume one valid DER sequence while
+            // silently ignoring extra decoded bytes. parse_der verifies the
+            // complete original input with canonical DER round-trip checking.
+            let (label, der) = pem::decode_vec(&rest[..block_end])
                 .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
-            let der = decoded
-                .to_der()
-                .map_err(|_| CollectorDiagnosticCode::MalformedSource)?;
+            if label != "CERTIFICATE" {
+                return Err(CollectorDiagnosticCode::MalformedSource);
+            }
             let certificate = parse_der(&der)?;
             if !seen.insert(certificate.fingerprint.clone()) {
                 return Err(CollectorDiagnosticCode::MalformedSource);
