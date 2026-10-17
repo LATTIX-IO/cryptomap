@@ -10,20 +10,48 @@
 use cryptomap::{
     certificate_store_scope::CertificateStoreTarget,
     collectors::certificate_store::{PublicCertificateStoreBackend, StoreProviderError},
+    scope::{CollectionScope, ScopeError},
 };
 
-/// Platform provider that reads only public certificate DER from an exact
-/// host-granted CurrentUser/My or LocalMachine/My Windows registry store.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct WindowsCertificateStoreBackend;
+/// Platform provider pinned to an exact caller-owned certificate-store grant.
+///
+/// Construction checks an existing authorization without I/O. Even a direct
+/// call to the provider cannot change store identity or bypass that grant.
+pub struct WindowsCertificateStoreBackend<'a> {
+    scope: &'a CollectionScope,
+    item: String,
+    target: CertificateStoreTarget,
+}
+impl<'a> WindowsCertificateStoreBackend<'a> {
+    /// Pin exactly one preauthorized source item before native access is possible.
+    pub fn new(scope: &'a CollectionScope, item: &str) -> Result<Self, ScopeError> {
+        let grant = scope.authorize_certificate_store(item)?;
+        Ok(Self {
+            scope,
+            item: item.to_owned(),
+            target: grant.target(),
+        })
+    }
+
+    fn authorized(&self, target: CertificateStoreTarget) -> bool {
+        target == self.target
+            && self
+                .scope
+                .authorize_certificate_store(&self.item)
+                .is_ok_and(|grant| grant.target() == target)
+    }
+}
 
 #[cfg(not(windows))]
-impl PublicCertificateStoreBackend for WindowsCertificateStoreBackend {
+impl PublicCertificateStoreBackend for WindowsCertificateStoreBackend<'_> {
     fn visit(
         &self,
-        _target: CertificateStoreTarget,
+        target: CertificateStoreTarget,
         _visitor: &mut dyn FnMut(&[u8]) -> Result<(), StoreProviderError>,
     ) -> Result<(), StoreProviderError> {
+        if !self.authorized(target) {
+            return Err(StoreProviderError::PermissionDenied);
+        }
         Err(StoreProviderError::Unsupported)
     }
 }
@@ -173,12 +201,15 @@ mod native {
         }
     }
 
-    impl PublicCertificateStoreBackend for WindowsCertificateStoreBackend {
+    impl PublicCertificateStoreBackend for WindowsCertificateStoreBackend<'_> {
         fn visit(
             &self,
             target: CertificateStoreTarget,
             visitor: &mut dyn FnMut(&[u8]) -> Result<(), StoreProviderError>,
         ) -> Result<(), StoreProviderError> {
+            if !self.authorized(target) {
+                return Err(StoreProviderError::PermissionDenied);
+            }
             let store = OwnedStore::open_system(target)?;
             walk_store(&store, visitor)
         }
@@ -273,5 +304,49 @@ mod native {
             .unwrap();
             assert_eq!(count, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+    use cryptomap::{
+        CollectionScopeId,
+        certificate_store_scope::{CertificateStoreGrant, CertificateStoreLocation},
+    };
+
+    #[test]
+    fn native_provider_is_not_constructible_without_exact_host_grant() {
+        let mut scope = CollectionScope::new(CollectionScopeId::new("native-store-test").unwrap());
+        assert!(WindowsCertificateStoreBackend::new(&scope, "not-authorized").is_err());
+        let user = CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap();
+        scope.grant_certificate_store(
+            "selected-user-store",
+            CertificateStoreGrant::new(user, 4, 256 * 1024).unwrap(),
+        ).unwrap();
+        let provider = WindowsCertificateStoreBackend::new(&scope, "selected-user-store").unwrap();
+        let machine = CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My").unwrap();
+        let mut never_called = |_| panic!("must not enumerate an ungranted store");
+        assert_eq!(
+            provider.visit(machine, &mut never_called),
+            Err(StoreProviderError::PermissionDenied),
+        );
+        // No actual user/machine store is opened in this test.
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_backend_never_reports_an_authorized_store_as_cleanly_inspected() {
+        let mut scope = CollectionScope::new(CollectionScopeId::new("unsupported-os-test").unwrap());
+        let user = CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap();
+        scope.grant_certificate_store("user-my",
+            CertificateStoreGrant::new(user, 4, 256 * 1024).unwrap()
+        ).unwrap();
+        let provider = WindowsCertificateStoreBackend::new(&scope, "user-my").unwrap();
+        let mut never_called = |_| panic!("unsupported OS cannot enumerate a store");
+        assert_eq!(
+            provider.visit(user, &mut never_called),
+            Err(StoreProviderError::Unsupported)
+        );
     }
 }

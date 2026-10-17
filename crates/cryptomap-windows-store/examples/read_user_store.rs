@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         options: BTreeMap::new(),
     };
-    let provider = WindowsCertificateStoreBackend;
+    let provider = WindowsCertificateStoreBackend::new(&scope, "manual:current-user-my")?;
     let collector = CertificateStoreCollector::new(&scope, &provider, &args[1]);
     let outcome = collect_scoped(&scope, &collector, request, &CancellationToken::default())?;
     println!(
