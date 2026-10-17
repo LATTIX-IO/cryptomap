@@ -100,7 +100,7 @@ jobs:
         run: cargo publish --dry-run --package cryptomap --locked
 
       - name: Publish eligible releases
-        uses: release-plz/action@d529f731ae3e89610ada96eda34e5c6ba3b12214 # v0.5
+        uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5
         with:
           command: release
         env:
@@ -133,7 +133,7 @@ jobs:
           toolchain: '1.99.0'
 
       - name: Prepare release PR
-        uses: release-plz/action@d529f731ae3e89610ada96eda34e5c6ba3b12214 # v0.5
+        uses: release-plz/action@8921286633dfa0c4020f7f30bd1c14fe19cbb10e # v0.5
         with:
           command: release-pr
         env:
