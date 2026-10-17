@@ -203,8 +203,14 @@ impl CollectionScope {
         // carry the source kind. Reject collisions with *all* authorized
         // source families rather than only public certificate files.
         if self.certificate_stores.contains_key(&item)
-            || self.files.keys().any(|(_, source_item)| source_item == &item)
-            || self.logical.iter().any(|(_, source_item)| source_item == &item)
+            || self
+                .files
+                .keys()
+                .any(|(_, source_item)| source_item == &item)
+            || self
+                .logical
+                .iter()
+                .any(|(_, source_item)| source_item == &item)
             || self.network.permits(&item)
         {
             return Err(ScopeError::InvalidInput);
