@@ -319,14 +319,20 @@ mod authorization_tests {
     fn native_provider_is_not_constructible_without_exact_host_grant() {
         let mut scope = CollectionScope::new(CollectionScopeId::new("native-store-test").unwrap());
         assert!(WindowsCertificateStoreBackend::new(&scope, "not-authorized").is_err());
-        let user = CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap();
-        scope.grant_certificate_store(
-            "selected-user-store",
-            CertificateStoreGrant::new(user, 4, 256 * 1024).unwrap(),
-        ).unwrap();
+        let user =
+            CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap();
+        scope
+            .grant_certificate_store(
+                "selected-user-store",
+                CertificateStoreGrant::new(user, 4, 256 * 1024).unwrap(),
+            )
+            .unwrap();
         let provider = WindowsCertificateStoreBackend::new(&scope, "selected-user-store").unwrap();
-        let machine = CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My").unwrap();
-        let mut never_called = |_| panic!("must not enumerate an ungranted store");
+        let machine =
+            CertificateStoreTarget::new(CertificateStoreLocation::LocalMachine, "My").unwrap();
+        let mut never_called = |_: &[u8]| -> Result<(), StoreProviderError> {
+            panic!("must not enumerate an ungranted store")
+        };
         assert_eq!(
             provider.visit(machine, &mut never_called),
             Err(StoreProviderError::PermissionDenied),
@@ -337,13 +343,20 @@ mod authorization_tests {
     #[cfg(not(windows))]
     #[test]
     fn non_windows_backend_never_reports_an_authorized_store_as_cleanly_inspected() {
-        let mut scope = CollectionScope::new(CollectionScopeId::new("unsupported-os-test").unwrap());
-        let user = CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap();
-        scope.grant_certificate_store("user-my",
-            CertificateStoreGrant::new(user, 4, 256 * 1024).unwrap()
-        ).unwrap();
+        let mut scope =
+            CollectionScope::new(CollectionScopeId::new("unsupported-os-test").unwrap());
+        let user =
+            CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap();
+        scope
+            .grant_certificate_store(
+                "user-my",
+                CertificateStoreGrant::new(user, 4, 256 * 1024).unwrap(),
+            )
+            .unwrap();
         let provider = WindowsCertificateStoreBackend::new(&scope, "user-my").unwrap();
-        let mut never_called = |_| panic!("unsupported OS cannot enumerate a store");
+        let mut never_called = |_: &[u8]| -> Result<(), StoreProviderError> {
+            panic!("unsupported OS cannot enumerate a store")
+        };
         assert_eq!(
             provider.visit(user, &mut never_called),
             Err(StoreProviderError::Unsupported)
