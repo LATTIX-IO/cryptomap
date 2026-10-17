@@ -309,8 +309,7 @@ fn validated_certificate_profile(
     let canonical_oid = |value: &str| {
         !value.is_empty()
             && value.len() <= 128
-            && const_oid::ObjectIdentifier::new(value)
-                .is_ok_and(|oid| oid.to_string() == value)
+            && const_oid::ObjectIdentifier::new(value).is_ok_and(|oid| oid.to_string() == value)
     };
     let public_oid = required("x509:public-key-algorithm-oid")?;
     let signature_oid = required("x509:signature-algorithm-oid")?;
