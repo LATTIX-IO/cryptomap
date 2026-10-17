@@ -63,6 +63,9 @@ jobs:
       - name: Passive public X.509 PEM/DER certificate regression and security tests
         run: cargo test -p cryptomap --test foss_406_certificate_files --features certificate-files --locked
 
+      - name: Inert typed X.509 certificate-store authorization security and regression tests
+        run: cargo test -p cryptomap --test foss_467_certificate_store_grants --features certificate-store-grants --locked
+
       - name: Exact host-scope binding for all built-in Cargo and npm collectors
         run: cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked
 

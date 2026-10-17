@@ -26,6 +26,7 @@ for expected in \
     examples/fixtures/source/crypto_calls.rs \
     examples/toml_scoped_tls.rs \
     examples/certificate_scoped_inventory.rs \
+    examples/certificate_store_authorization.rs \
     examples/fixtures/certificate/rsa.pem \
     examples/fixtures/certificate/ec.pem \
     examples/fixtures/config/tls.toml \
@@ -156,3 +157,9 @@ CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
     --example certificate_scoped_inventory -- \
     "$scratch/cert-input" "public.pem" "2026-10-16T12:00:00Z" \
     "packaged-cert-tenant" "packaged-cert-run"
+
+# Verify the packaged B5.2 cross-platform grant contract independently of the
+# workspace. This demonstrates exact host authorization but never opens a store.
+CARGO_HOME="$scratch/cargo-home" cargo run --offline --locked \
+    --manifest-path "$package/Cargo.toml" --features certificate-store-grants \
+    --example certificate_store_authorization

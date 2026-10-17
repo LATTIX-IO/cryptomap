@@ -5,6 +5,8 @@
 #![warn(missing_docs)]
 
 pub mod batch;
+#[cfg(feature = "certificate-store-grants")]
+pub mod certificate_store_scope;
 pub mod collector;
 pub mod collectors;
 mod correlation;

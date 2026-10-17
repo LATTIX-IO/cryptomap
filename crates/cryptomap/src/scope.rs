@@ -7,6 +7,8 @@
 //! Files are opened only through `FileRoot`; endpoints are connected only
 //! through exact target pins. Logical certificate-store and telemetry grants
 //! authorize a name but do not confer native OS access privileges.
+#[cfg(feature = "certificate-store-grants")]
+use crate::certificate_store_scope::CertificateStoreGrant;
 use crate::{
     CollectionScopeId, InventoryError,
     collector::{self, CancellationToken, CollectionOutcome, CollectionRequest, Collector},
@@ -70,6 +72,8 @@ pub struct CollectionScope {
     files: BTreeMap<(RawSourceKind, String), FileGrant>,
     network: NetworkScope,
     logical: BTreeSet<(RawSourceKind, String)>,
+    #[cfg(feature = "certificate-store-grants")]
+    certificate_stores: BTreeMap<String, CertificateStoreGrant>,
 }
 
 fn check_source_id(item: &str) -> Result<(), ScopeError> {
@@ -91,6 +95,8 @@ impl CollectionScope {
             files: BTreeMap::new(),
             network: NetworkScope::new(),
             logical: BTreeSet::new(),
+            #[cfg(feature = "certificate-store-grants")]
+            certificate_stores: BTreeMap::new(),
         }
     }
 
@@ -126,6 +132,11 @@ impl CollectionScope {
         if self.files.contains_key(&key) || self.logical.contains(&key) {
             return Err(ScopeError::InvalidInput);
         }
+        // Source-item identity is shared by coverage across all kinds.
+        #[cfg(feature = "certificate-store-grants")]
+        if self.certificate_stores.contains_key(&key.1) {
+            return Err(ScopeError::InvalidInput);
+        }
         let root = FileRoot::open(root)?;
         let relative = relative.as_ref().to_path_buf();
         root.authorize(&relative, max_bytes)?;
@@ -142,6 +153,10 @@ impl CollectionScope {
 
     /// Grant one explicit network target with caller-pinned destination IPs.
     pub fn grant_endpoint(&mut self, target: NetworkTarget) -> Result<(), ScopeError> {
+        #[cfg(feature = "certificate-store-grants")]
+        if self.certificate_stores.contains_key(&target.id()) {
+            return Err(ScopeError::InvalidInput);
+        }
         self.network.grant(target)
     }
 
@@ -160,10 +175,61 @@ impl CollectionScope {
         let item = item.into();
         check_source_id(&item)?;
         let key = (kind, item);
-        if self.files.contains_key(&key) || !self.logical.insert(key) {
+        if self.files.contains_key(&key) || self.logical.contains(&key) {
             return Err(ScopeError::InvalidInput);
         }
+        // Source-item identity is shared by coverage across all kinds.
+        #[cfg(feature = "certificate-store-grants")]
+        if self.certificate_stores.contains_key(&key.1) {
+            return Err(ScopeError::InvalidInput);
+        }
+        self.logical.insert(key);
         Ok(())
+    }
+
+    /// Grant one exact certificate store, with typed hive, name and finite budgets.
+    ///
+    /// No OS store is opened, enumerated or authenticated by this grant.
+    #[cfg(feature = "certificate-store-grants")]
+    pub fn grant_certificate_store(
+        &mut self,
+        item: impl Into<String>,
+        grant: CertificateStoreGrant,
+    ) -> Result<(), ScopeError> {
+        let item = item.into();
+        check_source_id(&item)?;
+        grant.validate()?;
+        // Collector coverage, requested source items and provenance do not
+        // carry the source kind. Reject collisions with *all* authorized
+        // source families rather than only public certificate files.
+        if self.certificate_stores.contains_key(&item)
+            || self
+                .files
+                .keys()
+                .any(|(_, source_item)| source_item == &item)
+            || self
+                .logical
+                .iter()
+                .any(|(_, source_item)| source_item == &item)
+            || self.network.permits(&item)
+        {
+            return Err(ScopeError::InvalidInput);
+        }
+        self.certificate_stores.insert(item, grant);
+        Ok(())
+    }
+
+    /// Resolve an exact named store authorization, without accessing the OS.
+    ///
+    /// Callers must use the host-granted source item, not an untrusted store path.
+    #[cfg(feature = "certificate-store-grants")]
+    pub fn authorize_certificate_store(
+        &self,
+        item: &str,
+    ) -> Result<&CertificateStoreGrant, ScopeError> {
+        self.certificate_stores
+            .get(item)
+            .ok_or(ScopeError::OutOfScope)
     }
 
     /// Verify that every collector source item is an exact granted entry.
@@ -173,7 +239,24 @@ impl CollectionScope {
         if req.sources.is_empty() {
             return Err(ScopeError::InvalidInput);
         }
+        // RawLimits.observations is a request-wide budget, whereas store
+        // entry ceilings are per exact grant. Never compare the full global
+        // budget against each individual store (which would reject valid
+        // multi-store requests). Native adapters also enforce each ceiling.
+        #[cfg(feature = "certificate-store-grants")]
+        let mut store_capacity = 0_usize;
+        #[cfg(feature = "certificate-store-grants")]
+        let mut store_sources = 0_usize;
         for src in &req.sources {
+            #[cfg(feature = "certificate-store-grants")]
+            if src.kind == RawSourceKind::CertificateStore {
+                let grant = self.authorize_certificate_store(&src.item)?;
+                store_capacity = store_capacity
+                    .checked_add(grant.max_entries())
+                    .ok_or(ScopeError::ResourceLimit)?;
+                store_sources += 1;
+                continue;
+            }
             let permitted = if src.kind == RawSourceKind::TlsEndpoint {
                 self.network.permits(&src.item)
             } else {
@@ -183,6 +266,10 @@ impl CollectionScope {
             if !permitted {
                 return Err(ScopeError::OutOfScope);
             }
+        }
+        #[cfg(feature = "certificate-store-grants")]
+        if store_sources == req.sources.len() && req.limits.observations > store_capacity {
+            return Err(ScopeError::ResourceLimit);
         }
         Ok(())
     }
