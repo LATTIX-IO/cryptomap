@@ -8,3 +8,7 @@ pub mod source;
 /// Passive exact-grant public X.509 certificate file evidence.
 #[cfg(feature = "certificate-files")]
 pub mod certificate;
+
+/// B5.3 portable bounded certificate-store evidence collector (provider injected).
+#[cfg(feature = "certificate-store-grants")]
+pub mod certificate_store;

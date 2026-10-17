@@ -27,11 +27,31 @@ pub const MAX_CERTS_PER_FILE: usize = 16;
 const ID: &str = "cryptomap:x509-file";
 const VERSION: &str = "0.1.0";
 
-#[derive(Debug)]
-struct PublicCertificate {
+/// Public-only canonical X.509 identity, with no secret or identifying DN data.
+///
+/// Parsing does not establish validity, issuer trust, revocation or key possession.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicCertificate {
     fingerprint: String,
     signature_oid: String,
     public_key_oid: String,
+}
+
+impl PublicCertificate {
+    /// Lowercase SHA-256 of complete original canonical DER bytes.
+    pub fn fingerprint_sha256(&self) -> &str {
+        &self.fingerprint
+    }
+
+    /// Signed certificate's public signature algorithm OID.
+    pub fn signature_oid(&self) -> &str {
+        &self.signature_oid
+    }
+
+    /// Certificate's SubjectPublicKeyInfo algorithm OID, not a key export.
+    pub fn public_key_oid(&self) -> &str {
+        &self.public_key_oid
+    }
 }
 
 fn public_oid(oid: String) -> Result<String, CollectorDiagnosticCode> {
@@ -41,7 +61,9 @@ fn public_oid(oid: String) -> Result<String, CollectorDiagnosticCode> {
     Ok(oid)
 }
 
-fn parse_der(der: &[u8]) -> Result<PublicCertificate, CollectorDiagnosticCode> {
+/// Inspect exactly one bounded canonical public DER certificate in memory.
+/// Rejects trailing bytes and BER, and never exposes DN, subject or private keys.
+pub fn parse_der(der: &[u8]) -> Result<PublicCertificate, CollectorDiagnosticCode> {
     if der.is_empty() {
         return Err(CollectorDiagnosticCode::MalformedSource);
     }
