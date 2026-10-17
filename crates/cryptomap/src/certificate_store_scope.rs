@@ -48,8 +48,12 @@ impl CertificateStoreTarget {
     /// Canonical, nonsecret identity for an approved store target.
     pub fn id(&self) -> &'static str {
         match (self.location, self.name) {
-            (CertificateStoreLocation::CurrentUser, CertificateStoreName::My) => "certstore:v1:CurrentUser/My",
-            (CertificateStoreLocation::LocalMachine, CertificateStoreName::My) => "certstore:v1:LocalMachine/My",
+            (CertificateStoreLocation::CurrentUser, CertificateStoreName::My) => {
+                "certstore:v1:CurrentUser/My"
+            }
+            (CertificateStoreLocation::LocalMachine, CertificateStoreName::My) => {
+                "certstore:v1:LocalMachine/My"
+            }
         }
     }
 

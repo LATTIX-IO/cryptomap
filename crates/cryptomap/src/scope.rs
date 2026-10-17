@@ -7,6 +7,8 @@
 //! Files are opened only through `FileRoot`; endpoints are connected only
 //! through exact target pins. Logical certificate-store and telemetry grants
 //! authorize a name but do not confer native OS access privileges.
+#[cfg(feature = "certificate-store-grants")]
+use crate::certificate_store_scope::CertificateStoreGrant;
 use crate::{
     CollectionScopeId, InventoryError,
     collector::{self, CancellationToken, CollectionOutcome, CollectionRequest, Collector},
@@ -15,8 +17,6 @@ use crate::{
     raw::RawSourceKind,
     validation,
 };
-#[cfg(feature = "certificate-store-grants")]
-use crate::certificate_store_scope::CertificateStoreGrant;
 use std::{
     collections::{BTreeMap, BTreeSet},
     error::Error,
@@ -133,9 +133,7 @@ impl CollectionScope {
             return Err(ScopeError::InvalidInput);
         }
         #[cfg(feature = "certificate-store-grants")]
-        if key.0 == RawSourceKind::Certificate
-            && self.certificate_stores.contains_key(&key.1)
-        {
+        if key.0 == RawSourceKind::Certificate && self.certificate_stores.contains_key(&key.1) {
             return Err(ScopeError::InvalidInput);
         }
         let root = FileRoot::open(root)?;
@@ -176,9 +174,7 @@ impl CollectionScope {
             return Err(ScopeError::InvalidInput);
         }
         #[cfg(feature = "certificate-store-grants")]
-        if key.0 == RawSourceKind::Certificate
-            && self.certificate_stores.contains_key(&key.1)
-        {
+        if key.0 == RawSourceKind::Certificate && self.certificate_stores.contains_key(&key.1) {
             return Err(ScopeError::InvalidInput);
         }
         self.logical.insert(key);
