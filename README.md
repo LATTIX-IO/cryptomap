@@ -39,7 +39,8 @@ The output is a verified snapshot digest plus asset, relationship and coverage c
 | Optional JSON TLS configuration profile collector | B3 developer preview; `json-tls-config` feature, configured-only claims |
 | Optional public X.509 PEM/DER certificate-file collector | B5.1 developer preview; `certificate-files` feature, exact-file public evidence only |
 | Optional typed certificate-store grant contract | B5.2 developer preview; `certificate-store-grants` feature, **no OS enumeration** |
-| Windows certificate-store enumeration / live TLS / general source-call / telemetry collectors | Planned; **not shipped** |
+| Read-only Windows CurrentUser/My / LocalMachine/My public certificate-store adapter | B5.3 in PR #67; separate opt-in `cryptomap-windows-store` crate, **not merged/published** |
+| Live TLS / general source-call / telemetry collectors | Planned; **not shipped** |
 | CycloneDX CBOM 1.7 import/export | Planned; **not shipped** |
 | Cryptopolicy / cryptoshift interoperability adapters | Planned; **not shipped** |
 | Standalone CLI, recursive repository crypto scan, algorithm execution proof | **Not claimed** |
@@ -55,6 +56,7 @@ The library distinguishes configured/present/observed cryptography, separates ev
 - [Milestone B4 opt-in TOML TLS configuration evidence and security boundaries](docs/milestone-b4-toml-tls-config.md)
 - [Milestone B5.1 opt-in public X.509 certificate file evidence](docs/milestone-b5-certificate-files.md)
 - [Milestone B5.2 inert typed certificate-store authorization](docs/milestone-b5-certificate-store-grants.md)
+- [Milestone B5.3 read-only Windows public certificate-store evidence (in development)](docs/milestone-b5-windows-store.md)
 - [Software SBOM and main-only attestation trust boundary](docs/milestone-a-sbom-attestations.md)
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)

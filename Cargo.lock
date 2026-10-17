@@ -119,6 +119,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cryptomap-windows-store"
+version = "0.1.1-alpha.1"
+dependencies = [
+ "cryptomap",
+ "windows-sys 0.61.2",
+ "x509-cert",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

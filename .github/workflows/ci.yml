@@ -66,6 +66,9 @@ jobs:
       - name: Inert typed X.509 certificate-store authorization security and regression tests
         run: cargo test -p cryptomap --test foss_467_certificate_store_grants --features certificate-store-grants --locked
 
+      - name: B5.3 portable certificate-store source/provider security regressions
+        run: cargo test -p cryptomap --test foss_468_certificate_store_backend --features certificate-store-grants --locked
+
       - name: Exact host-scope binding for all built-in Cargo and npm collectors
         run: cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked
 
@@ -164,6 +167,24 @@ jobs:
           cargo install --locked cargo-deny
           cargo install --locked cargo-semver-checks
 
+      - name: Reject native private-key APIs and preserve safe SDK core
+        run: |
+          set -euo pipefail
+          grep -Fx '#![forbid(unsafe_code)]' crates/cryptomap/src/lib.rs
+          forbidden='CryptAcquireCertificatePrivateKey|CertAcquireCertificatePrivateKey|CryptExportKey|NCryptExportKey|PFXExport|CertDeleteCertificateFromStore|NCryptOpenKey|NCryptCreatePersistedKey'
+          # Ensure the source guard actually catches the Win32 private-key
+          # acquisition/export symbols it is intended to reject.
+          for symbol in CryptAcquireCertificatePrivateKey CryptExportKey NCryptExportKey; do
+            if ! printf '%s\n' "$symbol" | grep -Eq "$forbidden"; then
+              echo "Native API safety guard failed to match expected symbol" >&2
+              exit 1
+            fi
+          done
+          if grep -REn "$forbidden" crates/cryptomap-windows-store/src; then
+            echo 'Forbidden private-key or destructive Windows certificate API' >&2
+            exit 1
+          fi
+
       - name: RustSec audit
         run: cargo audit
 
@@ -211,6 +232,10 @@ jobs:
         run: cargo check --workspace --all-targets --all-features --locked
       - name: Windows integration tests
         run: cargo test --workspace --all-features --locked
+      - name: Native Windows in-memory CryptoAPI conformance
+        run: cargo test -p cryptomap-windows-store --locked
+      - name: Native Windows Clippy strict
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   release-attestations:
     name: Main-only signed release provenance

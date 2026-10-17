@@ -1,0 +1,366 @@
+//! FOSS-468: deterministic portable certificate-store provider contract tests.
+//! No real user/machine stores are read or modified by this suite.
+#![cfg(feature = "certificate-store-grants")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+use cryptomap::{
+    CollectionRunId, CollectionScopeId, CoverageState,
+    certificate_store_scope::{
+        CertificateStoreGrant, CertificateStoreLocation, CertificateStoreTarget,
+    },
+    collector::{CancellationToken, CollectionRequest, CollectorDiagnosticCode, RequestedSource},
+    collectors::certificate_store::{
+        CertificateStoreCollector, PublicCertificateStoreBackend, StoreProviderError,
+    },
+    raw::{RawFactKind, RawLimits, RawSourceKind},
+    scope::{CollectionScope, ScopeError, collect_scoped},
+};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+const ITEM: &str = "approved-store";
+const TIME: &str = "2026-10-17T12:00:00Z";
+fn der(pem: &[u8]) -> Vec<u8> {
+    use x509_cert::{
+        Certificate,
+        der::{DecodePem, Encode},
+    };
+    Certificate::from_pem(pem).unwrap().to_der().unwrap()
+}
+fn rsa() -> Vec<u8> {
+    der(include_bytes!("../examples/fixtures/certificate/rsa.pem"))
+}
+fn ec() -> Vec<u8> {
+    der(include_bytes!("../examples/fixtures/certificate/ec.pem"))
+}
+fn approved_target() -> CertificateStoreTarget {
+    CertificateStoreTarget::new(CertificateStoreLocation::CurrentUser, "My").unwrap()
+}
+fn make_scope(max_entries: usize, max_bytes: usize) -> CollectionScope {
+    let mut scope = CollectionScope::new(CollectionScopeId::new("store-tenant").unwrap());
+    scope
+        .grant_certificate_store(
+            ITEM,
+            CertificateStoreGrant::new(approved_target(), max_entries, max_bytes).unwrap(),
+        )
+        .unwrap();
+    scope
+}
+fn request(items: &[&str], observations: usize) -> CollectionRequest {
+    CollectionRequest {
+        run: CollectionRunId::new("store-run").unwrap(),
+        sources: items
+            .iter()
+            .map(|item| RequestedSource {
+                kind: RawSourceKind::CertificateStore,
+                item: (*item).into(),
+            })
+            .collect(),
+        limits: RawLimits {
+            sources: 8,
+            observations,
+            ..RawLimits::default()
+        },
+        options: BTreeMap::new(),
+    }
+}
+struct FakeBackend {
+    certs: Vec<Vec<u8>>,
+    after: Result<(), StoreProviderError>,
+    calls: AtomicUsize,
+    observed: AtomicUsize,
+}
+impl FakeBackend {
+    fn new(certs: Vec<Vec<u8>>) -> Self {
+        Self {
+            certs,
+            after: Ok(()),
+            calls: AtomicUsize::new(0),
+            observed: AtomicUsize::new(0),
+        }
+    }
+    fn failing(certs: Vec<Vec<u8>>, error: StoreProviderError) -> Self {
+        Self {
+            after: Err(error),
+            ..Self::new(certs)
+        }
+    }
+}
+impl PublicCertificateStoreBackend for FakeBackend {
+    fn visit(
+        &self,
+        target: CertificateStoreTarget,
+        visitor: &mut dyn FnMut(&[u8]) -> Result<(), StoreProviderError>,
+    ) -> Result<(), StoreProviderError> {
+        assert_eq!(target, approved_target());
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        for cert in &self.certs {
+            self.observed.fetch_add(1, Ordering::SeqCst);
+            visitor(cert)?;
+        }
+        self.after
+    }
+}
+/// Broken injected provider: deliberately ignores every callback failure.
+struct SwallowingBackend {
+    certs: Vec<Vec<u8>>,
+}
+impl PublicCertificateStoreBackend for SwallowingBackend {
+    fn visit(
+        &self,
+        target: CertificateStoreTarget,
+        visitor: &mut dyn FnMut(&[u8]) -> Result<(), StoreProviderError>,
+    ) -> Result<(), StoreProviderError> {
+        assert_eq!(target, approved_target());
+        for cert in &self.certs {
+            let _ignored = visitor(cert);
+        }
+        // Claims completion even when a record failed a security boundary.
+        Ok(())
+    }
+}
+
+#[test]
+fn callback_error_cannot_be_swallowed_into_false_empty_store() {
+    let scope = make_scope(2, 1);
+    let backend = SwallowingBackend { certs: vec![rsa()] };
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &backend, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Failed);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+    assert!(out.observations.is_empty());
+}
+
+#[test]
+fn swallowed_later_error_preserves_verified_partial_public_evidence() {
+    let first = rsa();
+    let later = ec();
+    let max_bytes = first.len() + later.len() - 1;
+    let scope = make_scope(3, max_bytes);
+    let backend = SwallowingBackend {
+        certs: vec![first, later, rsa()],
+    };
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &backend, TIME),
+        request(&[ITEM], 3),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Partial);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+    assert_eq!(out.observations.len(), 1);
+}
+
+#[test]
+fn fully_inspected_public_der_has_canonical_identity_but_distinct_store_provenance() {
+    let der = rsa();
+    let expected = format!("{:x}", Sha256::digest(&der));
+    let scope = make_scope(2, 128 * 1024);
+    let provider = FakeBackend::new(vec![der]);
+    let collector = CertificateStoreCollector::new(&scope, &provider, TIME);
+    let out = collect_scoped(
+        &scope,
+        &collector,
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::InspectedObserved);
+    assert_eq!(out.observations.len(), 1);
+    let fact = &out.observations[0];
+    assert!(
+        matches!(&fact.fact, RawFactKind::Certificate { fingerprint_sha256 } if fingerprint_sha256 == &expected)
+    );
+    assert_eq!(fact.source.kind, RawSourceKind::CertificateStore);
+    assert_eq!(fact.source_sha256.as_deref(), Some(expected.as_str()));
+    assert!(fact.event_id.starts_with("x509-store:v1:"));
+    assert_eq!(fact.attributes["x509:store-target"], approved_target().id());
+    assert_eq!(fact.attributes["x509:source-encoding"], "der");
+    assert!(!format!("{:?}", out.diagnostics).contains("BEGIN CERTIFICATE"));
+}
+#[test]
+fn empty_complete_store_is_no_observation_but_error_is_never_absence() {
+    let scope = make_scope(2, 128 * 1024);
+    let empty = FakeBackend::new(vec![]);
+    let complete = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &empty, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        complete.coverage[ITEM],
+        CoverageState::InspectedNoObservation
+    );
+    let denied = FakeBackend::failing(vec![], StoreProviderError::PermissionDenied);
+    let failure = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &denied, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(failure.coverage[ITEM], CoverageState::Failed);
+    assert_eq!(
+        failure.diagnostics[0].code,
+        CollectorDiagnosticCode::PermissionDenied
+    );
+    assert!(failure.observations.is_empty());
+}
+#[test]
+fn partial_error_preserves_fingerprint_and_never_marks_complete() {
+    let scope = make_scope(2, 128 * 1024);
+    let provider = FakeBackend::failing(vec![rsa()], StoreProviderError::Io);
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &provider, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Partial);
+    assert_eq!(out.observations.len(), 1);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::IncompleteScope
+    );
+}
+#[test]
+fn entry_and_global_record_budgets_limit_observation_and_report_partial() {
+    let scope = make_scope(1, 128 * 1024);
+    let provider = FakeBackend::new(vec![rsa(), ec()]);
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &provider, TIME),
+        request(&[ITEM], 1),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Partial);
+    assert_eq!(out.observations.len(), 1);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+}
+#[test]
+fn cumulative_der_budget_rejects_additional_public_contexts() {
+    let rsa = rsa();
+    let ec = ec();
+    let scope = make_scope(2, rsa.len() + ec.len() - 1);
+    let provider = FakeBackend::new(vec![rsa, ec]);
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &provider, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Partial);
+    assert_eq!(out.observations.len(), 1);
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::ResourceLimit
+    );
+}
+#[test]
+fn malformed_and_trailing_der_fail_without_fabricating_evidence() {
+    let mut bad = rsa();
+    bad.extend_from_slice(&[0, 1, 2]);
+    let scope = make_scope(2, 128 * 1024);
+    let provider = FakeBackend::new(vec![bad]);
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &provider, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::Failed);
+    assert!(out.observations.is_empty());
+    assert_eq!(
+        out.diagnostics[0].code,
+        CollectorDiagnosticCode::MalformedSource
+    );
+}
+#[test]
+fn repeated_contexts_emit_one_canonical_certificate_fact() {
+    let rsa = rsa();
+    let scope = make_scope(2, 128 * 1024);
+    let provider = FakeBackend::new(vec![rsa.clone(), rsa]);
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &provider, TIME),
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::InspectedObserved);
+    assert_eq!(out.observations.len(), 1);
+}
+#[test]
+fn wrong_scope_or_extra_source_fails_before_backend_call() {
+    let scope = make_scope(2, 128 * 1024);
+    let other_scope = make_scope(2, 128 * 1024);
+    let provider = FakeBackend::new(vec![rsa()]);
+    let collector = CertificateStoreCollector::new(&scope, &provider, TIME);
+    let cancel = CancellationToken::default();
+    assert!(matches!(
+        collect_scoped(&other_scope, &collector, request(&[ITEM], 2), &cancel),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert!(matches!(
+        collect_scoped(
+            &scope,
+            &collector,
+            request(&[ITEM, "unapproved"], 2),
+            &cancel
+        ),
+        Err(ScopeError::OutOfScope)
+    ));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+#[test]
+fn cancellation_and_deadline_do_not_read_store_or_claim_clean_absence() {
+    let scope = make_scope(2, 128 * 1024);
+    let provider = FakeBackend::new(vec![rsa()]);
+    let cancel = CancellationToken::default();
+    cancel.cancel();
+    let out = collect_scoped(
+        &scope,
+        &CertificateStoreCollector::new(&scope, &provider, TIME),
+        request(&[ITEM], 2),
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::NotInspected);
+    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::Cancelled);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+    let expired = CertificateStoreCollector::new(&scope, &provider, TIME)
+        .with_deadline(std::time::Instant::now());
+    let out = collect_scoped(
+        &scope,
+        &expired,
+        request(&[ITEM], 2),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(out.coverage[ITEM], CoverageState::NotInspected);
+    assert_eq!(out.diagnostics[0].code, CollectorDiagnosticCode::Timeout);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
