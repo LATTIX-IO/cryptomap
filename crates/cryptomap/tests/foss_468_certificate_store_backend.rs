@@ -7,9 +7,7 @@ use cryptomap::{
     certificate_store_scope::{
         CertificateStoreGrant, CertificateStoreLocation, CertificateStoreTarget,
     },
-    collector::{
-        CancellationToken, CollectionRequest, CollectorDiagnosticCode, RequestedSource,
-    },
+    collector::{CancellationToken, CollectionRequest, CollectorDiagnosticCode, RequestedSource},
     collectors::certificate_store::{
         CertificateStoreCollector, PublicCertificateStoreBackend, StoreProviderError,
     },
