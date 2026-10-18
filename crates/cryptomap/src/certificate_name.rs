@@ -259,9 +259,12 @@ mod tests {
             let mut inner = vec![0x06, 0x03, 0x55, 0x04, 0x03, tag, value.len() as u8];
             inner.extend_from_slice(value);
             let mut name = vec![
-                0x30, (inner.len() + 4) as u8,
-                0x31, (inner.len() + 2) as u8,
-                0x30, inner.len() as u8,
+                0x30,
+                (inner.len() + 4) as u8,
+                0x31,
+                (inner.len() + 2) as u8,
+                0x30,
+                inner.len() as u8,
             ];
             name.extend_from_slice(&inner);
             name
@@ -276,8 +279,12 @@ mod tests {
     fn multivalued_rdn_is_order_independent_but_structure_sensitive() {
         // CN=AbC; O=Acme, each deliberately constrained to a small ASCII
         // DirectoryString; permutations within a SET must match.
-        let cn = [0x30, 0x0a, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x03, b'A', b'b', b'C'];
-        let org = [0x30, 0x0b, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x04, b'A', b'c', b'm', b'e'];
+        let cn = [
+            0x30, 0x0a, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x03, b'A', b'b', b'C',
+        ];
+        let org = [
+            0x30, 0x0b, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x04, b'A', b'c', b'm', b'e',
+        ];
         let mut first = vec![0x30, 0x1b, 0x31, 0x19];
         first.extend_from_slice(&cn);
         first.extend_from_slice(&org);
@@ -292,5 +299,4 @@ mod tests {
         separated.extend_from_slice(&org);
         assert_ne!(canonical_bytes(&first), canonical_bytes(&separated));
     }
-
 }
