@@ -160,6 +160,33 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.inspect()
 
+    def test_reject_packaged_dependency_edge_tampering(self):
+        """Identical package identities alone cannot authenticate the lock graph."""
+        original = lock_content()
+        root_edges = 'dependencies = ["cryptomap", "windows-sys", "x509-cert"]'
+        self.assertIn(root_edges, original)
+        cases = (
+            original.replace(root_edges, 'dependencies = ["cryptomap", "x509-cert"]'),
+            original.replace(root_edges, 'dependencies = ["cryptomap", "cryptomap", "windows-sys", "x509-cert"]'),
+            original.replace(root_edges, 'dependencies = ["cryptomap", "windows-sys", "cryptomap"]'),
+            original.replace(
+                'name = "windows-sys"\nversion = "0.61.2"',
+                'name = "windows-sys"\nversion = "0.61.2"\ndependencies = ["cryptomap"]',
+            ),
+        )
+        for modified in cases:
+            self.assertNotEqual(modified, original)
+            self.make_archive(add={"Cargo.lock": modified.encode()})
+            with self.assertRaises(ValueError):
+                self.inspect()
+
+        # Equivalent order changes must not invalidate the approved root graph.
+        reordered = original.replace(
+            root_edges, 'dependencies = ["x509-cert", "cryptomap", "windows-sys"]',
+        )
+        self.make_archive(add={"Cargo.lock": reordered.encode()})
+        self.assertEqual(self.inspect()["crate"], ADAPTER)
+
     def test_reject_wrong_revision_and_locked_dependency(self):
         self.make_archive()
         with self.assertRaises(ValueError):
@@ -217,6 +244,46 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         self.sbom.write_bytes(b"modified SBOM")
         with self.assertRaises(ValueError):
             verify_mapping(mapping, core, self.adapter, core_sbom, self.sbom, REVISION)
+
+
+class ProtectedMainReleaseLifecycleTests(unittest.TestCase):
+    """No checkout may erase an attestation subject downloaded by CI."""
+
+    @staticmethod
+    def check_steps(steps):
+        checkout = "Read-only main checkout for deterministic mapping verification"
+        downloads = (
+            "Download exact CI-tested release candidate",
+            "Download validated SPDX inventory",
+            "Download separately qualified adapter archive",
+            "Download separately validated adapter SPDX",
+            "Download CI-tested core/adapter mapping",
+        )
+        verify = "Verify downloaded exact signed-subject candidates before signing"
+        assert steps.count(checkout) == 1, "missing/duplicated protected-main checkout"
+        assert steps[0] == checkout, "checkout must occur before artifact downloads"
+        assert all(steps.count(name) == 1 for name in downloads), "missing/duplicate signed input"
+        assert steps.count(verify) == 1, "missing/duplicate before-signing verification"
+        assert all(steps.index(checkout) < steps.index(name) < steps.index(verify)
+                   for name in downloads), "download/checkout/verification order is unsafe"
+        assert "Sign build provenance for tested candidate" in steps
+        assert steps.index(verify) < steps.index("Sign build provenance for tested candidate")
+
+    def test_protected_main_checkout_precedes_all_artifact_downloads(self):
+        import re
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        section = workflow.split("\n  release-attestations:\n", 1)
+        self.assertEqual(len(section), 2)
+        steps = re.findall(r"(?m)^      - name: (.+)$", section[1])
+        self.check_steps(steps)
+        checkout = "Read-only main checkout for deterministic mapping verification"
+        # Negative: checkout after artifacts, the original P1 regression.
+        delayed_checkout = steps[1:6] + [checkout] + steps[6:]
+        with self.assertRaises(AssertionError):
+            self.check_steps(delayed_checkout)
+        # Negative: a second checkout after downloads is equally destructive.
+        with self.assertRaises(AssertionError):
+            self.check_steps(steps[:7] + [checkout] + steps[7:])
 
 
 if __name__ == "__main__":

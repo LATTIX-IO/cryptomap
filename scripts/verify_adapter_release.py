@@ -84,6 +84,30 @@ def _locked_packages(path: Path, version: str) -> tuple[dict, dict[str, str]]:
     return root, resolved
 
 
+def _dependency_graph(packages: list, *, origin: str) -> dict:
+    """Load a unique package identity -> sorted dependency-edge mapping.
+
+    The packaged adapter's direct edge set is required to match EXACTLY.
+    Registry/transitive dependency edges can be pruned by Cargo's packaging
+    resolver, but a packaged edge may never be invented or redirected.
+    """
+    result = {}
+    for row in packages:
+        if not isinstance(row, dict):
+            raise ValueError(f"malformed {origin} Cargo.lock entry")
+        ident = (row.get("name"), row.get("version"), row.get("source"), row.get("checksum"))
+        if (not isinstance(ident[0], str) or not ident[0]
+                or not isinstance(ident[1], str) or not ident[1]
+                or ident in result):
+            raise ValueError(f"missing or duplicated {origin} package identity")
+        edges = row.get("dependencies", [])
+        if (not isinstance(edges, list)
+                or not all(isinstance(x, str) and x.strip() for x in edges)
+                or len(edges) != len(set(edges))):
+            raise ValueError(f"invalid/duplicate {origin} dependency reference")
+        result[ident] = tuple(sorted(edges))
+    return result
+
 def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str) -> dict:
     if not COMMIT.fullmatch(commit):
         raise ValueError("invalid source revision")
@@ -169,17 +193,22 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     if packaged_lock.get("version") != 4 or not isinstance(packaged_lock.get("package"), list):
         raise ValueError("invalid packaged adapter lockfile")
     reviewed_lock, _ = _locked_packages(lockfile, version)
-    reviewed = {
-        (entry.get("name"), entry.get("version"), entry.get("source"), entry.get("checksum"))
-        for entry in reviewed_lock["package"]
-    }
+    reviewed_graph = _dependency_graph(reviewed_lock["package"], origin="reviewed")
     selected = packaged_lock["package"]
-    if not selected or not all(
-        isinstance(row, dict)
-        and (row.get("name"), row.get("version"), row.get("source"), row.get("checksum")) in reviewed
-        for row in selected
-    ):
+    packaged_graph = _dependency_graph(selected, origin="packaged")
+    if not packaged_graph or not packaged_graph.keys() <= reviewed_graph.keys():
         raise ValueError("packaged adapter lock has unreviewed package identities")
+    for identity, edges in packaged_graph.items():
+        baseline = reviewed_graph[identity]
+        if identity[0] == ADAPTER:
+            # The trust boundary: exact core, native Windows and X.509 dependency
+            # edges must survive packaging with no omission or substitution.
+            if edges != baseline:
+                raise ValueError("packaged adapter direct dependency graph changed")
+        elif not set(edges) <= set(baseline):
+            # Cargo can omit optional edges (e.g. cryptomap source features),
+            # but new/repointed edges are never permitted.
+            raise ValueError("packaged lock has unreviewed dependency edges")
     if any(
         sum(row.get("name") == name and row.get("version") == version for row in selected) != 1
         for name in (CORE, ADAPTER)
