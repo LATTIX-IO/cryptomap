@@ -87,6 +87,48 @@ cargo vendor --locked --versioned-dirs "$scratch/vendor" > "$scratch/cargo-home/
 cp Cargo.lock "$scratch/source/Cargo.lock"
 export CARGO_HOME="$scratch/cargo-home"
 
+# The synthetic third-party workspace introduces a consumer package absent
+# from the canonical workspace lockfile. Re-resolve OFFLINE only from vendored
+# reviewed versions, then check every package against the original lock.
+# This does not grant permission to download/upgrade a dependency.
+cargo generate-lockfile --manifest-path "$scratch/source/Cargo.toml" --offline
+python3 - "Cargo.lock" "$scratch/source/Cargo.lock" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+def packages(path):
+    with Path(path).open("rb") as file:
+        data = tomllib.load(file)
+    if data.get("version") != 4:
+        raise SystemExit("Unsupported generated Cargo.lock format")
+    rows = data.get("package")
+    if not isinstance(rows, list):
+        raise SystemExit("Missing dependency inventory")
+    return rows
+
+original = packages(sys.argv[1])
+replayed = packages(sys.argv[2])
+ident = lambda row: (row["name"], row["version"], row.get("source"), row.get("checksum"))
+approved = {ident(p) for p in original}
+if len(approved) != len(original):
+    raise SystemExit("Duplicate reviewed package identities")
+exceptions = {"cryptomap-adapter-cleanroom"}
+unexpected = [
+    p for p in replayed
+    if p["name"] not in exceptions and ident(p) not in approved
+]
+if unexpected:
+    raise SystemExit("Offline replay resolved an unreviewed dependency: " +
+                     ", ".join(sorted({p["name"] for p in unexpected})))
+if sum(p["name"] == "cryptomap-adapter-cleanroom" for p in replayed) != 1:
+    raise SystemExit("Missing exactly one synthetic consumer package")
+for root in ("cryptomap", "cryptomap-windows-store"):
+    if sum(p["name"] == root and p["version"] == "0.1.1-alpha.1" for p in replayed) != 1:
+        raise SystemExit("Unapproved source package identity: " + root)
+print("Offline paired source lock includes only reviewed package identities")
+PY
+
 cargo check --manifest-path "$scratch/source/Cargo.toml" --workspace --all-targets --offline --locked
 cargo run --manifest-path "$scratch/source/Cargo.toml" -p cryptomap-adapter-cleanroom --offline --locked
 # These unit tests execute from the package archive, not workspace sources.
