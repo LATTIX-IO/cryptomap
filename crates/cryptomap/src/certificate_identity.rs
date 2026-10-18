@@ -226,11 +226,16 @@ impl CertificateIdentityAuthority {
         let Some(receipt) = record.attributes.get("x509:identity:v1:receipt") else {
             return false;
         };
-        if namespace != &self.mac(b"namespace", &[]) {
+        if !self.authenticated_token(b"namespace", &[], namespace) {
             return false;
         }
-        self.record_receipt(record)
-            .is_ok_and(|signed| signed == *receipt)
+        let mut unsigned = record.clone();
+        unsigned.attributes.remove("x509:identity:v1:receipt");
+        let Ok(bytes) = serde_json::to_vec(&unsigned) else {
+            return false;
+        };
+        let bytes = Zeroizing::new(bytes);
+        self.authenticated_token(b"record-receipt", &[bytes.as_slice()], receipt)
     }
 
     /// Project bounded canonical public DER to opaque issuer/subject hints.
