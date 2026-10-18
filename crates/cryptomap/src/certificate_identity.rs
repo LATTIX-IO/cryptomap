@@ -120,11 +120,15 @@ impl CertificateIdentityAuthority {
         Ok(())
     }
 
-    fn mac(&self, domain: &[u8], fields: &[&[u8]]) -> String {
-        // Length-prefixed fields eliminate tuple concatenation ambiguity.
+    /// Construct a MAC with exactly one authority namespace encoder.
+    ///
+    /// Projection and receipt verification MUST use this identical transcript
+    /// framing; divergent prefix/tenant/scope ordering could silently
+    /// invalidate honest receipts or weaken isolation guarantees.
+    fn keyed_mac(&self, domain: &[u8], fields: &[&[u8]]) -> Hmac<Sha256> {
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.key[..])
             .unwrap_or_else(|_| unreachable!("fixed SHA-256 HMAC key"));
-        for part in [
+        for item in [
             b"cryptomap:x509-identity:v1".as_slice(),
             self.tenant.as_bytes(),
             self.version.as_bytes(),
@@ -134,10 +138,14 @@ impl CertificateIdentityAuthority {
         .into_iter()
         .chain(fields.iter().copied())
         {
-            mac.update(&(part.len() as u64).to_be_bytes());
-            mac.update(part);
+            mac.update(&(item.len() as u64).to_be_bytes());
+            mac.update(item);
         }
-        let digest = mac.finalize().into_bytes();
+        mac
+    }
+
+    fn mac(&self, domain: &[u8], fields: &[&[u8]]) -> String {
+        let digest = self.keyed_mac(domain, fields).finalize().into_bytes();
         let mut value = String::from("hmac-sha256:v1:");
         for byte in digest {
             use std::fmt::Write;
@@ -164,22 +172,9 @@ impl CertificateIdentityAuthority {
             };
             *byte = part;
         }
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key[..])
-            .unwrap_or_else(|_| unreachable!("fixed HMAC-SHA256 key size"));
-        for item in [
-            b"cryptomap:x509-identity:v1".as_slice(),
-            self.tenant.as_bytes(),
-            self.version.as_bytes(),
-            self.scope.as_str().as_bytes(),
-            domain,
-        ]
-        .into_iter()
-        .chain(fields.iter().copied())
-        {
-            mac.update(&(item.len() as u64).to_be_bytes());
-            mac.update(item);
-        }
-        mac.verify_slice(&*digest).is_ok()
+        self.keyed_mac(domain, fields)
+            .verify_slice(&*digest)
+            .is_ok()
     }
 
     fn record_receipt(&self, record: &RawObservation) -> Result<String, IdentityError> {
@@ -314,6 +309,37 @@ mod tests {
         )
         .unwrap()
     }
+    #[test]
+    fn receipt_validation_uses_identical_domain_separated_mac_transcript() {
+        let authority = authority("tenant-a", "v1", 17);
+        let signed = authority.mac(b"record-receipt", &[b"evidence", b"scope"]);
+        assert!(authority.authenticated_token(
+            b"record-receipt",
+            &[b"evidence", b"scope"],
+            &signed
+        ));
+        assert!(!authority.authenticated_token(
+            b"record-receipt",
+            &[b"evidence", b"other-scope"],
+            &signed
+        ));
+        assert!(!authority.authenticated_token(
+            b"namespace",
+            &[b"evidence", b"scope"],
+            &signed
+        ));
+        assert!(!authority.authenticated_token(
+            b"record-receipt",
+            &[b"evidence", b"scope"],
+            &signed.to_uppercase()
+        ));
+        assert!(!authority.authenticated_token(
+            b"record-receipt",
+            &[b"evidencescope"],
+            &signed
+        ));
+    }
+
     #[test]
     fn stable_keyed_hints_and_default_secret_privacy() {
         let cert = Certificate::from_pem(RSA).unwrap().to_der().unwrap();
