@@ -26,7 +26,7 @@ ADAPTER = "cryptomap-windows-store"
 CORE = "cryptomap"
 EXPECTED_DIRECT = {CORE, "windows-sys", "x509-cert"}
 EXPECTED_FILES = {
-    "Cargo.toml", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
+    "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
     "src/lib.rs", "examples/read_user_store.rs",
     "examples/fixtures/certificate/rsa.pem",
     "examples/fixtures/certificate/ec.pem",
@@ -97,6 +97,7 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     regular_files = set()
     total = count = 0
     manifest = None
+    packaged_lock = None
     with archive.open("rb") as raw, gzip.GzipFile(fileobj=raw) as unzip:
         stream = BoundedDecompressedStream(unzip, MAX_ARCHIVE + MAX_ENTRIES * 2048 + 2 * 1024 * 1024)
         with tarfile.open(fileobj=stream, mode="r|") as tar:
@@ -146,6 +147,13 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
                         validate_public_certificate_fixture(
                             source.read(MAX_PUBLIC_CERT_FIXTURE_BYTES + 1), expected
                         )
+                    if rel == "Cargo.lock":
+                        if member.size > 8 * 1024 * 1024:
+                            raise ValueError("oversized packaged adapter lock")
+                        source = tar.extractfile(member)
+                        if source is None:
+                            raise ValueError("unreadable adapter lockfile")
+                        packaged_lock = tomllib.loads(source.read().decode("utf-8"))
                     if rel == "Cargo.toml":
                         if member.size > 100_000:
                             raise ValueError("oversized adapter manifest")
@@ -156,8 +164,27 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     if count == 0:
         raise ValueError("empty adapter archive")
     audit_physical_tar_layout(archive, count)
-    if not EXPECTED_FILES <= regular_files or manifest is None:
+    if not EXPECTED_FILES <= regular_files or manifest is None or packaged_lock is None:
         raise ValueError("adapter archive missing mandatory files")
+    if packaged_lock.get("version") != 4 or not isinstance(packaged_lock.get("package"), list):
+        raise ValueError("invalid packaged adapter lockfile")
+    reviewed_lock, _ = _locked_packages(lockfile, version)
+    reviewed = {
+        (entry.get("name"), entry.get("version"), entry.get("source"), entry.get("checksum"))
+        for entry in reviewed_lock["package"]
+    }
+    selected = packaged_lock["package"]
+    if not selected or not all(
+        isinstance(row, dict)
+        and (row.get("name"), row.get("version"), row.get("source"), row.get("checksum")) in reviewed
+        for row in selected
+    ):
+        raise ValueError("packaged adapter lock has unreviewed package identities")
+    if any(
+        sum(row.get("name") == name and row.get("version") == version for row in selected) != 1
+        for name in (CORE, ADAPTER)
+    ):
+        raise ValueError("packaged adapter lock has mismatched root crates")
     pkg = manifest.get("package", {})
     if (pkg.get("name") != ADAPTER or pkg.get("version") != version
             or pkg.get("publish") is not False
