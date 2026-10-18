@@ -8,6 +8,8 @@ pub mod batch;
 #[cfg(feature = "certificate-store-grants")]
 pub mod certificate_store_scope;
 pub mod collector;
+#[cfg(feature = "certificate-identity")]
+pub mod certificate_identity;
 pub mod collectors;
 mod correlation;
 pub mod coverage;
