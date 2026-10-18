@@ -3,11 +3,14 @@
 //! Only exact canonical DER Distinguished Name equality is asserted. Alternate
 //! string encodings, Unicode normalization, RFC4514 spellings and case-folding
 //! are deliberately NOT conflated. B5.6 may use these as candidate hints only.
+use crate::collectors::certificate::MAX_CERT_DER_BYTES;
 use crate::coverage::CollectionScopeId;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use x509_cert::{Certificate, der::{Decode, Encode}};
-use crate::collectors::certificate::MAX_CERT_DER_BYTES;
+use x509_cert::{
+    Certificate,
+    der::{Decode, Encode},
+};
 
 /// Uninformative, non-secret error classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,23 +80,35 @@ impl CertificateIdentityAuthority {
     ///
     /// Keys must come from a CSPRNG outside Cryptomap and must be independently
     /// allocated across tenants and versions. No generic user passwords.
-    pub fn new(scope: CollectionScopeId, tenant: &str, version: &str, key: [u8; 32])
-        -> Result<Self, IdentityError>
-    {
+    pub fn new(
+        scope: CollectionScopeId,
+        tenant: &str,
+        version: &str,
+        key: [u8; 32],
+    ) -> Result<Self, IdentityError> {
         fn valid(s: &str) -> bool {
-            !s.is_empty() && s.len() <= 64
-                && s.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+            !s.is_empty()
+                && s.len() <= 64
+                && s.bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
         }
         if !valid(tenant) || !valid(version) || key.iter().all(|b| *b == 0) {
             return Err(IdentityError::InvalidAuthority);
         }
-        Ok(Self { scope, tenant: tenant.to_owned(), version: version.to_owned(), key })
+        Ok(Self {
+            scope,
+            tenant: tenant.to_owned(),
+            version: version.to_owned(),
+            key,
+        })
     }
 
     /// Scope identity prevents a host from silently reusing a capability in
     /// another collection scope. A host remains responsible for tenant binding.
     pub fn check_scope(&self, scope: &CollectionScopeId) -> Result<(), IdentityError> {
-        if &self.scope != scope { return Err(IdentityError::ScopeMismatch); }
+        if &self.scope != scope {
+            return Err(IdentityError::ScopeMismatch);
+        }
         Ok(())
     }
 
@@ -102,15 +117,23 @@ impl CertificateIdentityAuthority {
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.key)
             .unwrap_or_else(|_| unreachable!("fixed SHA-256 HMAC key"));
         for part in [
-            b"cryptomap:x509-identity:v1".as_slice(), self.tenant.as_bytes(),
-            self.version.as_bytes(), domain
-        ].into_iter().chain(fields.iter().copied()) {
+            b"cryptomap:x509-identity:v1".as_slice(),
+            self.tenant.as_bytes(),
+            self.version.as_bytes(),
+            domain,
+        ]
+        .into_iter()
+        .chain(fields.iter().copied())
+        {
             mac.update(&(part.len() as u64).to_be_bytes());
             mac.update(part);
         }
         let digest = mac.finalize().into_bytes();
         let mut value = String::from("hmac-sha256:v1:");
-        for byte in digest { use std::fmt::Write; let _ = write!(&mut value, "{byte:02x}"); }
+        for byte in digest {
+            use std::fmt::Write;
+            let _ = write!(&mut value, "{byte:02x}");
+        }
         value
     }
 
@@ -122,23 +145,45 @@ impl CertificateIdentityAuthority {
         if der.is_empty() || der.len() > MAX_CERT_DER_BYTES {
             return Err(IdentityError::InvalidCertificate);
         }
-        let certificate = Certificate::from_der(der)
+        let certificate =
+            Certificate::from_der(der).map_err(|_| IdentityError::InvalidCertificate)?;
+        let same = certificate
+            .to_der()
             .map_err(|_| IdentityError::InvalidCertificate)?;
-        let same = certificate.to_der().map_err(|_| IdentityError::InvalidCertificate)?;
-        if same != der { return Err(IdentityError::InvalidCertificate); }
+        if same != der {
+            return Err(IdentityError::InvalidCertificate);
+        }
         let tbs = &certificate.tbs_certificate;
-        let subject = tbs.subject.to_der().map_err(|_| IdentityError::InvalidCertificate)?;
-        let issuer = tbs.issuer.to_der().map_err(|_| IdentityError::InvalidCertificate)?;
+        let subject = tbs
+            .subject
+            .to_der()
+            .map_err(|_| IdentityError::InvalidCertificate)?;
+        let issuer = tbs
+            .issuer
+            .to_der()
+            .map_err(|_| IdentityError::InvalidCertificate)?;
         // Avoid treating empty DNs as globally correlatable identities.
-        let subject_dn = if subject.as_slice() == [0x30, 0x00] { None }
-            else { Some(self.mac(b"dn", &[&subject])) };
-        let issuer_dn = if issuer.as_slice() == [0x30, 0x00] { None }
-            else { Some(self.mac(b"dn", &[&issuer])) };
+        let subject_dn = if subject.as_slice() == [0x30, 0x00] {
+            None
+        } else {
+            Some(self.mac(b"dn", &[&subject]))
+        };
+        let issuer_dn = if issuer.as_slice() == [0x30, 0x00] {
+            None
+        } else {
+            Some(self.mac(b"dn", &[&issuer]))
+        };
         let issuer_serial = if issuer_dn.is_some() {
             let serial = tbs.serial_number.as_bytes();
             Some(self.mac(b"issuer-serial", &[&issuer, serial]))
-        } else { None };
-        Ok(CertificateIdentityHints { subject_dn, issuer_dn, issuer_serial })
+        } else {
+            None
+        };
+        Ok(CertificateIdentityHints {
+            subject_dn,
+            issuer_dn,
+            issuer_serial,
+        })
     }
 }
 
@@ -149,8 +194,12 @@ mod tests {
     const RSA: &[u8] = include_bytes!("../../examples/fixtures/certificate/rsa.pem");
     fn authority(tenant: &str, version: &str, key: u8) -> CertificateIdentityAuthority {
         CertificateIdentityAuthority::new(
-            CollectionScopeId::new("identity-test").unwrap(), tenant, version, [key; 32],
-        ).unwrap()
+            CollectionScopeId::new("identity-test").unwrap(),
+            tenant,
+            version,
+            [key; 32],
+        )
+        .unwrap()
     }
     #[test]
     fn stable_keyed_hints_and_default_secret_privacy() {
@@ -158,19 +207,48 @@ mod tests {
         let a = authority("tenant-a", "key-1", 7);
         let h = a.project_der(&cert).unwrap();
         assert_eq!(h, a.project_der(&cert).unwrap());
-        assert_ne!(h, authority("tenant-b", "key-1", 7).project_der(&cert).unwrap());
-        assert_ne!(h, authority("tenant-a", "key-2", 7).project_der(&cert).unwrap());
-        assert_ne!(h, authority("tenant-a", "key-1", 8).project_der(&cert).unwrap());
+        assert_ne!(
+            h,
+            authority("tenant-b", "key-1", 7)
+                .project_der(&cert)
+                .unwrap()
+        );
+        assert_ne!(
+            h,
+            authority("tenant-a", "key-2", 7)
+                .project_der(&cert)
+                .unwrap()
+        );
+        assert_ne!(
+            h,
+            authority("tenant-a", "key-1", 8)
+                .project_der(&cert)
+                .unwrap()
+        );
         assert!(!format!("{a:?}").contains("tenant-a"));
-        assert!(!serde_json::to_string(&h.attributes()).unwrap().contains("PRIVATE"));
-        assert!(h.attributes().values().all(|x| x.starts_with("hmac-sha256:v1:") && x.len() == 79));
+        assert!(
+            !serde_json::to_string(&h.attributes())
+                .unwrap()
+                .contains("PRIVATE")
+        );
+        assert!(
+            h.attributes()
+                .values()
+                .all(|x| x.starts_with("hmac-sha256:v1:") && x.len() == 79)
+        );
     }
     #[test]
     fn reject_zero_key_and_scope_mismatch() {
         let scope = CollectionScopeId::new("identity-test").unwrap();
-        assert!(matches!(CertificateIdentityAuthority::new(scope, "t", "v", [0;32]), Err(IdentityError::InvalidAuthority)));
+        assert!(matches!(
+            CertificateIdentityAuthority::new(scope, "t", "v", [0; 32]),
+            Err(IdentityError::InvalidAuthority)
+        ));
         let a = authority("tenant", "v", 5);
-        assert_eq!(a.check_scope(&CollectionScopeId::new("other").unwrap()), Err(IdentityError::ScopeMismatch));
+        assert_eq!(
+            a.check_scope(&CollectionScopeId::new("other").unwrap()),
+            Err(IdentityError::ScopeMismatch)
+        );
         assert_eq!(a.project_der(&[0]), Err(IdentityError::InvalidCertificate));
     }
 }
