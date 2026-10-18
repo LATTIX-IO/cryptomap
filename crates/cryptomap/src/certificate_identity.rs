@@ -148,7 +148,11 @@ impl CertificateIdentityAuthority {
         let Some(hex) = token.strip_prefix("hmac-sha256:v1:") else {
             return false;
         };
-        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if hex.len() != 64
+            || !hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
             return false;
         }
         let mut digest = Zeroizing::new([0u8; 32]);
@@ -166,7 +170,10 @@ impl CertificateIdentityAuthority {
             self.version.as_bytes(),
             self.scope.as_str().as_bytes(),
             domain,
-        ].into_iter().chain(fields.iter().copied()) {
+        ]
+        .into_iter()
+        .chain(fields.iter().copied())
+        {
             mac.update(&(item.len() as u64).to_be_bytes());
             mac.update(item);
         }
