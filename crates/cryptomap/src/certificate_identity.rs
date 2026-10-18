@@ -120,7 +120,7 @@ impl CertificateIdentityAuthority {
 
     fn mac(&self, domain: &[u8], fields: &[&[u8]]) -> String {
         // Length-prefixed fields eliminate tuple concatenation ambiguity.
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key)
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key[..])
             .unwrap_or_else(|_| unreachable!("fixed SHA-256 HMAC key"));
         for part in [
             b"cryptomap:x509-identity:v1".as_slice(),
@@ -158,7 +158,7 @@ impl CertificateIdentityAuthority {
             };
             *byte = part;
         }
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key)
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key[..])
             .unwrap_or_else(|_| unreachable!("fixed HMAC-SHA256 key size"));
         for item in [
             b"cryptomap:x509-identity:v1".as_slice(),
