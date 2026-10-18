@@ -323,21 +323,13 @@ mod tests {
             &[b"evidence", b"other-scope"],
             &signed
         ));
-        assert!(!authority.authenticated_token(
-            b"namespace",
-            &[b"evidence", b"scope"],
-            &signed
-        ));
+        assert!(!authority.authenticated_token(b"namespace", &[b"evidence", b"scope"], &signed));
         assert!(!authority.authenticated_token(
             b"record-receipt",
             &[b"evidence", b"scope"],
             &signed.to_uppercase()
         ));
-        assert!(!authority.authenticated_token(
-            b"record-receipt",
-            &[b"evidencescope"],
-            &signed
-        ));
+        assert!(!authority.authenticated_token(b"record-receipt", &[b"evidencescope"], &signed));
     }
 
     #[test]
