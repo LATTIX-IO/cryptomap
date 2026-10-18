@@ -1,5 +1,5 @@
 //! B5.5 exact-scope HMAC projection, parser parity, privacy and negative cases.
-#![cfg(feature = "certificate-identity")]
+#![cfg(all(feature = "certificate-identity", feature = "certificate-store-grants"))]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
     CollectionRunId, CollectionScopeId, CoverageState,
