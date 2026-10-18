@@ -194,6 +194,21 @@ impl PublicCertificate {
         self.identity_hints.as_ref()
     }
 
+    /// Return explicitly opted-in, opaque pseudonyms through the existing
+    /// typed certificate metadata fields. A pseudonym is not a verified
+    /// subject/issuer identity or a human-readable DN.
+    #[cfg(feature = "certificate-identity")]
+    pub fn certificate_metadata_with_identity(&self) -> crate::metadata::CertificateMetadata {
+        use crate::metadata::Observed;
+        let mut metadata = self.certificate_metadata();
+        if let Some(hints) = &self.identity_hints {
+            metadata.subject = hints.subject_dn.clone().map_or(Observed::Unknown, Observed::Known);
+            metadata.issuer = hints.issuer_dn.clone().map_or(Observed::Unknown, Observed::Known);
+            metadata.serial = hints.issuer_serial.clone().map_or(Observed::Unknown, Observed::Known);
+        }
+        metadata
+    }
+
     /// Project into the SDK's existing nonsecret typed certificate metadata.
     ///
     /// This does not change AssetKind, certificate identity or policy state.
