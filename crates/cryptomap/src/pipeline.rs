@@ -388,8 +388,14 @@ fn validated_certificate_identity(
             "certificate:identity-issuer-serial:v1",
         ),
     ];
+    #[cfg(feature = "certificate-identity")]
+    if raw.attributes.keys().any(|key| key.starts_with(PREFIX))
+        && authority.is_none_or(|auth| !auth.verify_record(raw)) {
+        return Err(PipelineError::InvalidOutcome);
+    }
     let mut output = Vec::new();
     for (key, value) in raw.attributes.iter().filter(|(k, _)| k.starts_with(PREFIX)) {
+        if key == "x509:identity:v1:receipt" { continue; }
         let (_, property) = MAPPING
             .iter()
             .find(|(k, _)| *k == key)
