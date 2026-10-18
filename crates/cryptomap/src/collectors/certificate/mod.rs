@@ -593,7 +593,7 @@ impl Collector for CertificateFileCollector<'_> {
                     &cert.fingerprint,
                 ))
                 .map_err(|_| InventoryError::InvalidMetadata)?;
-                sink.emit(RawObservation {
+                let mut observation = RawObservation {
                     contract_version: RAW_CONTRACT_VERSION,
                     event_id: format!("x509-file:v1:{:x}", Sha256::digest(key)),
                     collector: descriptor.id.clone(),
@@ -623,7 +623,13 @@ impl Collector for CertificateFileCollector<'_> {
                         attributes.insert("x509:source-encoding".into(), encoding.into());
                         attributes
                     },
-                })?;
+                };
+                #[cfg(feature = "certificate-identity")]
+                if let Some(authority) = self.identity {
+                    authority.seal_record(&mut observation)
+                        .map_err(|_| InventoryError::InvalidMetadata)?;
+                }
+                sink.emit(observation)?;
                 emitted += 1;
                 total_emitted += 1;
             }
