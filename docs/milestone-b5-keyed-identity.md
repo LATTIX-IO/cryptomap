@@ -7,8 +7,11 @@ The caller creates `CertificateIdentityAuthority::new(scope.id().clone(), tenant
 key_version, key)` with a host-generated 32-byte secret and explicitly
 attaches it via `with_identity(&authority)`. Keys, tenants and key versions
 are never accepted through untrusted `CollectionRequest.options`. The
-authority cannot be debug-printed or serialized and its owned key is zeroized
-at drop. Callers are responsible for securing their original key buffers.
+authority cannot be debug-printed or serialized. Its owned key is held in a
+boxed, zeroizing allocation at a stable heap address across authority moves,
+and is wiped on drop. The by-value key parameter may leave temporary copies in
+caller memory or compiler-generated stack slots; constructors cannot guarantee
+their erasure. Callers must secure and erase their independent source buffers.
 
 Each supported and authenticated record receives up to three `x509:identity:v1:*` opaque
 HMAC-SHA256 attributes. The same supported, unambiguous canonicalized DN receives the same hint
@@ -48,8 +51,8 @@ preserved for B5.6 correlation fencing. Replaying a token without its exact
 authenticated event is rejected. A trusted host must not distribute keys
 to third-party collectors; in-process authority is not an OS sandbox.
 
-**Memory limitation:** `Zeroizing` protects the authority-owned key
-on drop and each bounded per-attribute, RDN-group and final plaintext
+**Memory limitation:** `Zeroizing` protects the fixed-location, heap-owned
+authority key on drop and each bounded per-attribute, RDN-group and final plaintext
 comparison buffer throughout DN normalization, including early error exits. Pinned
 RustCrypto HMAC 0.12.1 itself does not guarantee zeroization of all
 transient internal SHA-256/HMAC working state; process-memory compromise

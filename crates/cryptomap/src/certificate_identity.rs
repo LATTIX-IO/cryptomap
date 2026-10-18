@@ -61,13 +61,15 @@ impl CertificateIdentityHints {
 /// Host-owned keyed capability. Not Clone, Serialize, or publicly Debug.
 ///
 /// The key is never emitted as an observation, request option, or log field.
-/// Drop overwrites the owned key buffer. The host must also control its own
-/// source buffer and any copies outside this capability.
+/// The owned key resides at a stable heap address across authority moves and
+/// is overwritten on drop. Caller source buffers, by-value argument copies,
+/// constructor temporaries and HMAC-library working state remain the host's
+/// and library's responsibility; no blanket process-memory erasure is claimed.
 pub struct CertificateIdentityAuthority {
     scope: CollectionScopeId,
     tenant: String,
     version: String,
-    key: Zeroizing<[u8; 32]>,
+    key: Box<Zeroizing<[u8; 32]>>,
 }
 impl std::fmt::Debug for CertificateIdentityAuthority {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -91,7 +93,7 @@ impl CertificateIdentityAuthority {
         version: &str,
         key: [u8; 32],
     ) -> Result<Self, IdentityError> {
-        let key = Zeroizing::new(key);
+        let key = Box::new(Zeroizing::new(key));
         fn valid(s: &str) -> bool {
             !s.is_empty()
                 && s.len() <= 64
@@ -348,6 +350,20 @@ mod tests {
                 .all(|x| x.starts_with("hmac-sha256:v1:") && x.len() == 79)
         );
     }
+    #[test]
+    fn authority_move_keeps_heap_key_at_the_same_address() {
+        // A move of the capability must not make an additional copy of its
+        // heap-resident key. This does not prove compiler temporary erasure.
+        fn passthrough(value: CertificateIdentityAuthority) -> CertificateIdentityAuthority {
+            value
+        }
+        let capability = authority("tenant", "key-1", 7);
+        let key_before = std::ptr::from_ref::<[u8; 32]>(&**capability.key);
+        let capability = passthrough(capability);
+        let key_after = std::ptr::from_ref::<[u8; 32]>(&**capability.key);
+        assert_eq!(key_before, key_after);
+    }
+
     #[test]
     fn reject_zero_key_and_scope_mismatch() {
         let scope = CollectionScopeId::new("identity-test").unwrap();
