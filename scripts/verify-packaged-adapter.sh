@@ -92,7 +92,7 @@ export CARGO_HOME="$scratch/cargo-home"
 # reviewed versions, then check every package against the original lock.
 # This does not grant permission to download/upgrade a dependency.
 cargo generate-lockfile --manifest-path "$scratch/source/Cargo.toml" --offline
-python3 - "Cargo.lock" "$scratch/source/Cargo.lock" <<'PY'
+python3 - "Cargo.lock" "$scratch/source/Cargo.lock" "$version" <<'PY'
 import sys
 import tomllib
 from pathlib import Path
@@ -124,7 +124,7 @@ if unexpected:
 if sum(p["name"] == "cryptomap-adapter-cleanroom" for p in replayed) != 1:
     raise SystemExit("Missing exactly one synthetic consumer package")
 for root in ("cryptomap", "cryptomap-windows-store"):
-    if sum(p["name"] == root and p["version"] == "0.1.1-alpha.1" for p in replayed) != 1:
+    if sum(p["name"] == root and p["version"] == sys.argv[3] for p in replayed) != 1:
         raise SystemExit("Unapproved source package identity: " + root)
 print("Offline paired source lock includes only reviewed package identities")
 PY
