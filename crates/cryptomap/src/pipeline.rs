@@ -425,6 +425,8 @@ fn map_fact(
     identity: &IdentityContext,
     registry: &Registry,
     evidence: &EvidenceId,
+    #[cfg(feature = "certificate-identity")]
+    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
 ) -> Result<AssetId, PipelineError> {
     let asset = match &raw.fact {
         RawFactKind::AlgorithmUse {
@@ -581,7 +583,10 @@ fn map_fact(
             for (property, value) in validated_certificate_profile(raw)? {
                 observe(builder, raw, &asset, evidence, property, value)?;
             }
-            for (property, value) in validated_certificate_identity(raw)? {
+            for (property, value) in validated_certificate_identity(raw,
+                #[cfg(feature = "certificate-identity")]
+                authority,
+            )? {
                 observe(builder, raw, &asset, evidence, property, value)?;
             }
             asset
