@@ -267,10 +267,10 @@ mod native {
         #[test]
         fn in_memory_native_enumeration_returns_only_bounded_public_der() {
             let rsa = public_der(include_bytes!(
-                "../../cryptomap/examples/fixtures/certificate/rsa.pem"
+                "../examples/fixtures/certificate/rsa.pem"
             ));
             let ec = public_der(include_bytes!(
-                "../../cryptomap/examples/fixtures/certificate/ec.pem"
+                "../examples/fixtures/certificate/ec.pem"
             ));
             let store = OwnedStore::open_memory().expect("ephemeral store");
             for bytes in [&rsa, &ec] {
@@ -304,7 +304,7 @@ mod native {
         #[test]
         fn aborted_memory_store_walk_frees_context_and_never_reads_system_store() {
             let der = public_der(include_bytes!(
-                "../../cryptomap/examples/fixtures/certificate/rsa.pem"
+                "../examples/fixtures/certificate/rsa.pem"
             ));
             let store = OwnedStore::open_memory().unwrap();
             // SAFETY: isolated in-memory test store only.
@@ -328,7 +328,7 @@ mod native {
         #[test]
         fn native_direct_walk_enforces_entry_and_public_der_budgets_before_callback() {
             let der = public_der(include_bytes!(
-                "../../cryptomap/examples/fixtures/certificate/rsa.pem"
+                "../examples/fixtures/certificate/rsa.pem"
             ));
             let store = OwnedStore::open_memory().unwrap();
             // Repeated identical public certs still consume entry/byte budgets;
