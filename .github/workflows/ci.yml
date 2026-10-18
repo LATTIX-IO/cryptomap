@@ -164,6 +164,88 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Package unpublishable Windows adapter archive
+        run: cargo package --package cryptomap-windows-store --locked --no-verify
+
+      - name: FOSS-486 adversarial archive and mapping tests
+        run: python3 -m unittest discover -s scripts -p 'test_adapter_release.py' -v
+
+      - name: Clean-room paired archive and packaged adapter tests
+        run: bash scripts/verify-packaged-adapter.sh
+
+      - name: Inspect standalone adapter archive
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          python3 scripts/verify_adapter_release.py inspect \
+            --archive "target/package/cryptomap-windows-store-${version}.crate" \
+            --lockfile Cargo.lock --workspace-manifest Cargo.toml \
+            --commit "$GITHUB_SHA" \
+            --output target/release-evidence/adapter-inspection.json
+
+      - name: Prepare adapter locked dependency inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          root="cryptomap-windows-store-${version}"
+          mkdir -p target/release-evidence/adapter-sbom-input
+          tar -xOzf "target/package/${root}.crate" "${root}/Cargo.toml" \
+            > target/release-evidence/adapter-sbom-input/Cargo.toml
+          cp Cargo.lock target/release-evidence/adapter-sbom-input/Cargo.lock
+
+      - name: Generate independently scoped Windows adapter SPDX inventory
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: target/release-evidence/adapter-sbom-input
+          format: spdx-json
+          output-file: target/release-evidence/adapter.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Verify separately pinned SPDX and combined release mapping
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          python3 scripts/verify_adapter_release.py aggregate \
+            --core-archive "target/package/cryptomap-${version}.crate" \
+            --adapter-archive "target/package/cryptomap-windows-store-${version}.crate" \
+            --core-evidence target/release-evidence/cryptomap.json \
+            --adapter-evidence target/release-evidence/adapter-inspection.json \
+            --core-sbom target/release-evidence/cryptomap.spdx.json \
+            --adapter-sbom target/release-evidence/adapter.spdx.json \
+            --workspace-manifest Cargo.toml --lockfile Cargo.lock \
+            --commit "$GITHUB_SHA" \
+            --output target/release-evidence/paired-release.json
+
+      - name: Upload separately validated adapter archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cryptomap-adapter-tested-crate
+          path: target/package/cryptomap-windows-store-*.crate
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload adapter SPDX inventory
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cryptomap-adapter-software-sbom
+          path: target/release-evidence/adapter.spdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload paired provenance mapping and adapter inspection
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cryptomap-paired-release-evidence
+          path: |
+            target/release-evidence/adapter-inspection.json
+            target/release-evidence/paired-release.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Install supply-chain tools
         run: |
           cargo install --locked cargo-audit
@@ -240,6 +322,14 @@ jobs:
       - name: Native Windows Clippy strict
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
+      - name: Verify native packaged adapter with memory stores only
+        shell: bash
+        run: |
+          cargo package -p cryptomap --locked
+          cargo package -p cryptomap-windows-store --locked --no-verify
+          bash scripts/verify-packaged-adapter.sh
+
+
   release-attestations:
     name: Main-only signed release provenance
     # Never expose an OIDC signing token to arbitrary PR code or fork builds.
@@ -264,6 +354,42 @@ jobs:
           name: cryptomap-software-sbom
           path: sbom
 
+      - name: Download separately qualified adapter archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: cryptomap-adapter-tested-crate
+          path: adapter-candidate
+
+      - name: Download separately validated adapter SPDX
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: cryptomap-adapter-software-sbom
+          path: adapter-sbom
+
+      - name: Download CI-tested core/adapter mapping
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: cryptomap-paired-release-evidence
+          path: paired
+
+      - name: Read-only main checkout for deterministic mapping verification
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Verify downloaded exact signed-subject candidates before signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          python3 scripts/verify_adapter_release.py verify \
+            --mapping paired/paired-release.json \
+            --core-archive "candidate/cryptomap-${version}.crate" \
+            --adapter-archive "adapter-candidate/cryptomap-windows-store-${version}.crate" \
+            --core-sbom sbom/cryptomap.spdx.json \
+            --adapter-sbom adapter-sbom/adapter.spdx.json \
+            --commit "$GITHUB_SHA"
+
       - name: Sign build provenance for tested candidate
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
@@ -274,6 +400,22 @@ jobs:
         with:
           subject-path: candidate/cryptomap-*.crate
           sbom-path: sbom/cryptomap.spdx.json
+
+      - name: Sign separate Windows adapter build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: adapter-candidate/cryptomap-windows-store-*.crate
+
+      - name: Sign separate Windows adapter SPDX attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: adapter-candidate/cryptomap-windows-store-*.crate
+          sbom-path: adapter-sbom/adapter.spdx.json
+
+      - name: Sign combined core-adapter digest and dependency mapping
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: paired/paired-release.json
 
       - name: Verify published provenance and SBOM signatures
         env:
@@ -297,3 +439,9 @@ jobs:
           # signature may be missing while the provenance check still passes.
           command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}" \
             --predicate-type https://spdx.dev/Document/v2.3
+          adapters=(adapter-candidate/cryptomap-windows-store-*.crate)
+          test "${#adapters[@]}" -eq 1
+          command gh attestation verify "${adapters[0]}" "${attestation_scope[@]}"
+          command gh attestation verify "${adapters[0]}" "${attestation_scope[@]}" \
+            --predicate-type https://spdx.dev/Document/v2.3
+          command gh attestation verify paired/paired-release.json "${attestation_scope[@]}"
