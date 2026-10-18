@@ -165,7 +165,7 @@ jobs:
           retention-days: 30
 
       - name: Package unpublishable Windows adapter archive
-        run: cargo package --package cryptomap-windows-store --locked --no-verify
+        run: cargo package --package cryptomap-windows-store --locked --no-verify --config 'patch.crates-io.cryptomap.path="crates/cryptomap"'
 
       - name: FOSS-486 adversarial archive and mapping tests
         run: python3 -m unittest discover -s scripts -p 'test_adapter_release.py' -v
@@ -326,7 +326,7 @@ jobs:
         shell: bash
         run: |
           cargo package -p cryptomap --locked
-          cargo package -p cryptomap-windows-store --locked --no-verify
+          cargo package -p cryptomap-windows-store --locked --no-verify --config 'patch.crates-io.cryptomap.path="crates/cryptomap"'
           bash scripts/verify-packaged-adapter.sh
 
 
