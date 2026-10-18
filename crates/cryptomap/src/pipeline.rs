@@ -366,7 +366,11 @@ fn validated_certificate_profile(
 fn validated_certificate_identity(
     raw: &RawObservation,
 ) -> Result<Vec<(&'static str, String)>, PipelineError> {
-    const PREFIX: &str = "x509:identity:v1:";
+    const PREFIX: &str = "x509:identity:";
+    #[cfg(not(feature = "certificate-identity"))]
+    if raw.attributes.keys().any(|k| k.starts_with(PREFIX)) {
+        return Err(PipelineError::InvalidOutcome);
+    }
     const MAPPING: [(&str, &str); 3] = [
         (
             "x509:identity:v1:subject-dn",
