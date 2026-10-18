@@ -285,8 +285,11 @@ pub fn parse_der_with_identity(
     authority: &crate::certificate_identity::CertificateIdentityAuthority,
 ) -> Result<PublicCertificate, CollectorDiagnosticCode> {
     let mut cert = parse_der(der)?;
-    cert.identity_hints = Some(authority.project_der(der)
-        .map_err(|_| CollectorDiagnosticCode::MalformedSource)?);
+    cert.identity_hints = Some(
+        authority
+            .project_der(der)
+            .map_err(|_| CollectorDiagnosticCode::MalformedSource)?,
+    );
     Ok(cert)
 }
 
@@ -305,8 +308,9 @@ fn trim_ascii(bytes: &[u8]) -> &[u8] {
 fn parse_public_certificates(
     source: &[u8],
     extension: &str,
-    #[cfg(feature = "certificate-identity")]
-    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
 ) -> Result<(Vec<PublicCertificate>, &'static str), CollectorDiagnosticCode> {
     // PEM block headers are inspected BEFORE decoding any base64. A private
     // key, CSR, encrypted key or unknown PEM label is never parsed or emitted.
@@ -448,7 +452,10 @@ impl<'a> CertificateFileCollector<'a> {
 
     /// Explicitly opt into host-owned, exact-scope keyed identities.
     #[cfg(feature = "certificate-identity")]
-    pub fn with_identity(mut self, authority: &'a crate::certificate_identity::CertificateIdentityAuthority) -> Result<Self, crate::certificate_identity::IdentityError> {
+    pub fn with_identity(
+        mut self,
+        authority: &'a crate::certificate_identity::CertificateIdentityAuthority,
+    ) -> Result<Self, crate::certificate_identity::IdentityError> {
         authority.check_scope(self.scope.id())?;
         self.identity = Some(authority);
         Ok(self)
@@ -484,7 +491,8 @@ impl Collector for CertificateFileCollector<'_> {
             .map_err(|_| InventoryError::InvalidMetadata)?;
         #[cfg(feature = "certificate-identity")]
         if let Some(a) = self.identity {
-            a.check_scope(self.scope.id()).map_err(|_| InventoryError::InvalidMetadata)?;
+            a.check_scope(self.scope.id())
+                .map_err(|_| InventoryError::InvalidMetadata)?;
         }
         let descriptor = self.descriptor();
         // RawLimits.observations applies to the entire requested collection,
@@ -542,7 +550,9 @@ impl Collector for CertificateFileCollector<'_> {
                     continue;
                 }
             };
-            let (certificates, encoding) = match parse_public_certificates(&bytes, extension,
+            let (certificates, encoding) = match parse_public_certificates(
+                &bytes,
+                extension,
                 #[cfg(feature = "certificate-identity")]
                 self.identity,
             ) {
