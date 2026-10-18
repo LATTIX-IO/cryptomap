@@ -107,9 +107,9 @@ name = "cryptomap"
 version = "0.1.1-alpha.1"
 dependencies = [
  "cap-fs-ext",
+ "cap-std",
  "const-oid",
  "hmac",
- "cap-std",
  "proc-macro2",
  "serde",
  "serde_json",
