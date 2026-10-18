@@ -165,13 +165,13 @@ impl CertificateIdentityAuthority {
     pub(crate) fn seal_record(&self, record: &mut RawObservation) -> Result<(), IdentityError> {
         if !matches!(record.fact, RawFactKind::Certificate { .. })
             || record.attributes.contains_key("x509:identity:v1:receipt")
-            || !record.attributes.keys().any(|key| matches!(
-                key.as_str(),
-                "x509:identity:v1:subject-dn" | "x509:identity:v1:issuer-dn"
-            ))
+
         {
             return Err(IdentityError::InvalidCertificate);
         }
+        if !record.attributes.keys().any(|key| matches!(
+            key.as_str(), "x509:identity:v1:subject-dn" | "x509:identity:v1:issuer-dn"
+        )) { return Ok(()); }
         record.attributes.insert(
             "x509:identity:v1:namespace".into(),
             self.mac(b"namespace", &[]),
