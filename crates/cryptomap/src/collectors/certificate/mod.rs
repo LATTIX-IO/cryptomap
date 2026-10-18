@@ -202,9 +202,18 @@ impl PublicCertificate {
         use crate::metadata::Observed;
         let mut metadata = self.certificate_metadata();
         if let Some(hints) = &self.identity_hints {
-            metadata.subject = hints.subject_dn.clone().map_or(Observed::Unknown, Observed::Known);
-            metadata.issuer = hints.issuer_dn.clone().map_or(Observed::Unknown, Observed::Known);
-            metadata.serial = hints.issuer_serial.clone().map_or(Observed::Unknown, Observed::Known);
+            metadata.subject = hints
+                .subject_dn
+                .clone()
+                .map_or(Observed::Unknown, Observed::Known);
+            metadata.issuer = hints
+                .issuer_dn
+                .clone()
+                .map_or(Observed::Unknown, Observed::Known);
+            metadata.serial = hints
+                .issuer_serial
+                .clone()
+                .map_or(Observed::Unknown, Observed::Known);
         }
         metadata
     }
@@ -641,7 +650,8 @@ impl Collector for CertificateFileCollector<'_> {
                 };
                 #[cfg(feature = "certificate-identity")]
                 if let Some(authority) = self.identity {
-                    authority.seal_record(&mut observation)
+                    authority
+                        .seal_record(&mut observation)
                         .map_err(|_| InventoryError::InvalidMetadata)?;
                 }
                 sink.emit(observation)?;

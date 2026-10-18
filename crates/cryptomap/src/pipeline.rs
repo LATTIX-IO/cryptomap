@@ -365,8 +365,9 @@ fn validated_certificate_profile(
 /// Raw data is untrusted: do not re-key arbitrary attributes or promote trust.
 fn validated_certificate_identity(
     raw: &RawObservation,
-    #[cfg(feature = "certificate-identity")]
-    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
 ) -> Result<Vec<(&'static str, String)>, PipelineError> {
     const PREFIX: &str = "x509:identity:";
     #[cfg(not(feature = "certificate-identity"))]
@@ -374,7 +375,10 @@ fn validated_certificate_identity(
         return Err(PipelineError::InvalidOutcome);
     }
     const MAPPING: [(&str, &str); 4] = [
-        ("x509:identity:v1:namespace", "certificate:identity-namespace:v1"),
+        (
+            "x509:identity:v1:namespace",
+            "certificate:identity-namespace:v1",
+        ),
         (
             "x509:identity:v1:subject-dn",
             "certificate:identity-subject-dn:v1",
@@ -390,12 +394,15 @@ fn validated_certificate_identity(
     ];
     #[cfg(feature = "certificate-identity")]
     if raw.attributes.keys().any(|key| key.starts_with(PREFIX))
-        && authority.is_none_or(|auth| !auth.verify_record(raw)) {
+        && authority.is_none_or(|auth| !auth.verify_record(raw))
+    {
         return Err(PipelineError::InvalidOutcome);
     }
     let mut output = Vec::new();
     for (key, value) in raw.attributes.iter().filter(|(k, _)| k.starts_with(PREFIX)) {
-        if key == "x509:identity:v1:receipt" { continue; }
+        if key == "x509:identity:v1:receipt" {
+            continue;
+        }
         let (_, property) = MAPPING
             .iter()
             .find(|(k, _)| *k == key)
@@ -425,8 +432,9 @@ fn map_fact(
     identity: &IdentityContext,
     registry: &Registry,
     evidence: &EvidenceId,
-    #[cfg(feature = "certificate-identity")]
-    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
 ) -> Result<AssetId, PipelineError> {
     let asset = match &raw.fact {
         RawFactKind::AlgorithmUse {
@@ -583,7 +591,8 @@ fn map_fact(
             for (property, value) in validated_certificate_profile(raw)? {
                 observe(builder, raw, &asset, evidence, property, value)?;
             }
-            for (property, value) in validated_certificate_identity(raw,
+            for (property, value) in validated_certificate_identity(
+                raw,
                 #[cfg(feature = "certificate-identity")]
                 authority,
             )? {
@@ -749,7 +758,9 @@ pub fn normalize(
     input: PipelineInput<'_>,
     outcome: CollectionOutcome,
 ) -> Result<InventorySnapshot, PipelineError> {
-    normalize_inner(input, outcome,
+    normalize_inner(
+        input,
+        outcome,
         #[cfg(feature = "certificate-identity")]
         None,
     )
@@ -763,15 +774,18 @@ pub fn normalize_with_identity(
     outcome: CollectionOutcome,
     authority: &crate::certificate_identity::CertificateIdentityAuthority,
 ) -> Result<InventorySnapshot, PipelineError> {
-    authority.check_scope(input.scope.id()).map_err(|_| PipelineError::InvalidOutcome)?;
+    authority
+        .check_scope(input.scope.id())
+        .map_err(|_| PipelineError::InvalidOutcome)?;
     normalize_inner(input, outcome, Some(authority))
 }
 
 fn normalize_inner(
     input: PipelineInput<'_>,
     outcome: CollectionOutcome,
-    #[cfg(feature = "certificate-identity")]
-    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
 ) -> Result<InventorySnapshot, PipelineError> {
     if input.identity.scope != input.scope.id().as_str()
         || outcome.run != *input.expected_run

@@ -303,7 +303,8 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                 };
                 #[cfg(feature = "certificate-identity")]
                 if let Some(authority) = self.identity {
-                    authority.seal_record(&mut observation)
+                    authority
+                        .seal_record(&mut observation)
                         .map_err(|_| InventoryError::InvalidMetadata)?;
                 }
                 sink.emit(observation)?;

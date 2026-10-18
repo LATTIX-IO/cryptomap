@@ -5,17 +5,17 @@
 //! are deliberately NOT conflated. B5.6 may use these as candidate hints only.
 use crate::collectors::certificate::MAX_CERT_DER_BYTES;
 use crate::{
-    coverage::CollectionScopeId,
     certificate_name::canonical_name,
+    coverage::CollectionScopeId,
     raw::{RawFactKind, RawObservation},
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use zeroize::Zeroizing;
 use x509_cert::{
     Certificate,
     der::{Decode, Encode},
 };
+use zeroize::Zeroizing;
 
 /// Uninformative, non-secret error classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,7 +144,6 @@ impl CertificateIdentityAuthority {
         value
     }
 
-
     fn record_receipt(&self, record: &RawObservation) -> Result<String, IdentityError> {
         if !matches!(record.fact, RawFactKind::Certificate { .. }) {
             return Err(IdentityError::InvalidCertificate);
@@ -155,7 +154,7 @@ impl CertificateIdentityAuthority {
         let mut unsigned = record.clone();
         unsigned.attributes.remove("x509:identity:v1:receipt");
         let bytes = Zeroizing::new(
-            serde_json::to_vec(&unsigned).map_err(|_| IdentityError::InvalidCertificate)?
+            serde_json::to_vec(&unsigned).map_err(|_| IdentityError::InvalidCertificate)?,
         );
         Ok(self.mac(b"record-receipt", &[bytes.as_slice()]))
     }
@@ -166,19 +165,25 @@ impl CertificateIdentityAuthority {
     pub(crate) fn seal_record(&self, record: &mut RawObservation) -> Result<(), IdentityError> {
         if !matches!(record.fact, RawFactKind::Certificate { .. })
             || record.attributes.contains_key("x509:identity:v1:receipt")
-
         {
             return Err(IdentityError::InvalidCertificate);
         }
-        if !record.attributes.keys().any(|key| matches!(
-            key.as_str(), "x509:identity:v1:subject-dn" | "x509:identity:v1:issuer-dn"
-        )) { return Ok(()); }
+        if !record.attributes.keys().any(|key| {
+            matches!(
+                key.as_str(),
+                "x509:identity:v1:subject-dn" | "x509:identity:v1:issuer-dn"
+            )
+        }) {
+            return Ok(());
+        }
         record.attributes.insert(
             "x509:identity:v1:namespace".into(),
             self.mac(b"namespace", &[]),
         );
         let receipt = self.record_receipt(record)?;
-        record.attributes.insert("x509:identity:v1:receipt".into(), receipt);
+        record
+            .attributes
+            .insert("x509:identity:v1:receipt".into(), receipt);
         Ok(())
     }
 
@@ -195,7 +200,8 @@ impl CertificateIdentityAuthority {
         if namespace != &self.mac(b"namespace", &[]) {
             return false;
         }
-        self.record_receipt(record).is_ok_and(|signed| signed == *receipt)
+        self.record_receipt(record)
+            .is_ok_and(|signed| signed == *receipt)
     }
 
     /// Project bounded canonical public DER to opaque issuer/subject hints.
@@ -209,23 +215,44 @@ impl CertificateIdentityAuthority {
         if der.is_empty() || der.len() > MAX_CERT_DER_BYTES {
             return Err(IdentityError::InvalidCertificate);
         }
-        let certificate = Certificate::from_der(der)
+        let certificate =
+            Certificate::from_der(der).map_err(|_| IdentityError::InvalidCertificate)?;
+        let same = certificate
+            .to_der()
             .map_err(|_| IdentityError::InvalidCertificate)?;
-        let same = certificate.to_der().map_err(|_| IdentityError::InvalidCertificate)?;
         if same != der {
             return Err(IdentityError::InvalidCertificate);
         }
         let tbs = &certificate.tbs_certificate;
-        let subject = Zeroizing::new(tbs.subject.to_der().map_err(|_| IdentityError::InvalidCertificate)?);
-        let issuer = Zeroizing::new(tbs.issuer.to_der().map_err(|_| IdentityError::InvalidCertificate)?);
+        let subject = Zeroizing::new(
+            tbs.subject
+                .to_der()
+                .map_err(|_| IdentityError::InvalidCertificate)?,
+        );
+        let issuer = Zeroizing::new(
+            tbs.issuer
+                .to_der()
+                .map_err(|_| IdentityError::InvalidCertificate)?,
+        );
         let subject_name = canonical_name(&subject).map(Zeroizing::new);
         let issuer_name = canonical_name(&issuer).map(Zeroizing::new);
-        let subject_dn = subject_name.as_ref().map(|name| self.mac(b"dn", &[name.as_slice()]));
-        let issuer_dn = issuer_name.as_ref().map(|name| self.mac(b"dn", &[name.as_slice()]));
+        let subject_dn = subject_name
+            .as_ref()
+            .map(|name| self.mac(b"dn", &[name.as_slice()]));
+        let issuer_dn = issuer_name
+            .as_ref()
+            .map(|name| self.mac(b"dn", &[name.as_slice()]));
         let issuer_serial = issuer_name.as_ref().map(|name| {
-            self.mac(b"issuer-serial", &[name.as_slice(), tbs.serial_number.as_bytes()])
+            self.mac(
+                b"issuer-serial",
+                &[name.as_slice(), tbs.serial_number.as_bytes()],
+            )
         });
-        Ok(CertificateIdentityHints { subject_dn, issuer_dn, issuer_serial })
+        Ok(CertificateIdentityHints {
+            subject_dn,
+            issuer_dn,
+            issuer_serial,
+        })
     }
 }
 

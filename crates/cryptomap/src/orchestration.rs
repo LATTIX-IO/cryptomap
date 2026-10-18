@@ -69,7 +69,9 @@ pub fn collect_normalized_with_identity(
     authority: &crate::certificate_identity::CertificateIdentityAuthority,
     cancel: &CancellationToken,
 ) -> Result<InventorySnapshot, PipelineError> {
-    authority.check_scope(invocation.input.scope.id()).map_err(|_| PipelineError::InvalidOutcome)?;
+    authority
+        .check_scope(invocation.input.scope.id())
+        .map_err(|_| PipelineError::InvalidOutcome)?;
     let request = preflight(&invocation)?;
     let outcome = collect_scoped(
         invocation.input.scope,
