@@ -203,3 +203,60 @@ fn authority_key_tenant_version_and_scope_are_isolated() {
         Err(IdentityError::InvalidCertificate)
     );
 }
+
+// A syntactically valid copied token cannot be promoted without the same
+// host-owned authority's exact source/run/fingerprint-bound receipt.
+#[test]
+fn forged_pseudonyms_and_unsigned_normalizers_fail_closed() {
+    use cryptomap::{
+        IdentityContext, InventoryLimits,
+        collector::CollectionOutcome,
+        orchestration::{ScopedInvocation, collect_normalized_with_identity},
+        pipeline::{self, PipelineError, PipelineInput},
+        registry::Registry,
+    };
+    use cryptomap::collector::Collector;
+    let dir = std::env::temp_dir().join(format!("cryptomap-b55-auth-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("cert.pem"), PEM).unwrap();
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+    let _cleanup = Cleanup(dir.clone());
+    let mut scope = CollectionScope::new(CollectionScopeId::new("receipt-scope").unwrap());
+    scope.grant_file(RawSourceKind::Certificate, "receipt:file", &dir, "cert.pem", MAX_CERT_FILE_BYTES).unwrap();
+    let authority = CertificateIdentityAuthority::new(scope.id().clone(), "tenant-a", "v1", [12;32]).unwrap();
+    let collector = CertificateFileCollector::new(&scope, AT).with_identity(&authority).unwrap();
+    let descriptor = collector.descriptor();
+    let run = CollectionRunId::new("b55-run").unwrap();
+    let identity = IdentityContext::new("receipt-scope").unwrap();
+    let registry = Registry::builtin();
+    let sources = [RequestedSource{kind:RawSourceKind::Certificate, item:"receipt:file".into()}];
+    let make_input = || PipelineInput {
+        scope:&scope, identity:&identity, registry:&registry,
+        expected_descriptor:&descriptor, expected_run:&run, sources:&sources,
+        raw_limits:RawLimits::default(), inventory_limits:InventoryLimits::default(),
+        started_at:AT, ended_at:AT,
+    };
+    let original: CollectionOutcome = collect_scoped(
+        &scope, &collector, request(RawSourceKind::Certificate,"receipt:file"),
+        &CancellationToken::default(),
+    ).unwrap();
+    assert!(original.observations[0].attributes.contains_key("x509:identity:v1:receipt"));
+    assert!(matches!(pipeline::normalize(make_input(), original.clone()), Err(PipelineError::InvalidOutcome)));
+    let snapshot = pipeline::normalize_with_identity(make_input(), original.clone(), &authority).unwrap();
+    assert!(snapshot.observations.values().any(|obs| obs.property == "certificate:identity-namespace:v1"));
+    let mut forged = original.clone();
+    forged.observations[0].attributes.insert("x509:identity:v1:issuer-dn".into(), format!("hmac-sha256:v1:{}", "f".repeat(64)));
+    assert!(matches!(pipeline::normalize_with_identity(make_input(), forged, &authority), Err(PipelineError::InvalidOutcome)));
+    let wrong = CertificateIdentityAuthority::new(scope.id().clone(),"tenant-b","v1",[12;32]).unwrap();
+    assert!(matches!(pipeline::normalize_with_identity(make_input(), original.clone(), &wrong), Err(PipelineError::InvalidOutcome)));
+    let mut copied = original.clone();
+    copied.observations[0].event_id.push('x');
+    assert!(matches!(pipeline::normalize_with_identity(make_input(), copied, &authority), Err(PipelineError::InvalidOutcome)));
+    let result = collect_normalized_with_identity(
+        ScopedInvocation{collector:&collector,input:make_input()}, &authority, &CancellationToken::default(),
+    ).unwrap();
+    assert_eq!(result.assets.len(), snapshot.assets.len());
+}
