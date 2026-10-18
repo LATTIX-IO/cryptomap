@@ -191,7 +191,7 @@ impl CertificateIdentityAuthority {
 mod tests {
     use super::*;
     use x509_cert::der::{DecodePem, Encode};
-    const RSA: &[u8] = include_bytes!("../../examples/fixtures/certificate/rsa.pem");
+    const RSA: &[u8] = include_bytes!("../examples/fixtures/certificate/rsa.pem");
     fn authority(tenant: &str, version: &str, key: u8) -> CertificateIdentityAuthority {
         CertificateIdentityAuthority::new(
             CollectionScopeId::new("identity-test").unwrap(),
