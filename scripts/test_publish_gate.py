@@ -208,6 +208,28 @@ class ExactReleaseGateTests(unittest.TestCase):
                         self._require_exact_attestation_contract(mutated, adapter=workflow.endswith('ci.yml'))
 
 
+    def test_adapter_verifier_rejects_post_core_spdx_shell_shadows(self):
+        """The adapter and paired mapping checks cannot be shadowed later."""
+        content = (Path(__file__).resolve().parents[1]
+                   / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        anchor = "      - name: Verify published provenance and SBOM signatures"
+        section = content.split(anchor, 1)[1]
+        self._require_exact_attestation_contract(section, adapter=True)
+        for injection in (
+            '          gh() { return 0; }\n',
+            '          function gh() { command false; }\n',
+            '          command gh --version\n',
+            '          attestation_scope+=(--source-ref refs/heads/untrusted)\n',
+        ):
+            poisoned = section.replace(
+                '          adapters=(adapter-candidate/',
+                injection + '          adapters=(adapter-candidate/',
+                1,
+            )
+            self.assertNotEqual(poisoned, section)
+            with self.assertRaises(AssertionError):
+                self._require_exact_attestation_contract(poisoned, adapter=True)
+
     def _require_exact_attestation_contract(self, step, *, adapter=False):
         """Ensure both predicates use the same exact-host and source identity."""
         required = (
@@ -312,6 +334,24 @@ class ExactReleaseGateTests(unittest.TestCase):
                 ["command", "gh", "attestation", "verify",
                  "paired/paired-release.json", "${attestation_scope[@]}"],
             ]
+        if adapter:
+            # Freeze everything AFTER the core SPDX verification too. An
+            # inserted gh() shell function between core and adapter checks
+            # can shadow the binary even though command substrings and the
+            # attestation_scope array still look correct.
+            adapter_tail = [
+                "",
+                '          adapters=(adapter-candidate/cryptomap-windows-store-*.crate)',
+                '          test "DOLLAR{#adapters[@]}" -eq 1',
+                '          command gh attestation verify "DOLLAR{adapters[0]}" "DOLLAR{attestation_scope[@]}"',
+                '          command gh attestation verify "DOLLAR{adapters[0]}" "DOLLAR{attestation_scope[@]}" \\',
+                '            --predicate-type https://spdx.dev/Document/v2.3',
+                '          command gh attestation verify paired/paired-release.json "DOLLAR{attestation_scope[@]}"',
+            ]
+            self.assertEqual(
+                step[stop:].splitlines(),
+                [line.replace("DOLLAR", "$") for line in adapter_tail],
+            )
         self.assertEqual(commands, expected_commands)
         # Parse the effective shell array, not the opaque reference: later
         # duplicate flags could override the approved identities.
