@@ -105,7 +105,10 @@ impl<'a, B: PublicCertificateStoreBackend + ?Sized> CertificateStoreCollector<'a
 
     /// Host-authorized keyed candidate identities; never a trust verdict.
     #[cfg(feature = "certificate-identity")]
-    pub fn with_identity(mut self, authority: &'a crate::certificate_identity::CertificateIdentityAuthority) -> Result<Self, crate::certificate_identity::IdentityError> {
+    pub fn with_identity(
+        mut self,
+        authority: &'a crate::certificate_identity::CertificateIdentityAuthority,
+    ) -> Result<Self, crate::certificate_identity::IdentityError> {
         authority.check_scope(self.scope.id())?;
         self.identity = Some(authority);
         Ok(self)
@@ -175,7 +178,8 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
             .map_err(|_| InventoryError::InvalidMetadata)?;
         #[cfg(feature = "certificate-identity")]
         if let Some(a) = self.identity {
-            a.check_scope(self.scope.id()).map_err(|_| InventoryError::InvalidMetadata)?;
+            a.check_scope(self.scope.id())
+                .map_err(|_| InventoryError::InvalidMetadata)?;
         }
         let descriptor = self.descriptor();
         let mut total_emitted = 0_usize;
@@ -221,7 +225,9 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     }
                     #[cfg(feature = "certificate-identity")]
                     let parsed = match self.identity {
-                        Some(a) => crate::collectors::certificate::parse_der_with_identity(bytes, a),
+                        Some(a) => {
+                            crate::collectors::certificate::parse_der_with_identity(bytes, a)
+                        }
                         None => parse_der(bytes),
                     };
                     #[cfg(not(feature = "certificate-identity"))]
