@@ -61,6 +61,25 @@ pub fn collect_normalized(
     normalize(invocation.input, outcome)
 }
 
+/// Execute an authorized collector and authenticate each opt-in identity
+/// receipt using the caller-held authority before canonical promotion.
+#[cfg(feature = "certificate-identity")]
+pub fn collect_normalized_with_identity(
+    invocation: ScopedInvocation<'_>,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+    cancel: &CancellationToken,
+) -> Result<InventorySnapshot, PipelineError> {
+    authority.check_scope(invocation.input.scope.id()).map_err(|_| PipelineError::InvalidOutcome)?;
+    let request = preflight(&invocation)?;
+    let outcome = collect_scoped(
+        invocation.input.scope,
+        invocation.collector,
+        request,
+        cancel,
+    )?;
+    crate::pipeline::normalize_with_identity(invocation.input, outcome, authority)
+}
+
 /// Execute one authorized, cooperative collector with independent source failures.
 ///
 /// The complete host-pinned request, scope and descriptor are validated before
