@@ -4,9 +4,14 @@
 //! string encodings, Unicode normalization, RFC4514 spellings and case-folding
 //! are deliberately NOT conflated. B5.6 may use these as candidate hints only.
 use crate::collectors::certificate::MAX_CERT_DER_BYTES;
-use crate::coverage::CollectionScopeId;
+use crate::{
+    coverage::CollectionScopeId,
+    certificate_name::canonical_name,
+    raw::{RawFactKind, RawObservation},
+};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use zeroize::Zeroizing;
 use x509_cert::{
     Certificate,
     der::{Decode, Encode},
@@ -120,6 +125,7 @@ impl CertificateIdentityAuthority {
             b"cryptomap:x509-identity:v1".as_slice(),
             self.tenant.as_bytes(),
             self.version.as_bytes(),
+            self.scope.as_str().as_bytes(),
             domain,
         ]
         .into_iter()
@@ -137,53 +143,88 @@ impl CertificateIdentityAuthority {
         value
     }
 
-    /// Project bounded canonical public DER to opaque exact-DER DN identity.
+
+    fn record_receipt(&self, record: &RawObservation) -> Result<String, IdentityError> {
+        if !matches!(record.fact, RawFactKind::Certificate { .. }) {
+            return Err(IdentityError::InvalidCertificate);
+        }
+        // Use the existing, deterministic serde wire representation for all
+        // context and attributes. The receipt itself is removed from the
+        // cloned record so it cannot be recursively self-referential.
+        let mut unsigned = record.clone();
+        unsigned.attributes.remove("x509:identity:v1:receipt");
+        let bytes = Zeroizing::new(
+            serde_json::to_vec(&unsigned).map_err(|_| IdentityError::InvalidCertificate)?
+        );
+        Ok(self.mac(b"record-receipt", &[bytes.as_slice()]))
+    }
+
+    /// Attach a keyed integrity receipt to exactly one collector-produced
+    /// record, binding scope, tenant, key version, source, run, fingerprint,
+    /// observation properties and all pseudonyms. Not exposed to plugins.
+    pub(crate) fn seal_record(&self, record: &mut RawObservation) -> Result<(), IdentityError> {
+        if !matches!(record.fact, RawFactKind::Certificate { .. })
+            || record.attributes.contains_key("x509:identity:v1:receipt")
+            || !record.attributes.keys().any(|key| matches!(
+                key.as_str(),
+                "x509:identity:v1:subject-dn" | "x509:identity:v1:issuer-dn"
+            ))
+        {
+            return Err(IdentityError::InvalidCertificate);
+        }
+        record.attributes.insert(
+            "x509:identity:v1:namespace".into(),
+            self.mac(b"namespace", &[]),
+        );
+        let receipt = self.record_receipt(record)?;
+        record.attributes.insert("x509:identity:v1:receipt".into(), receipt);
+        Ok(())
+    }
+
+    /// Authenticate a collected record before promoting any pseudonym to
+    /// canonical inventory. A syntactically plausible imported HMAC is never
+    /// sufficient: normalizers require this *same* host-owned authority.
+    pub(crate) fn verify_record(&self, record: &RawObservation) -> bool {
+        let Some(namespace) = record.attributes.get("x509:identity:v1:namespace") else {
+            return false;
+        };
+        let Some(receipt) = record.attributes.get("x509:identity:v1:receipt") else {
+            return false;
+        };
+        if namespace != &self.mac(b"namespace", &[]) {
+            return false;
+        }
+        self.record_receipt(record).is_ok_and(|signed| signed == *receipt)
+    }
+
+    /// Project bounded canonical public DER to opaque issuer/subject hints.
     ///
-    /// DN byte equality is a conservative subset of X.509 name equivalence.
-    /// No SANs, SKI, AKI, raw DN values, or serial bytes leave this function.
+    /// Only supported, unambiguous ASCII DirectoryString representations
+    /// (PrintableString and UTF8String) are normalized. Other DN encodings,
+    /// Unicode requiring LDAP StringPrep or unsupported attributes remain
+    /// explicitly Unknown, preventing fabricated issuer matches. This does
+    /// not establish X.509 issuance or certificate trust.
     pub fn project_der(&self, der: &[u8]) -> Result<CertificateIdentityHints, IdentityError> {
         if der.is_empty() || der.len() > MAX_CERT_DER_BYTES {
             return Err(IdentityError::InvalidCertificate);
         }
-        let certificate =
-            Certificate::from_der(der).map_err(|_| IdentityError::InvalidCertificate)?;
-        let same = certificate
-            .to_der()
+        let certificate = Certificate::from_der(der)
             .map_err(|_| IdentityError::InvalidCertificate)?;
+        let same = certificate.to_der().map_err(|_| IdentityError::InvalidCertificate)?;
         if same != der {
             return Err(IdentityError::InvalidCertificate);
         }
         let tbs = &certificate.tbs_certificate;
-        let subject = tbs
-            .subject
-            .to_der()
-            .map_err(|_| IdentityError::InvalidCertificate)?;
-        let issuer = tbs
-            .issuer
-            .to_der()
-            .map_err(|_| IdentityError::InvalidCertificate)?;
-        // Avoid treating empty DNs as globally correlatable identities.
-        let subject_dn = if subject.as_slice() == [0x30, 0x00] {
-            None
-        } else {
-            Some(self.mac(b"dn", &[&subject]))
-        };
-        let issuer_dn = if issuer.as_slice() == [0x30, 0x00] {
-            None
-        } else {
-            Some(self.mac(b"dn", &[&issuer]))
-        };
-        let issuer_serial = if issuer_dn.is_some() {
-            let serial = tbs.serial_number.as_bytes();
-            Some(self.mac(b"issuer-serial", &[&issuer, serial]))
-        } else {
-            None
-        };
-        Ok(CertificateIdentityHints {
-            subject_dn,
-            issuer_dn,
-            issuer_serial,
-        })
+        let subject = Zeroizing::new(tbs.subject.to_der().map_err(|_| IdentityError::InvalidCertificate)?);
+        let issuer = Zeroizing::new(tbs.issuer.to_der().map_err(|_| IdentityError::InvalidCertificate)?);
+        let subject_name = canonical_name(&subject).map(Zeroizing::new);
+        let issuer_name = canonical_name(&issuer).map(Zeroizing::new);
+        let subject_dn = subject_name.as_ref().map(|name| self.mac(b"dn", &[name.as_slice()]));
+        let issuer_dn = issuer_name.as_ref().map(|name| self.mac(b"dn", &[name.as_slice()]));
+        let issuer_serial = issuer_name.as_ref().map(|name| {
+            self.mac(b"issuer-serial", &[name.as_slice(), tbs.serial_number.as_bytes()])
+        });
+        Ok(CertificateIdentityHints { subject_dn, issuer_dn, issuer_serial })
     }
 }
 
