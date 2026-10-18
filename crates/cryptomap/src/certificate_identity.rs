@@ -67,7 +67,7 @@ pub struct CertificateIdentityAuthority {
     scope: CollectionScopeId,
     tenant: String,
     version: String,
-    key: [u8; 32],
+    key: Zeroizing<[u8; 32]>,
 }
 impl std::fmt::Debug for CertificateIdentityAuthority {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -91,6 +91,7 @@ impl CertificateIdentityAuthority {
         version: &str,
         key: [u8; 32],
     ) -> Result<Self, IdentityError> {
+        let key = Zeroizing::new(key);
         fn valid(s: &str) -> bool {
             !s.is_empty()
                 && s.len() <= 64
