@@ -33,6 +33,7 @@ Run from the repository root:
 
 ```sh
 cargo test --locked -p cryptomap-windows-store
+cargo package --locked -p cryptomap
 cargo package --locked -p cryptomap-windows-store --no-verify --config 'patch.crates-io.cryptomap.path="crates/cryptomap"'
 bash scripts/verify-packaged-adapter.sh
 python3 -m unittest discover -s scripts -p 'test_adapter_release.py' -v

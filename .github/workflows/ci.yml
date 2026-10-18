@@ -192,7 +192,8 @@ jobs:
           mkdir -p target/release-evidence/adapter-sbom-input
           tar -xOzf "target/package/${root}.crate" "${root}/Cargo.toml" \
             > target/release-evidence/adapter-sbom-input/Cargo.toml
-          cp Cargo.lock target/release-evidence/adapter-sbom-input/Cargo.lock
+          tar -xOzf "target/package/${root}.crate" "${root}/Cargo.lock" \
+            > target/release-evidence/adapter-sbom-input/Cargo.lock
 
       - name: Generate independently scoped Windows adapter SPDX inventory
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
