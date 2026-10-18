@@ -361,6 +361,34 @@ fn validated_certificate_profile(
     Ok(observations)
 }
 
+/// Validate optional scoped pseudonyms without ever parsing or accepting plaintext DNs.
+/// Raw data is untrusted: do not re-key arbitrary attributes or promote trust.
+fn validated_certificate_identity(raw: &RawObservation) -> Result<Vec<(&'static str, String)>, PipelineError> {
+    const PREFIX: &str = "x509:identity:v1:";
+    const MAPPING: [(&str, &str); 3] = [
+        ("x509:identity:v1:subject-dn", "certificate:identity-subject-dn:v1"),
+        ("x509:identity:v1:issuer-dn", "certificate:identity-issuer-dn:v1"),
+        ("x509:identity:v1:issuer-serial", "certificate:identity-issuer-serial:v1"),
+    ];
+    let mut output = Vec::new();
+    for (key, value) in raw.attributes.iter().filter(|(k, _)| k.starts_with(PREFIX)) {
+        let (_, property) = MAPPING.iter().find(|(k, _)| *k == key)
+            .ok_or(PipelineError::InvalidOutcome)?;
+        if !value.starts_with("hmac-sha256:v1:") || value.len() != 79
+            || !value.as_bytes()[15..].iter().all(u8::is_ascii_hexdigit)
+            || value.as_bytes()[15..].iter().any(u8::is_ascii_uppercase)
+        {
+            return Err(PipelineError::InvalidOutcome);
+        }
+        output.push((*property, value.clone()));
+    }
+    if raw.attributes.contains_key("x509:identity:v1:issuer-serial")
+        && !raw.attributes.contains_key("x509:identity:v1:issuer-dn") {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    Ok(output)
+}
+
 fn map_fact(
     builder: &mut InventoryBuilder,
     raw: &RawObservation,
@@ -521,6 +549,9 @@ fn map_fact(
             // Profile observations enrich the SAME canonical certificate
             // asset, retaining its SHA-256 identity and distinct evidence.
             for (property, value) in validated_certificate_profile(raw)? {
+                observe(builder, raw, &asset, evidence, property, value)?;
+            }
+            for (property, value) in validated_certificate_identity(raw)? {
                 observe(builder, raw, &asset, evidence, property, value)?;
             }
             asset
