@@ -139,6 +139,16 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.inspect()
 
+    def test_reject_unapproved_files_and_directory_shadow(self):
+        self.make_archive(add={"src/hidden.bin": b"unreviewed bytes"})
+        with self.assertRaises(ValueError):
+            self.inspect()
+        # A malicious TAR entry with a path under a declared regular file
+        # must never be accepted as a nested member.
+        self.make_archive(add={"src/lib.rs/surprise.txt": b"content"})
+        with self.assertRaises(ValueError):
+            self.inspect()
+
     def test_reject_wrong_revision_and_locked_dependency(self):
         self.make_archive()
         with self.assertRaises(ValueError):
