@@ -294,4 +294,28 @@ mod tests {
         );
         assert_eq!(a.project_der(&[0]), Err(IdentityError::InvalidCertificate));
     }
+    #[test]
+    fn same_subject_and_issuer_correlate_without_certificate_trust() {
+        let issuer = Certificate::from_pem(RSA).unwrap();
+        let mut child = issuer.clone();
+        // An in-memory TBS edit is deliberately *not* re-signed. Matching
+        // candidate identities never implies signature/path validation.
+        child.tbs_certificate.issuer = issuer.tbs_certificate.subject.clone();
+        let key = authority("tenant-a", "v1", 19);
+        let issuer_hint = key.project_der(&issuer.to_der().unwrap()).unwrap();
+        let child_hint = key.project_der(&child.to_der().unwrap()).unwrap();
+        assert_eq!(issuer_hint.subject_dn, child_hint.issuer_dn);
+    }
+
+    #[test]
+    fn equal_keys_must_not_correlate_across_scopes() {
+        let cert = Certificate::from_pem(RSA).unwrap().to_der().unwrap();
+        let a = authority("tenant-a", "v1", 19).project_der(&cert).unwrap();
+        let other = CertificateIdentityAuthority::new(
+            CollectionScopeId::new("other-scope").unwrap(),
+            "tenant-a", "v1", [19;32]
+        ).unwrap().project_der(&cert).unwrap();
+        assert_ne!(a, other);
+    }
+
 }
