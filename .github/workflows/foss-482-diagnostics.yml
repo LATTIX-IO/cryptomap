@@ -1,0 +1,24 @@
+name: B5.5 branch diagnostics
+on:
+  push:
+    branches:
+      - feature/foss-482-b55-keyed-x509-identity
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.2
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Print exact compiler-formatted and Cargo.lock corrections
+        shell: bash
+        run: |
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features || true
+          git diff -- Cargo.lock crates/cryptomap/src crates/cryptomap/tests
+          echo "DIAGNOSTICS_COMPLETE"
