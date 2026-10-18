@@ -144,6 +144,35 @@ impl CertificateIdentityAuthority {
         value
     }
 
+    fn authenticated_token(&self, domain: &[u8], fields: &[&[u8]], token: &str) -> bool {
+        let Some(hex) = token.strip_prefix("hmac-sha256:v1:") else {
+            return false;
+        };
+        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+            return false;
+        }
+        let mut digest = Zeroizing::new([0u8; 32]);
+        for (i, byte) in digest.iter_mut().enumerate() {
+            let Ok(part) = u8::from_str_radix(&hex[i * 2..(i + 1) * 2], 16) else {
+                return false;
+            };
+            *byte = part;
+        }
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.key)
+            .unwrap_or_else(|_| unreachable!("fixed HMAC-SHA256 key size"));
+        for item in [
+            b"cryptomap:x509-identity:v1".as_slice(),
+            self.tenant.as_bytes(),
+            self.version.as_bytes(),
+            self.scope.as_str().as_bytes(),
+            domain,
+        ].into_iter().chain(fields.iter().copied()) {
+            mac.update(&(item.len() as u64).to_be_bytes());
+            mac.update(item);
+        }
+        mac.verify_slice(&*digest).is_ok()
+    }
+
     fn record_receipt(&self, record: &RawObservation) -> Result<String, IdentityError> {
         if !matches!(record.fact, RawFactKind::Certificate { .. }) {
             return Err(IdentityError::InvalidCertificate);
