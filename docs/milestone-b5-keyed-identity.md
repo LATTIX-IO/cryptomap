@@ -10,10 +10,11 @@ are never accepted through untrusted `CollectionRequest.options`. The
 authority cannot be debug-printed or serialized and its owned key is zeroized
 at drop. Callers are responsible for securing their original key buffers.
 
-Each accepted record receives up to three `x509:identity:v1:*` opaque
+Each supported and authenticated record receives up to three `x509:identity:v1:*` opaque
 HMAC-SHA256 attributes. The same canonical DER DN receives the same hint
 whether it is observed as a subject or issuer, and serial pseudonyms include
-the issuer's DER DN. Domains and length-prefixed input components separate
+the issuer's normalized DN comparison key. Domains, exact collection scope
+and length-prefixed input components separate
 DNs from issuer-bound serials. Existing certificate fingerprints, AssetIds,
 event identities, public attributes, and direct evidence remain unchanged.
 
@@ -23,13 +24,36 @@ signature verification, or trust. Anyone with the tenant key can test guesses.
 Different keys or versions must not be compared, and loss/rotation does not
 provide automatic alias migration.
 
-**Deliberately conservative equivalence:** only exact canonical DER DN
-equivalence is emitted, not RFC4514 textual spelling equivalence, Unicode
-normalization, case folding, cross-string-type matching or semantic RDN
-normalization. These are potential false negatives, not grounds to guess
-matches. No SAN, SKI, AKI, DN plaintext, raw serial, SPKI material, or secret
-is intentionally projected. Empty DNs remain Unknown. B5.6 must distinguish
-candidate relationships from `IssuedBy`/`ValidatedBy` edges.
+**Deliberately bounded equivalence:** the supported subset of RFC 5280
+section 7.1 normalizes known ASCII DirectoryString attributes using either
+PrintableString or UTF8String encoding, ASCII case folding and insignificant
+space folding. It preserves RDN sequence and SET boundaries and sorts only
+within a multivalued RDN. Unknown OIDs, unsupported IA5/BMP/Teletex/
+Universal encodings, non-ASCII Unicode requiring full LDAP StringPrep,
+duplicate normalized attributes, overbudget/ambiguous values and empty DNs
+remain Unknown. This avoids incorrectly *creating* issuer matches. It is
+not a complete RFC 4518 Unicode comparison implementation. No SAN, SKI,
+AKI, plaintext DN, raw serial, SPKI material, or secret is projected.
+
+**Cryptographic provenance:** every record that contains identity hints has
+an `x509:identity:v1:namespace` tag and an HMAC receipt signed over the
+complete raw record, including scope-qualified key context, run, source,
+fingerprint and attributes. `pipeline::normalize` rejects any identity
+attributes: the host must supply the original in-process capability to
+`pipeline::normalize_with_identity` or call
+`orchestration::collect_normalized_with_identity`. The normalizer recomputes
+the receipt before emitting canonical observations. Receipt values are
+verification metadata, not candidate graph edges; the key namespace is
+preserved for B5.6 correlation fencing. Replaying a token without its exact
+authenticated event is rejected. A trusted host must not distribute keys
+to third-party collectors; in-process authority is not an OS sandbox.
+
+**Memory limitation:** `Zeroizing` protects the authority-owned key
+on drop and bounded plaintext comparison buffers after use. Pinned
+RustCrypto HMAC 0.12.1 itself does not guarantee zeroization of all
+transient internal SHA-256/HMAC working state; process-memory compromise
+remains outside this in-process memory erasure guarantee. This finding
+requires independent security-risk disposition before merge.
 
 **Collection and release:** opt-in always requires existing exact file or
 store grants; all current byte, count, cancellation and coverage rules remain.
