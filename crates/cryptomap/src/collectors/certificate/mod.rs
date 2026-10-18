@@ -143,9 +143,14 @@ fn public_key_profile(
     match oid {
         "1.2.840.113549.1.1.1" => (Some("rsa"), None, None),
         "1.2.840.10045.2.1" => {
+            // A valid ASN.1 OID can be longer than our public metadata
+            // field ceiling once expanded into dotted-decimal text. Drop
+            // that optional curve hint rather than poisoning normalization
+            // and losing unrelated, already-authorized observations.
             let curve = params
                 .and_then(|p| p.decode_as::<ObjectIdentifier>().ok())
-                .map(|oid| oid.to_string());
+                .map(|oid| oid.to_string())
+                .filter(|text| text.len() <= 128);
             let bits = match curve.as_deref() {
                 Some("1.2.840.10045.3.1.7") => Some(256), // secp256r1
                 Some("1.3.132.0.34") => Some(384),        // secp384r1

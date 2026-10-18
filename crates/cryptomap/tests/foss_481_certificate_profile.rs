@@ -533,3 +533,74 @@ fn ec_named_curve_oid_must_parse_canonically_before_normalization() {
         );
     }
 }
+
+#[test]
+fn oversized_canonical_ec_curve_oid_remains_unknown_without_poisoning_inventory() {
+    // An ASN.1 OID may fit its DER encoding ceiling while the corresponding
+    // dotted-decimal text exceeds the 128-character metadata field ceiling.
+    // Do not allow an optional algorithm hint to invalidate an entire run.
+    let text = format!("1.2.{}", vec!["126"; 34].join("."));
+    assert!(text.len() > 128);
+    let oid: ObjectIdentifier = text.parse().unwrap();
+    let mut cert = fixture(EC_PEM);
+    cert.tbs_certificate
+        .subject_public_key_info
+        .algorithm
+        .parameters = Some(Any::from(oid));
+    let public_der = der(&cert);
+    let parsed = parse_der(&public_der).unwrap();
+    assert_eq!(parsed.profile().public_key_family, Some("ec"));
+    assert_eq!(parsed.profile().named_curve_oid, None);
+    assert_eq!(parsed.profile().public_key_bits, None);
+
+    let (_sandbox, scope) = scope_and_input(EC_PEM);
+    let backend = InMemoryStore(public_der);
+    let collector = CertificateStoreCollector::new(&scope, &backend, AT);
+    let descriptor = collector.descriptor();
+    let registry = Registry::builtin();
+    let identity = IdentityContext::new("b54-tenant").unwrap();
+    let run = CollectionRunId::new("b54-run").unwrap();
+    let sources = [RequestedSource {
+        kind: RawSourceKind::CertificateStore,
+        item: "b54:store".into(),
+    }];
+    let snapshot = collect_normalized(
+        ScopedInvocation {
+            collector: &collector,
+            input: PipelineInput {
+                scope: &scope,
+                identity: &identity,
+                registry: &registry,
+                expected_descriptor: &descriptor,
+                expected_run: &run,
+                sources: &sources,
+                raw_limits: RawLimits {
+                    observations: 4,
+                    ..RawLimits::default()
+                },
+                inventory_limits: InventoryLimits::default(),
+                started_at: AT,
+                ended_at: AT,
+            },
+        },
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot
+            .query_assets(|asset| matches!(asset.kind, AssetKind::Certificate { .. }))
+            .count(),
+        1
+    );
+    assert!(
+        snapshot.observations.values().any(|observation| {
+            observation.property == "certificate:public-key-family" && observation.value == "ec"
+        })
+    );
+    assert!(
+        !snapshot.observations.values().any(|observation| {
+            observation.property == "certificate:named-curve-oid"
+                || observation.property == "certificate:public-key-bits"
+        })
+    );
+}

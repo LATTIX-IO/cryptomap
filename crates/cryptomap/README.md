@@ -93,9 +93,9 @@ cargo test --locked -p cryptomap --features certificate-store-grants --test foss
 
 See [B5.2 typed grant authority, budgets and failure semantics](../../docs/milestone-b5-certificate-store-grants.md). Actual read-only Windows store collection is planned in FOSS-468, not claimed in B5.2.
 
-## Opt-in read-only Windows certificate-store adapter (B5.3 draft)
+## Opt-in read-only Windows certificate-store adapter (B5.3)
 
-The separate `cryptomap-windows-store` workspace crate connects the exact B5.2 typed store-grant contract to the Windows CryptoAPI **read-only local registry** store for CurrentUser/My or separately approved LocalMachine/My. It supplies public DER certificates to the same canonical B5.1 decoder and emits typed coverage; no keys, subjects, issuer names, serials, or raw DER are included in normal reports. It remains in [draft PR #67](https://github.com/LATTIX-IO/cryptomap/pull/67), not a published artifact or completed release.
+The separate `cryptomap-windows-store` workspace crate connects the exact B5.2 typed store-grant contract to the Windows CryptoAPI **read-only local registry** store for CurrentUser/My or separately approved LocalMachine/My. It supplies public DER certificates to the same canonical B5.1 decoder and emits typed coverage; no keys, subjects, issuer names, serials, or raw DER are included in normal reports. It merged in [PR #67](https://github.com/LATTIX-IO/cryptomap/pull/67). The adapter remains unpublished and its independently attested distribution package is not yet qualified (FOSS-486).
 
 The Linux/macOS provider reports `Unsupported` and does not pretend a store was inspected. The Windows CI suite uses only ephemeral **in-memory** stores. See [B5.3 trust boundaries, tests, and optional manual read-only UAT](../../docs/milestone-b5-windows-store.md).
 

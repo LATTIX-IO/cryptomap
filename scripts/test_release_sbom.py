@@ -164,6 +164,37 @@ class SoftwareSbomTests(unittest.TestCase):
             self.check()
 
 
+    def test_direct_const_oid_requires_exact_lock_and_spdx_coverage(self):
+        """The reviewed ASN.1 parser is a pinned direct release dependency."""
+        self.assertIn("const-oid", EXPECTED_DIRECT)
+        self.write(sample())
+        self.assertEqual(self.check()["direct_dependency_versions"]["const-oid"], "1.0.0")
+
+        doc = sample()
+        doc["packages"] = [
+            package for package in doc["packages"]
+            if package["name"] != "const-oid"
+        ]
+        self.write(doc)
+        with self.assertRaisesRegex(ValueError, "missing locked"):
+            self.check()
+
+        doc = sample()
+        next(p for p in doc["packages"] if p["name"] == "const-oid")[
+            "versionInfo"
+        ] = "9.9.9"
+        self.write(doc)
+        with self.assertRaisesRegex(ValueError, "differs from Cargo.lock"):
+            self.check()
+
+        self.write(sample())
+        self.lock.write_text(
+            lock_fixture().replace('"const-oid"', '"unreviewed-oid"', 1),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "direct dependency contract"):
+            self.check()
+
     def test_optional_parser_packages_require_exact_locked_spdx_versions(self):
         """Optional parser crates still require release SBOM evidence."""
         for optional in ("syn", "proc-macro2", "toml", "toml_edit", "x509-cert"):
