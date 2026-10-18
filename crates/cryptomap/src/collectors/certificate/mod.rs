@@ -38,6 +38,8 @@ pub struct PublicCertificate {
     signature_oid: String,
     public_key_oid: String,
     profile: PublicCertificateProfile,
+    #[cfg(feature = "certificate-identity")]
+    identity_hints: Option<crate::certificate_identity::CertificateIdentityHints>,
 }
 
 /// Strictly allowlisted, non-identifying X.509 v1 metadata projection.
@@ -186,6 +188,12 @@ impl PublicCertificate {
         &self.profile
     }
 
+    /// Opaque opt-in identity hints, never a verified issuer/trust statement.
+    #[cfg(feature = "certificate-identity")]
+    pub fn identity_hints(&self) -> Option<&crate::certificate_identity::CertificateIdentityHints> {
+        self.identity_hints.as_ref()
+    }
+
     /// Project into the SDK's existing nonsecret typed certificate metadata.
     ///
     /// This does not change AssetKind, certificate identity or policy state.
@@ -265,7 +273,21 @@ pub fn parse_der(der: &[u8]) -> Result<PublicCertificate, CollectorDiagnosticCod
         signature_oid,
         public_key_oid,
         profile,
+        #[cfg(feature = "certificate-identity")]
+        identity_hints: None,
     })
+}
+
+/// Parse the same canonical DER while deriving tenant-keyed identity hints.
+#[cfg(feature = "certificate-identity")]
+pub fn parse_der_with_identity(
+    der: &[u8],
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+) -> Result<PublicCertificate, CollectorDiagnosticCode> {
+    let mut cert = parse_der(der)?;
+    cert.identity_hints = Some(authority.project_der(der)
+        .map_err(|_| CollectorDiagnosticCode::MalformedSource)?);
+    Ok(cert)
 }
 
 fn trim_ascii(bytes: &[u8]) -> &[u8] {
@@ -283,6 +305,8 @@ fn trim_ascii(bytes: &[u8]) -> &[u8] {
 fn parse_public_certificates(
     source: &[u8],
     extension: &str,
+    #[cfg(feature = "certificate-identity")]
+    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
 ) -> Result<(Vec<PublicCertificate>, &'static str), CollectorDiagnosticCode> {
     // PEM block headers are inspected BEFORE decoding any base64. A private
     // key, CSR, encrypted key or unknown PEM label is never parsed or emitted.
@@ -352,6 +376,12 @@ fn parse_public_certificates(
             if label != "CERTIFICATE" {
                 return Err(CollectorDiagnosticCode::MalformedSource);
             }
+            #[cfg(feature = "certificate-identity")]
+            let certificate = match authority {
+                Some(a) => parse_der_with_identity(&der, a)?,
+                None => parse_der(&der)?,
+            };
+            #[cfg(not(feature = "certificate-identity"))]
             let certificate = parse_der(&der)?;
             if !seen.insert(certificate.fingerprint.clone()) {
                 return Err(CollectorDiagnosticCode::MalformedSource);
@@ -361,6 +391,12 @@ fn parse_public_certificates(
         }
         Ok((certificates, "pem"))
     } else {
+        #[cfg(feature = "certificate-identity")]
+        let certificate = match authority {
+            Some(a) => parse_der_with_identity(source, a)?,
+            None => parse_der(source)?,
+        };
+        #[cfg(not(feature = "certificate-identity"))]
         let certificate = parse_der(source)?;
         Ok((vec![certificate], "der"))
     }
@@ -396,6 +432,8 @@ fn report(
 pub struct CertificateFileCollector<'a> {
     scope: &'a CollectionScope,
     observed_at: String,
+    #[cfg(feature = "certificate-identity")]
+    identity: Option<&'a crate::certificate_identity::CertificateIdentityAuthority>,
 }
 impl<'a> CertificateFileCollector<'a> {
     /// Bind to one exact previously authorized source scope, without I/O.
@@ -403,7 +441,17 @@ impl<'a> CertificateFileCollector<'a> {
         Self {
             scope,
             observed_at: observed_at.into(),
+            #[cfg(feature = "certificate-identity")]
+            identity: None,
         }
+    }
+
+    /// Explicitly opt into host-owned, exact-scope keyed identities.
+    #[cfg(feature = "certificate-identity")]
+    pub fn with_identity(mut self, authority: &'a crate::certificate_identity::CertificateIdentityAuthority) -> Result<Self, crate::certificate_identity::IdentityError> {
+        authority.check_scope(self.scope.id())?;
+        self.identity = Some(authority);
+        Ok(self)
     }
 }
 impl Collector for CertificateFileCollector<'_> {
@@ -434,6 +482,10 @@ impl Collector for CertificateFileCollector<'_> {
         self.scope
             .validate_request(request)
             .map_err(|_| InventoryError::InvalidMetadata)?;
+        #[cfg(feature = "certificate-identity")]
+        if let Some(a) = self.identity {
+            a.check_scope(self.scope.id()).map_err(|_| InventoryError::InvalidMetadata)?;
+        }
         let descriptor = self.descriptor();
         // RawLimits.observations applies to the entire requested collection,
         // not independently to each file. Preflight each file's observations
@@ -490,7 +542,10 @@ impl Collector for CertificateFileCollector<'_> {
                     continue;
                 }
             };
-            let (certificates, encoding) = match parse_public_certificates(&bytes, extension) {
+            let (certificates, encoding) = match parse_public_certificates(&bytes, extension,
+                #[cfg(feature = "certificate-identity")]
+                self.identity,
+            ) {
                 Ok(certificates) => certificates,
                 Err(code) => {
                     report(sink, &source.item, code, CoverageState::Failed)?;
@@ -551,6 +606,10 @@ impl Collector for CertificateFileCollector<'_> {
                     source_sha256: Some(source_sha256.clone()),
                     attributes: {
                         let mut attributes = cert.profile.evidence_attributes();
+                        #[cfg(feature = "certificate-identity")]
+                        if let Some(hints) = cert.identity_hints() {
+                            attributes.extend(hints.attributes());
+                        }
                         attributes.insert("x509:source-encoding".into(), encoding.into());
                         attributes
                     },
