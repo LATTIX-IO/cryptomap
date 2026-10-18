@@ -11,7 +11,7 @@ authority cannot be debug-printed or serialized and its owned key is zeroized
 at drop. Callers are responsible for securing their original key buffers.
 
 Each supported and authenticated record receives up to three `x509:identity:v1:*` opaque
-HMAC-SHA256 attributes. The same canonical DER DN receives the same hint
+HMAC-SHA256 attributes. The same supported, unambiguous canonicalized DN receives the same hint
 whether it is observed as a subject or issuer, and serial pseudonyms include
 the issuer's normalized DN comparison key. Domains, exact collection scope
 and length-prefixed input components separate
@@ -49,7 +49,8 @@ authenticated event is rejected. A trusted host must not distribute keys
 to third-party collectors; in-process authority is not an OS sandbox.
 
 **Memory limitation:** `Zeroizing` protects the authority-owned key
-on drop and bounded plaintext comparison buffers after use. Pinned
+on drop and each bounded per-attribute, RDN-group and final plaintext
+comparison buffer throughout DN normalization, including early error exits. Pinned
 RustCrypto HMAC 0.12.1 itself does not guarantee zeroization of all
 transient internal SHA-256/HMAC working state; process-memory compromise
 remains outside this in-process memory erasure guarantee. This finding

@@ -1,8 +1,8 @@
 //! B5.5 opt-in pseudonymous X.509 identity hints; never a trust decision.
 //!
-//! Only exact canonical DER Distinguished Name equality is asserted. Alternate
-//! string encodings, Unicode normalization, RFC4514 spellings and case-folding
-//! are deliberately NOT conflated. B5.6 may use these as candidate hints only.
+//! Only the documented bounded ASCII DN normalization subset is supported.
+//! Ambiguous/unsupported ASN.1 encodings remain Unknown; Unicode LDAP
+//! StringPrep is not implemented. B5.6 may use hints as candidates only.
 use crate::collectors::certificate::MAX_CERT_DER_BYTES;
 use crate::{
     certificate_name::canonical_name,
@@ -275,8 +275,8 @@ impl CertificateIdentityAuthority {
                 .to_der()
                 .map_err(|_| IdentityError::InvalidCertificate)?,
         );
-        let subject_name = canonical_name(&subject).map(Zeroizing::new);
-        let issuer_name = canonical_name(&issuer).map(Zeroizing::new);
+        let subject_name = canonical_name(&subject);
+        let issuer_name = canonical_name(&issuer);
         let subject_dn = subject_name
             .as_ref()
             .map(|name| self.mac(b"dn", &[name.as_slice()]));

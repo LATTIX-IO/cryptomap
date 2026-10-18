@@ -6,6 +6,7 @@
 //! This is a deliberately supported SUBSET of RFC 5280 7.1 / RFC 4518,
 //! not an implementation of full Unicode LDAP StringPrep.
 use x509_cert::der::{Decode, asn1::ObjectIdentifier};
+use zeroize::Zeroizing;
 
 const MAX_RDN: usize = 64;
 const MAX_ATTRIBUTE_PER_RDN: usize = 16;
@@ -77,7 +78,7 @@ fn directory_oid(oid: &str) -> bool {
             | "2.5.4.65"
     )
 }
-fn canonical_ascii_value(value: Tlv<'_>) -> Option<Vec<u8>> {
+fn canonical_ascii_value(value: Tlv<'_>) -> Option<Zeroizing<Vec<u8>>> {
     if !matches!(value.tag, 0x13 | 0x0c)
         || value.value.is_empty()
         || value.value.len() > MAX_ATTR_BYTES
@@ -128,7 +129,7 @@ fn canonical_ascii_value(value: Tlv<'_>) -> Option<Vec<u8>> {
     if normalized.is_empty() {
         return None;
     }
-    Some(normalized)
+    Some(Zeroizing::new(normalized))
 }
 
 /// Build a bounded, role-neutral, unambiguous supported comparison key.
@@ -137,7 +138,7 @@ fn canonical_ascii_value(value: Tlv<'_>) -> Option<Vec<u8>> {
 /// Preserves the RDN sequence and each RDN's SET boundary, sorting
 /// normalized attribute pairs only *within* an RDN. No plaintext leaves
 /// the caller and the returned temporary must never be logged/exported.
-pub(crate) fn canonical_name(der: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn canonical_name(der: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     if der.is_empty() || der.len() > MAX_DN_BYTES {
         return None;
     }
@@ -147,7 +148,7 @@ pub(crate) fn canonical_name(der: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let mut rdns = sequence.value;
-    let mut key = Vec::new();
+    let mut key = Zeroizing::new(Vec::new());
     key.extend_from_slice(b"cryptomap:dn-ascii-comparison:v1");
     let mut count = 0;
     while !rdns.is_empty() {
@@ -183,17 +184,20 @@ pub(crate) fn canonical_name(der: &[u8]) -> Option<Vec<u8>> {
                 return None;
             }
             let normalized_value = canonical_ascii_value(value)?;
-            let mut item = Vec::new();
+            let mut item = Zeroizing::new(Vec::new());
             len_prefix(&mut item, oid.as_bytes())?;
             len_prefix(&mut item, &normalized_value)?;
             normalized.push(item);
         }
-        normalized.sort_unstable();
-        if normalized.windows(2).any(|items| items[0] == items[1]) {
+        normalized.sort_unstable_by(|a, b| a.as_slice().cmp(b.as_slice()));
+        if normalized
+            .windows(2)
+            .any(|items| items[0].as_slice() == items[1].as_slice())
+        {
             // A DER-distinct but semantically duplicated value is ambiguous.
             return None;
         }
-        let mut group = Vec::new();
+        let mut group = Zeroizing::new(Vec::new());
         for item in normalized {
             len_prefix(&mut group, &item)?;
         }
@@ -209,6 +213,9 @@ pub(crate) fn canonical_name(der: &[u8]) -> Option<Vec<u8>> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    fn canonical_bytes(der: &[u8]) -> Option<Vec<u8>> {
+        canonical_name(der).map(|value| value.to_vec())
+    }
     // CN=AbC, DER PrintableString versus UTF8String.
     const PRINTABLE: &[u8] = &[
         0x30, 0x0e, 0x31, 0x0c, 0x30, 0x0a, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x03, b'A', b'b',
@@ -220,30 +227,70 @@ mod tests {
     ];
     #[test]
     fn cross_tag_ascii_casefold_and_structure() {
-        assert_eq!(canonical_name(PRINTABLE), canonical_name(UTF8));
-        assert!(canonical_name(PRINTABLE).is_some());
+        assert_eq!(canonical_bytes(PRINTABLE), canonical_bytes(UTF8));
+        assert!(canonical_bytes(PRINTABLE).is_some());
         let mut changed = PRINTABLE.to_vec();
         *changed.last_mut().unwrap() = b'd';
-        assert_ne!(canonical_name(PRINTABLE), canonical_name(&changed));
+        assert_ne!(canonical_bytes(PRINTABLE), canonical_bytes(&changed));
     }
     #[test]
     fn reject_unsupported_unicode_and_malformed_der() {
         let mut unicode = UTF8.to_vec();
         unicode[13] = 0xc3;
         unicode[14] = 0xa9;
-        assert_eq!(canonical_name(&unicode), None);
-        assert_eq!(canonical_name(&[0x30, 0x00]), None);
-        assert_eq!(canonical_name(&[0x30, 0x80]), None);
-        assert_eq!(canonical_name(&[0x30, 0x01, 0xff]), None);
-        assert_eq!(canonical_name(&vec![0; MAX_DN_BYTES + 1]), None);
+        assert_eq!(canonical_bytes(&unicode), None);
+        assert_eq!(canonical_bytes(&[0x30, 0x00]), None);
+        assert_eq!(canonical_bytes(&[0x30, 0x80]), None);
+        assert_eq!(canonical_bytes(&[0x30, 0x01, 0xff]), None);
+        assert_eq!(canonical_bytes(&vec![0; MAX_DN_BYTES + 1]), None);
     }
     #[test]
     fn rdn_sequence_boundaries_do_not_collapse() {
-        let a = canonical_name(PRINTABLE).unwrap();
+        let a = canonical_bytes(PRINTABLE).unwrap();
         let mut two = vec![0x30, 0x1c];
         two.extend_from_slice(&PRINTABLE[2..]);
         two.extend_from_slice(&PRINTABLE[2..]);
-        let b = canonical_name(&two).unwrap();
+        let b = canonical_bytes(&two).unwrap();
         assert_ne!(a, b);
     }
+    #[test]
+    fn whitespace_ascii_normalization_and_unsupported_control() {
+        fn name(value: &[u8], tag: u8) -> Vec<u8> {
+            let mut inner = vec![0x06, 0x03, 0x55, 0x04, 0x03, tag, value.len() as u8];
+            inner.extend_from_slice(value);
+            let mut name = vec![
+                0x30, (inner.len() + 4) as u8,
+                0x31, (inner.len() + 2) as u8,
+                0x30, inner.len() as u8,
+            ];
+            name.extend_from_slice(&inner);
+            name
+        }
+        let padded = name(b"  Ab   C  ", 0x13);
+        let compact = name(b"ab c", 0x0c);
+        assert_eq!(canonical_bytes(&padded), canonical_bytes(&compact));
+        assert!(canonical_bytes(&name(b"ab\tc", 0x0c)).is_none());
+    }
+
+    #[test]
+    fn multivalued_rdn_is_order_independent_but_structure_sensitive() {
+        // CN=AbC; O=Acme, each deliberately constrained to a small ASCII
+        // DirectoryString; permutations within a SET must match.
+        let cn = [0x30, 0x0a, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x03, b'A', b'b', b'C'];
+        let org = [0x30, 0x0b, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x04, b'A', b'c', b'm', b'e'];
+        let mut first = vec![0x30, 0x1b, 0x31, 0x19];
+        first.extend_from_slice(&cn);
+        first.extend_from_slice(&org);
+        let mut swapped = vec![0x30, 0x1b, 0x31, 0x19];
+        swapped.extend_from_slice(&org);
+        swapped.extend_from_slice(&cn);
+        assert_eq!(canonical_bytes(&first), canonical_bytes(&swapped));
+        assert!(canonical_bytes(&first).is_some());
+        let mut separated = vec![0x30, 0x1d, 0x31, 0x0c];
+        separated.extend_from_slice(&cn);
+        separated.extend_from_slice(&[0x31, 0x0d]);
+        separated.extend_from_slice(&org);
+        assert_ne!(canonical_bytes(&first), canonical_bytes(&separated));
+    }
+
 }
