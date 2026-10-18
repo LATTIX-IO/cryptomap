@@ -749,6 +749,30 @@ pub fn normalize(
     input: PipelineInput<'_>,
     outcome: CollectionOutcome,
 ) -> Result<InventorySnapshot, PipelineError> {
+    normalize_inner(input, outcome,
+        #[cfg(feature = "certificate-identity")]
+        None,
+    )
+}
+
+/// Opt-in host-authenticated pseudonym promotion into canonical inventory.
+/// The same trusted authority must have sealed the original collector records.
+#[cfg(feature = "certificate-identity")]
+pub fn normalize_with_identity(
+    input: PipelineInput<'_>,
+    outcome: CollectionOutcome,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+) -> Result<InventorySnapshot, PipelineError> {
+    authority.check_scope(input.scope.id()).map_err(|_| PipelineError::InvalidOutcome)?;
+    normalize_inner(input, outcome, Some(authority))
+}
+
+fn normalize_inner(
+    input: PipelineInput<'_>,
+    outcome: CollectionOutcome,
+    #[cfg(feature = "certificate-identity")]
+    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
+) -> Result<InventorySnapshot, PipelineError> {
     if input.identity.scope != input.scope.id().as_str()
         || outcome.run != *input.expected_run
         || outcome.descriptor != *input.expected_descriptor
