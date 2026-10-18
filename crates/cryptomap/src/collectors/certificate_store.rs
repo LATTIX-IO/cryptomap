@@ -81,6 +81,8 @@ pub struct CertificateStoreCollector<'a, B: PublicCertificateStoreBackend + ?Siz
     backend: &'a B,
     observed_at: String,
     deadline: Option<Instant>,
+    #[cfg(feature = "certificate-identity")]
+    identity: Option<&'a crate::certificate_identity::CertificateIdentityAuthority>,
 }
 impl<'a, B: PublicCertificateStoreBackend + ?Sized> CertificateStoreCollector<'a, B> {
     /// Pin the exact host authorization object and an independently chosen provider.
@@ -90,6 +92,8 @@ impl<'a, B: PublicCertificateStoreBackend + ?Sized> CertificateStoreCollector<'a
             backend,
             observed_at: observed_at.into(),
             deadline: None,
+            #[cfg(feature = "certificate-identity")]
+            identity: None,
         }
     }
 
@@ -97,6 +101,14 @@ impl<'a, B: PublicCertificateStoreBackend + ?Sized> CertificateStoreCollector<'a
     pub fn with_deadline(mut self, deadline: Instant) -> Self {
         self.deadline = Some(deadline);
         self
+    }
+
+    /// Host-authorized keyed candidate identities; never a trust verdict.
+    #[cfg(feature = "certificate-identity")]
+    pub fn with_identity(mut self, authority: &'a crate::certificate_identity::CertificateIdentityAuthority) -> Result<Self, crate::certificate_identity::IdentityError> {
+        authority.check_scope(self.scope.id())?;
+        self.identity = Some(authority);
+        Ok(self)
     }
 
     fn interrupted(&self, cancel: &CancellationToken) -> Option<StoreProviderError> {
@@ -161,6 +173,10 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
         self.scope
             .validate_request(request)
             .map_err(|_| InventoryError::InvalidMetadata)?;
+        #[cfg(feature = "certificate-identity")]
+        if let Some(a) = self.identity {
+            a.check_scope(self.scope.id()).map_err(|_| InventoryError::InvalidMetadata)?;
+        }
         let descriptor = self.descriptor();
         let mut total_emitted = 0_usize;
         for source in &request.sources {
@@ -203,7 +219,14 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     if copied_bytes > max_bytes {
                         return Err(StoreProviderError::ResourceLimit);
                     }
-                    let cert = parse_der(bytes).map_err(|code| match code {
+                    #[cfg(feature = "certificate-identity")]
+                    let parsed = match self.identity {
+                        Some(a) => crate::collectors::certificate::parse_der_with_identity(bytes, a),
+                        None => parse_der(bytes),
+                    };
+                    #[cfg(not(feature = "certificate-identity"))]
+                    let parsed = parse_der(bytes);
+                    let cert = parsed.map_err(|code| match code {
                         CollectorDiagnosticCode::ResourceLimit => StoreProviderError::ResourceLimit,
                         _ => StoreProviderError::Malformed,
                     })?;
@@ -263,6 +286,10 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     source_sha256: Some(cert.fingerprint_sha256().to_owned()),
                     attributes: {
                         let mut attributes = cert.profile().evidence_attributes();
+                        #[cfg(feature = "certificate-identity")]
+                        if let Some(hints) = cert.identity_hints() {
+                            attributes.extend(hints.attributes());
+                        }
                         attributes.insert("x509:source-encoding".into(), "der".into());
                         attributes.insert("x509:store-target".into(), target.id().into());
                         attributes
