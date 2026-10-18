@@ -124,7 +124,7 @@ class ExactReleaseGateTests(unittest.TestCase):
             if workflow.endswith("release-plz.yml"):
                 section = section.split("      - name: Registry dry-run of reviewed version", 1)[0]
             with self.subTest(workflow=workflow):
-                self._require_exact_attestation_contract(section)
+                self._require_exact_attestation_contract(section, adapter=workflow.endswith('ci.yml'))
 
                 # Adversarial mutation: all identity dimensions are required,
                 # including BOTH distinct verified predicates.
@@ -137,7 +137,7 @@ class ExactReleaseGateTests(unittest.TestCase):
                 ):
                     self.assertIn(vital, section)
                     with self.assertRaises(AssertionError, msg=f"{workflow}: {vital}"):
-                        self._require_exact_attestation_contract(section.replace(vital, "REMOVED", 1))
+                        self._require_exact_attestation_contract(section.replace(vital, "REMOVED", 1), adapter=workflow.endswith('ci.yml'))
                 # Regressions that keep both command substrings but silently
                 # switch the first/default SLSA verification to SPDX.
                 first = 'command gh attestation verify "${candidates[0]}" "${attestation_scope[@]}"'
@@ -145,14 +145,14 @@ class ExactReleaseGateTests(unittest.TestCase):
                     first + "\n", first + " --predicate-type https://spdx.dev/Document/v2.3\n", 1
                 )
                 with self.assertRaises(AssertionError):
-                    self._require_exact_attestation_contract(poisoned)
+                    self._require_exact_attestation_contract(poisoned, adapter=workflow.endswith('ci.yml'))
                 poisoned_scope = section.replace(
                     '--source-digest "$GITHUB_SHA"',
                     '--source-digest "$GITHUB_SHA" --predicate-type https://spdx.dev/Document/v2.3',
                     1,
                 )
                 with self.assertRaises(AssertionError):
-                    self._require_exact_attestation_contract(poisoned_scope)
+                    self._require_exact_attestation_contract(poisoned_scope, adapter=workflow.endswith('ci.yml'))
                 # A later predicate flag overrides the earlier SPDX flag.
                 # The contract must validate whole continued shell commands.
                 poisoned_second = section.replace(
@@ -162,7 +162,7 @@ class ExactReleaseGateTests(unittest.TestCase):
                     1,
                 )
                 with self.assertRaises(AssertionError):
-                    self._require_exact_attestation_contract(poisoned_second)
+                    self._require_exact_attestation_contract(poisoned_second, adapter=workflow.endswith('ci.yml'))
                 # Repeated selectors must not supersede approved earlier values.
                 for suffix in [
                     '            --source-digest "$OTHER_SHA"\n',
@@ -175,14 +175,14 @@ class ExactReleaseGateTests(unittest.TestCase):
                         1,
                     )
                     with self.assertRaises(AssertionError):
-                        self._require_exact_attestation_contract(mutated)
+                        self._require_exact_attestation_contract(mutated, adapter=workflow.endswith('ci.yml'))
                 mutated = section.replace(
                     '\n          )\n',
                     '\n          )\n          attestation_scope+=(--source-digest "$OTHER_SHA")\n',
                     1,
                 )
                 with self.assertRaises(AssertionError):
-                    self._require_exact_attestation_contract(mutated)
+                    self._require_exact_attestation_contract(mutated, adapter=workflow.endswith('ci.yml'))
                 # Even a function installed *before* scope declaration must
                 # not bypass the vetted GH CLI binary.
                 shadow = section.replace(
@@ -191,7 +191,7 @@ class ExactReleaseGateTests(unittest.TestCase):
                     1,
                 )
                 with self.assertRaises(AssertionError):
-                    self._require_exact_attestation_contract(shadow)
+                    self._require_exact_attestation_contract(shadow, adapter=workflow.endswith('ci.yml'))
                 # Indirect writes cannot be detected by checking only lines
                 # that *begin* with attestation_scope.
                 for injection in [
@@ -205,10 +205,10 @@ class ExactReleaseGateTests(unittest.TestCase):
                         1,
                     )
                     with self.assertRaises(AssertionError, msg=injection):
-                        self._require_exact_attestation_contract(mutated)
+                        self._require_exact_attestation_contract(mutated, adapter=workflow.endswith('ci.yml'))
 
 
-    def _require_exact_attestation_contract(self, step):
+    def _require_exact_attestation_contract(self, step, *, adapter=False):
         """Ensure both predicates use the same exact-host and source identity."""
         required = (
             'attestation_scope=(',
@@ -257,7 +257,7 @@ class ExactReleaseGateTests(unittest.TestCase):
         marker = "          attestation_scope=(\n"
         second = "            --predicate-type https://spdx.dev/Document/v2.3"
         self.assertEqual(step.count(marker), 1)
-        self.assertEqual(step.count(second), 1)
+        self.assertEqual(step.count(second), 2 if adapter else 1)
         start = step.index(marker)
         stop = step.index(second, start) + len(second)
         actual_block = step[start:stop]
@@ -294,10 +294,25 @@ class ExactReleaseGateTests(unittest.TestCase):
         ]
         command = ["command", "gh", "attestation", "verify",
                    "${candidates[0]}", "${attestation_scope[@]}"]
-        self.assertEqual(commands, [
+        expected_commands = [
             command,
             command + ["--predicate-type", "https://spdx.dev/Document/v2.3"],
-        ])
+        ]
+        if adapter:
+            # Preserve the existing exact first two checks, then require BOTH
+            # independently signed/verified predicates for the companion
+            # package, plus a separate signed paired-archive SHA mapping.
+            self.assertIn('          adapters=(adapter-candidate/cryptomap-windows-store-*.crate)', step)
+            self.assertIn('          test "${#adapters[@]}" -eq 1', step)
+            secondary = ["command", "gh", "attestation", "verify",
+                         "${adapters[0]}", "${attestation_scope[@]}"]
+            expected_commands += [
+                secondary,
+                secondary + ["--predicate-type", "https://spdx.dev/Document/v2.3"],
+                ["command", "gh", "attestation", "verify",
+                 "paired/paired-release.json", "${attestation_scope[@]}"],
+            ]
+        self.assertEqual(commands, expected_commands)
         # Parse the effective shell array, not the opaque reference: later
         # duplicate flags could override the approved identities.
         scope = re.search(
