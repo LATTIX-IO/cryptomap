@@ -31,6 +31,13 @@ EXPECTED_FILES = {
     "examples/fixtures/certificate/rsa.pem",
     "examples/fixtures/certificate/ec.pem",
 }
+OPTIONAL_CARGO_FILES = {"Cargo.toml.orig", ".cargo_vcs_info.json"}
+ALLOWED_FILES = EXPECTED_FILES | OPTIONAL_CARGO_FILES
+ALLOWED_DIRS = {
+    "/".join(path.split("/")[:index])
+    for path in ALLOWED_FILES
+    for index in range(1, len(path.split("/")))
+}
 CERT_PREFIX = "examples/fixtures/certificate/"
 BAD_IDENTIFIERS = {"..", ".git", ".ssh", "target", ".env", "__pycache__"}
 COMMIT = re.compile(r"[a-f0-9]{40}")
@@ -87,6 +94,7 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
         raise ValueError("adapter archive name/version mismatch")
     expected_root = f"{ADAPTER}-{version}"
     entries = set()
+    regular_files = set()
     total = count = 0
     manifest = None
     with archive.open("rb") as raw, gzip.GzipFile(fileobj=raw) as unzip:
@@ -104,12 +112,22 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
                         or member.issym() or member.islnk()):
                     raise ValueError("unsafe adapter archive path/type")
                 rel = "/".join(path.parts[1:])
-                if rel in entries:
-                    raise ValueError("duplicate archive entry")
+                if rel in entries or any(
+                    "/".join(path.parts[1:position]) in regular_files
+                    for position in range(2, len(path.parts))
+                ):
+                    raise ValueError("duplicate or overlapping adapter archive entry")
+                if member.isfile() and rel not in ALLOWED_FILES:
+                    raise ValueError("unapproved adapter file")
+                if member.isdir() and rel not in ALLOWED_DIRS:
+                    raise ValueError("unapproved adapter archive directory")
+                if member.isfile() and any(prior.startswith(rel + "/") for prior in entries):
+                    raise ValueError("adapter file shadows directory")
                 entries.add(rel)
                 if member.size > MAX_ARCHIVE:
                     raise ValueError("oversized adapter member")
                 if member.isfile():
+                    regular_files.add(rel)
                     total += member.size
                     if total > MAX_ARCHIVE:
                         raise ValueError("expanded adapter archive ceiling exceeded")
@@ -138,7 +156,7 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     if count == 0:
         raise ValueError("empty adapter archive")
     audit_physical_tar_layout(archive, count)
-    if not EXPECTED_FILES <= entries or manifest is None:
+    if not EXPECTED_FILES <= regular_files or manifest is None:
         raise ValueError("adapter archive missing mandatory files")
     pkg = manifest.get("package", {})
     if (pkg.get("name") != ADAPTER or pkg.get("version") != version
