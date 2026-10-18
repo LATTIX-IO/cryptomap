@@ -921,6 +921,8 @@ fn normalize_inner(
             input.identity,
             input.registry,
             &evidence.id,
+            #[cfg(feature = "certificate-identity")]
+            authority,
         )?;
         mapped_assets.insert(raw.event_id.clone(), asset);
         mapped_evidence.insert(raw.event_id.clone(), evidence.id.clone());
