@@ -592,15 +592,11 @@ fn oversized_canonical_ec_curve_oid_remains_unknown_without_poisoning_inventory(
             .count(),
         1
     );
-    assert!(
-        snapshot.observations.values().any(|observation| {
-            observation.property == "certificate:public-key-family" && observation.value == "ec"
-        })
-    );
-    assert!(
-        !snapshot.observations.values().any(|observation| {
-            observation.property == "certificate:named-curve-oid"
-                || observation.property == "certificate:public-key-bits"
-        })
-    );
+    assert!(snapshot.observations.values().any(|observation| {
+        observation.property == "certificate:public-key-family" && observation.value == "ec"
+    }));
+    assert!(!snapshot.observations.values().any(|observation| {
+        observation.property == "certificate:named-curve-oid"
+            || observation.property == "certificate:public-key-bits"
+    }));
 }
