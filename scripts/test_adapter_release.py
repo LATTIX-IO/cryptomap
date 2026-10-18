@@ -247,43 +247,164 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
 
 
 class ProtectedMainReleaseLifecycleTests(unittest.TestCase):
-    """No checkout may erase an attestation subject downloaded by CI."""
+    """Protect signed release subjects against any destructive checkout action."""
+
+    CHECKOUT_ACTION = "actions/checkout@"
+    DOWNLOAD_ACTION = "actions/download-artifact@"
+    REQUIRED_ARTIFACTS = frozenset({
+        "cryptomap-tested-crate",
+        "cryptomap-software-sbom",
+        "cryptomap-adapter-tested-crate",
+        "cryptomap-adapter-software-sbom",
+        "cryptomap-paired-release-evidence",
+    })
 
     @staticmethod
-    def check_steps(steps):
-        checkout = "Read-only main checkout for deterministic mapping verification"
-        downloads = (
-            "Download exact CI-tested release candidate",
-            "Download validated SPDX inventory",
-            "Download separately qualified adapter archive",
-            "Download separately validated adapter SPDX",
-            "Download CI-tested core/adapter mapping",
-        )
-        verify = "Verify downloaded exact signed-subject candidates before signing"
-        assert steps.count(checkout) == 1, "missing/duplicated protected-main checkout"
-        assert steps[0] == checkout, "checkout must occur before artifact downloads"
-        assert all(steps.count(name) == 1 for name in downloads), "missing/duplicate signed input"
-        assert steps.count(verify) == 1, "missing/duplicate before-signing verification"
-        assert all(steps.index(checkout) < steps.index(name) < steps.index(verify)
-                   for name in downloads), "download/checkout/verification order is unsafe"
-        assert "Sign build provenance for tested candidate" in steps
-        assert steps.index(verify) < steps.index("Sign build provenance for tested candidate")
+    def parse_actions(section: str) -> list[dict]:
+        """Inspect actual YAML step actions, not mutable human-readable labels.
 
-    def test_protected_main_checkout_precedes_all_artifact_downloads(self):
+        This reads only the level-six GitHub Actions steps in this workflow,
+        preserving unnamed steps. No external YAML dependency or untrusted
+        expressions are evaluated. Unknown action syntax is fail-closed.
+        """
         import re
-        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-        section = workflow.split("\n  release-attestations:\n", 1)
-        self.assertEqual(len(section), 2)
-        steps = re.findall(r"(?m)^      - name: (.+)$", section[1])
-        self.check_steps(steps)
-        checkout = "Read-only main checkout for deterministic mapping verification"
-        # Negative: checkout after artifacts, the original P1 regression.
-        delayed_checkout = steps[1:6] + [checkout] + steps[6:]
+
+        chunks = re.split(r"(?m)^      - ", section)
+        if len(chunks) < 2:
+            raise AssertionError("missing protected-main steps")
+        parsed = []
+        for chunk in chunks[1:]:
+            name = re.search(r"(?m)^(?:name:|        name:)\s*(.+)\s*$", chunk)
+            uses = re.search(r"(?m)^(?:uses:|        uses:)\s*(\S+)", chunk)
+            declared_download_name = re.search(
+                r"(?m)^          name:\s*([^\s#]+)", chunk
+            )
+            parsed.append({
+                "name": name.group(1) if name else None,
+                "uses": uses.group(1) if uses else None,
+                "artifact": declared_download_name.group(1)
+                if declared_download_name else None,
+                "body": chunk,
+            })
+        return parsed
+
+    @classmethod
+    def check_release_actions(cls, section: str) -> None:
+        steps = cls.parse_actions(section)
+        checkout_indices = [
+            i for i, step in enumerate(steps)
+            if (step["uses"] or "").startswith(cls.CHECKOUT_ACTION)
+        ]
+        assert checkout_indices == [0], (
+            "exactly one pinned checkout must precede all release artifacts"
+        )
+        checkout = steps[0]
+        assert checkout["uses"] == (
+            "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
+        ), "protected main checkout must be pinned"
+        assert "          persist-credentials: false" in checkout["body"], (
+            "release checkout must not persist credentials"
+        )
+
+        downloads = [
+            (index, step["artifact"])
+            for index, step in enumerate(steps)
+            if (step["uses"] or "").startswith(cls.DOWNLOAD_ACTION)
+        ]
+        assert len(downloads) == len(cls.REQUIRED_ARTIFACTS), (
+            "missing or unexpected signed-input download"
+        )
+        assert {name for _, name in downloads} == cls.REQUIRED_ARTIFACTS, (
+            "downloaded signed input identity differs from release contract"
+        )
+        assert all(0 < index for index, _ in downloads), (
+            "checkout must precede every signed-input download"
+        )
+
+        verifying = [
+            i for i, step in enumerate(steps)
+            if step["name"] == (
+                "Verify downloaded exact signed-subject candidates before signing"
+            )
+        ]
+        signing = [
+            i for i, step in enumerate(steps)
+            if step["name"] == "Sign build provenance for tested candidate"
+        ]
+        assert len(verifying) == 1 and len(signing) == 1, (
+            "missing/duplicate verification or signing step"
+        )
+        assert max(i for i, _ in downloads) < verifying[0] < signing[0], (
+            "signed subjects must be downloaded and verified before signing"
+        )
+        assert "scripts/verify_adapter_release.py verify" in steps[verifying[0]]["body"], (
+            "before-signing verification must perform exact subject check"
+        )
+
+    def test_checkout_actions_precede_download_and_cannot_repeat(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        sections = workflow.split("\n  release-attestations:\n", 1)
+        self.assertEqual(len(sections), 2)
+        original = sections[1]
+        self.check_release_actions(original)
+
+        # Rename the checkout label: action-based validation remains effective.
+        renamed = original.replace(
+            "- name: Read-only main checkout for deterministic mapping verification",
+            "- name: Custom checkout label that does not reveal checkout",
+            1,
+        )
+        self.check_release_actions(renamed)
+
+        # A checkout with a different name or no name still erases artifacts.
+        injected = (
+            "\n      - name: Innocuous cache step\n"
+            "        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10\n"
+            "        with:\n"
+            "          persist-credentials: false\n"
+        )
+        unnamed = (
+            "\n      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10\n"
+            "        with:\n"
+            "          persist-credentials: false\n"
+        )
+        before_signing = "      - name: Verify downloaded exact signed-subject candidates before signing"
+        for bad in (injected, unnamed):
+            with self.assertRaises(AssertionError):
+                self.check_release_actions(
+                    original.replace(before_signing, bad + "\n" + before_signing, 1)
+                )
+
+        # Delayed checkout with an innocuous label must also fail.
+        checkout_start = original.index(
+            "      - name: Read-only main checkout for deterministic mapping verification"
+        )
+        first_download = original.index(
+            "      - name: Download exact CI-tested release candidate"
+        )
+        checkout_block = original[checkout_start:first_download]
+        without_first_checkout = (
+            original[:checkout_start] + original[first_download:]
+        )
+        late_checkout = without_first_checkout.replace(
+            before_signing, checkout_block + before_signing, 1
+        )
         with self.assertRaises(AssertionError):
-            self.check_steps(delayed_checkout)
-        # Negative: a second checkout after downloads is equally destructive.
+            self.check_release_actions(late_checkout)
+
+        # Tamper artifact identity and checkout credentials.
         with self.assertRaises(AssertionError):
-            self.check_steps(steps[:7] + [checkout] + steps[7:])
+            self.check_release_actions(original.replace(
+                "name: cryptomap-adapter-software-sbom",
+                "name: cryptomap-software-sbom",
+                1,
+            ))
+        with self.assertRaises(AssertionError):
+            self.check_release_actions(original.replace(
+                "persist-credentials: false", "persist-credentials: true", 1,
+            ))
 
 
 if __name__ == "__main__":
