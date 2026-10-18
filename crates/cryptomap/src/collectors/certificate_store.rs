@@ -269,7 +269,7 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                     cert.fingerprint_sha256(),
                 ))
                 .map_err(|_| InventoryError::InvalidMetadata)?;
-                sink.emit(RawObservation {
+                let mut observation = RawObservation {
                     contract_version: RAW_CONTRACT_VERSION,
                     event_id: format!("x509-store:v1:{:x}", Sha256::digest(key)),
                     collector: descriptor.id.clone(),
@@ -300,7 +300,13 @@ impl<B: PublicCertificateStoreBackend + ?Sized> Collector for CertificateStoreCo
                         attributes.insert("x509:store-target".into(), target.id().into());
                         attributes
                     },
-                })?;
+                };
+                #[cfg(feature = "certificate-identity")]
+                if let Some(authority) = self.identity {
+                    authority.seal_record(&mut observation)
+                        .map_err(|_| InventoryError::InvalidMetadata)?;
+                }
+                sink.emit(observation)?;
                 emitted += 1;
                 total_emitted += 1;
             }
