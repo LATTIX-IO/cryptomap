@@ -340,9 +340,13 @@ mod tests {
         let a = authority("tenant-a", "v1", 19).project_der(&cert).unwrap();
         let other = CertificateIdentityAuthority::new(
             CollectionScopeId::new("other-scope").unwrap(),
-            "tenant-a", "v1", [19;32]
-        ).unwrap().project_der(&cert).unwrap();
+            "tenant-a",
+            "v1",
+            [19; 32],
+        )
+        .unwrap()
+        .project_der(&cert)
+        .unwrap();
         assert_ne!(a, other);
     }
-
 }
