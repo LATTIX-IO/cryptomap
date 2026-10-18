@@ -608,7 +608,7 @@ impl Collector for CertificateFileCollector<'_> {
                     },
                     observed_at: self.observed_at.clone(),
                     fact: RawFactKind::Certificate {
-                        fingerprint_sha256: cert.fingerprint,
+                        fingerprint_sha256: cert.fingerprint.clone(),
                     },
                     evidence_kind: EvidenceKind::Direct,
                     confidence: Confidence::High,
