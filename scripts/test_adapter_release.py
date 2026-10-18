@@ -88,6 +88,7 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
     def make_archive(self, *, publish=False, omit=None, add=None):
         files = {
             "Cargo.toml": test_manifest(publish),
+            "Cargo.lock": lock_content().encode(),
             "README.md": b"Read only",
             "LICENSE-MIT": b"MIT",
             "LICENSE-APACHE": b"Apache 2.0",
@@ -146,6 +147,16 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         # A malicious TAR entry with a path under a declared regular file
         # must never be accepted as a nested member.
         self.make_archive(add={"src/lib.rs/surprise.txt": b"content"})
+        with self.assertRaises(ValueError):
+            self.inspect()
+
+    def test_reject_packaged_lock_forgery_or_omission(self):
+        self.make_archive(omit="Cargo.lock")
+        with self.assertRaises(ValueError):
+            self.inspect()
+        self.make_archive(add={"Cargo.lock": lock_content().replace(
+            'version = "0.61.2"', 'version = "0.66.6"',
+        ).encode()})
         with self.assertRaises(ValueError):
             self.inspect()
 
