@@ -188,6 +188,7 @@ impl CertificateIdentityAuthority {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use x509_cert::der::{DecodePem, Encode};
