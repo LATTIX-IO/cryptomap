@@ -228,6 +228,139 @@ fn observe(
     Ok(())
 }
 
+/// Preserve only the reviewed public X.509 profile in canonical Observations.
+///
+/// A snapshot's certificate AssetKind (and therefore frozen AssetId) must not
+/// change as optional profile fields are added. The raw projection is treated
+/// as untrusted: incomplete, contradictory or unrecognized v1 profile fields
+/// fail closed rather than being copied verbatim into immutable inventory.
+fn validated_certificate_profile(
+    raw: &RawObservation,
+) -> Result<Vec<(&'static str, String)>, PipelineError> {
+    const PREFIX: &str = "x509:profile:v1:";
+    const MAPPING: [(&str, &str); 8] = [
+        ("x509:profile:v1:version", "certificate:x509-version"),
+        (
+            "x509:profile:v1:not-before-utc",
+            "certificate:not-before-utc",
+        ),
+        ("x509:profile:v1:not-after-utc", "certificate:not-after-utc"),
+        (
+            "x509:profile:v1:public-key-family",
+            "certificate:public-key-family",
+        ),
+        (
+            "x509:profile:v1:named-curve-oid",
+            "certificate:named-curve-oid",
+        ),
+        (
+            "x509:profile:v1:public-key-bits",
+            "certificate:public-key-bits",
+        ),
+        (
+            "x509:signature-algorithm-oid",
+            "certificate:signature-algorithm-oid",
+        ),
+        (
+            "x509:public-key-algorithm-oid",
+            "certificate:public-key-algorithm-oid",
+        ),
+    ];
+    if !raw.attributes.keys().any(|key| key.starts_with(PREFIX)) {
+        // Existing pre-B5.4 raw records remain valid, with fingerprint only.
+        return Ok(Vec::new());
+    }
+    for key in raw.attributes.keys().filter(|key| key.starts_with(PREFIX)) {
+        if !MAPPING.iter().any(|(allowed, _)| *allowed == key.as_str()) {
+            return Err(PipelineError::InvalidOutcome);
+        }
+    }
+    let required = |key: &str| -> Result<&str, PipelineError> {
+        raw.attributes
+            .get(key)
+            .map(String::as_str)
+            .ok_or(PipelineError::InvalidOutcome)
+    };
+    let version = required("x509:profile:v1:version")?;
+    if !matches!(version, "1" | "2" | "3") {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    let parse_utc = |key: &str| -> Result<i64, PipelineError> {
+        let value = required(key)?;
+        if value.len() != 20
+            || !value.ends_with('Z')
+            || value
+                .get(..4)
+                .and_then(|y| y.parse::<u16>().ok())
+                .is_none_or(|y| y < 1970)
+        {
+            return Err(PipelineError::InvalidOutcome);
+        }
+        crate::validation::utc_seconds(value).map_err(|_| PipelineError::InvalidOutcome)
+    };
+    let before = parse_utc("x509:profile:v1:not-before-utc")?;
+    let after = parse_utc("x509:profile:v1:not-after-utc")?;
+    if before > after {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    // Parse untrusted identifiers using the same ASN.1 OID implementation
+    // used by RustCrypto DER. A digits-and-dots filter admits noncanonical
+    // and invalid arc encodings (e.g. 1..2, 1.02.3) into immutable inventory.
+    let canonical_oid = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 128
+            && const_oid::ObjectIdentifier::new(value).is_ok_and(|oid| oid.to_string() == value)
+    };
+    let public_oid = required("x509:public-key-algorithm-oid")?;
+    let signature_oid = required("x509:signature-algorithm-oid")?;
+    if !canonical_oid(public_oid) || !canonical_oid(signature_oid) {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    let family = raw
+        .attributes
+        .get("x509:profile:v1:public-key-family")
+        .map(String::as_str);
+    let expected_family = match public_oid {
+        "1.2.840.113549.1.1.1" => Some("rsa"),
+        "1.2.840.10045.2.1" => Some("ec"),
+        "1.3.101.112" => Some("ed25519"),
+        "1.3.101.113" => Some("ed448"),
+        _ => None,
+    };
+    if family != expected_family {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    let curve = raw
+        .attributes
+        .get("x509:profile:v1:named-curve-oid")
+        .map(String::as_str);
+    let bits = raw
+        .attributes
+        .get("x509:profile:v1:public-key-bits")
+        .map(String::as_str);
+    if (family != Some("ec") && (curve.is_some() || bits.is_some()))
+        || curve.is_some_and(|oid| !canonical_oid(oid))
+    {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    let expected_bits = match curve {
+        Some("1.2.840.10045.3.1.7") => Some("256"),
+        Some("1.3.132.0.34") => Some("384"),
+        Some("1.3.132.0.35") => Some("521"),
+        _ => None,
+    };
+    if bits != expected_bits {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    let mut observations = Vec::with_capacity(MAPPING.len());
+    for (key, property) in MAPPING {
+        if let Some(value) = raw.attributes.get(key) {
+            observations.push((property, value.clone()));
+        }
+    }
+    Ok(observations)
+}
+
 fn map_fact(
     builder: &mut InventoryBuilder,
     raw: &RawObservation,
@@ -385,6 +518,11 @@ fn map_fact(
                 "certificate:fingerprint-sha256",
                 digest,
             )?;
+            // Profile observations enrich the SAME canonical certificate
+            // asset, retaining its SHA-256 identity and distinct evidence.
+            for (property, value) in validated_certificate_profile(raw)? {
+                observe(builder, raw, &asset, evidence, property, value)?;
+            }
             asset
         }
         RawFactKind::KeyReference {

@@ -69,6 +69,9 @@ jobs:
       - name: B5.3 portable certificate-store source/provider security regressions
         run: cargo test -p cryptomap --test foss_468_certificate_store_backend --features certificate-store-grants --locked
 
+      - name: B5.4 public X.509 profile, privacy and validity regressions
+        run: cargo test -p cryptomap --test foss_481_certificate_profile --features certificate-store-grants --locked
+
       - name: Exact host-scope binding for all built-in Cargo and npm collectors
         run: cargo test -p cryptomap --test foss_371_legacy_scope_binding --locked
 

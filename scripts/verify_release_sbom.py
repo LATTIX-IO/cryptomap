@@ -11,11 +11,13 @@ from pathlib import Path
 
 MAX_SBOM_BYTES = 16 * 1024 * 1024
 MAX_LOCK_BYTES = 8 * 1024 * 1024
-# Reviewed direct SDK dependencies, including feature-gated Rust AST parsers.
+# Reviewed direct SDK dependencies, including feature-gated Rust AST
+# parsers and the pinned ASN.1 OID parser required for safe canonicalization.
 # Any addition requires explicit supply-chain review and adversarial tests.
 EXPECTED_DIRECT = {
     "serde", "serde_json", "sha2", "cap-std", "cap-fs-ext",
     "proc-macro2", "syn", "toml", "toml_edit", "x509-cert",
+    "const-oid",
 }
 CREATED = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 

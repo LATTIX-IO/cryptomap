@@ -39,7 +39,8 @@ The output is a verified snapshot digest plus asset, relationship and coverage c
 | Optional JSON TLS configuration profile collector | B3 developer preview; `json-tls-config` feature, configured-only claims |
 | Optional public X.509 PEM/DER certificate-file collector | B5.1 developer preview; `certificate-files` feature, exact-file public evidence only |
 | Optional typed certificate-store grant contract | B5.2 developer preview; `certificate-store-grants` feature, **no OS enumeration** |
-| Read-only Windows CurrentUser/My / LocalMachine/My public certificate-store adapter | B5.3 in PR #67; separate opt-in `cryptomap-windows-store` crate, **not merged/published** |
+| Read-only Windows CurrentUser/My / LocalMachine/My public certificate-store adapter | B5.3 merged; separate opt-in `cryptomap-windows-store` workspace crate, **not published** |
+| Public X.509 version/UTC validity and recognized public-key profile | B5.4 in PR; default-off public PEM/DER and store features, **not merged** |
 | Live TLS / general source-call / telemetry collectors | Planned; **not shipped** |
 | CycloneDX CBOM 1.7 import/export | Planned; **not shipped** |
 | Cryptopolicy / cryptoshift interoperability adapters | Planned; **not shipped** |
@@ -56,7 +57,8 @@ The library distinguishes configured/present/observed cryptography, separates ev
 - [Milestone B4 opt-in TOML TLS configuration evidence and security boundaries](docs/milestone-b4-toml-tls-config.md)
 - [Milestone B5.1 opt-in public X.509 certificate file evidence](docs/milestone-b5-certificate-files.md)
 - [Milestone B5.2 inert typed certificate-store authorization](docs/milestone-b5-certificate-store-grants.md)
-- [Milestone B5.3 read-only Windows public certificate-store evidence (in development)](docs/milestone-b5-windows-store.md)
+- [Milestone B5.3 read-only Windows public certificate-store evidence](docs/milestone-b5-windows-store.md)
+- [Milestone B5.4 non-identifying public certificate profile (in development)](docs/milestone-b5-public-profile.md)
 - [Software SBOM and main-only attestation trust boundary](docs/milestone-a-sbom-attestations.md)
 - [Crate developer guide](crates/cryptomap/README.md)
 - [Collector author sample](crates/cryptomap/examples/collector_skeleton.rs)

@@ -66,6 +66,8 @@ proc-macro2 = { version = "=1.0.107", features = ["span-locations"], optional = 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# Already locked by RustCrypto DER: canonical ASN.1 OID validation for imported raw facts.
+const-oid = "=0.9.6"
 cap-std = { version = "4.0.3", default-features = false }
 cap-fs-ext = "4.0.3"
 
