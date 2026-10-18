@@ -365,13 +365,16 @@ fn validated_certificate_profile(
 /// Raw data is untrusted: do not re-key arbitrary attributes or promote trust.
 fn validated_certificate_identity(
     raw: &RawObservation,
+    #[cfg(feature = "certificate-identity")]
+    authority: Option<&crate::certificate_identity::CertificateIdentityAuthority>,
 ) -> Result<Vec<(&'static str, String)>, PipelineError> {
     const PREFIX: &str = "x509:identity:";
     #[cfg(not(feature = "certificate-identity"))]
     if raw.attributes.keys().any(|k| k.starts_with(PREFIX)) {
         return Err(PipelineError::InvalidOutcome);
     }
-    const MAPPING: [(&str, &str); 3] = [
+    const MAPPING: [(&str, &str); 4] = [
+        ("x509:identity:v1:namespace", "certificate:identity-namespace:v1"),
         (
             "x509:identity:v1:subject-dn",
             "certificate:identity-subject-dn:v1",
