@@ -69,7 +69,7 @@ cargo fmt --all -- --check
 cargo check --locked --workspace --all-targets --all-features
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
-cargo test --locked -p cryptomap --features certificate-identity --test foss_482_certificate_identity
+cargo test --locked -p cryptomap --features certificate-identity,certificate-store-grants --test foss_482_certificate_identity
 cargo doc --locked --workspace --all-features --no-deps
 ```
 
