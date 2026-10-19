@@ -272,6 +272,7 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
             self.inspect()
 
     def test_spdx_reject_missing_windows_target_dependency_and_stale_versions(self):
+        self.make_archive()
         good = validate_adapter_spdx(
             self.sbom, self.lock, VERSION, self.inspect()["locked_package_versions"]
         )
