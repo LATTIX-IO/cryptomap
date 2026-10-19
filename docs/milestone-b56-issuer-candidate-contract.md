@@ -93,18 +93,18 @@ bounded issuer *candidates*, never verified PKI chains or trust decisions.
 
 ## Increment A — same-run bounded matcher implementation
 
-The current branch implements a private, opt-in \`issuer_candidates\` stage in
-\`normalize_with_identity\` after the existing source, run, host-window and
+The current branch implements a private, opt-in `issuer_candidates` stage in
+`normalize_with_identity` after the existing source, run, host-window and
 B5.5 HMAC receipt validation. It indexes unique certificate AssetIds by
 role-neutral pseudonymous subject DN, matches authenticated issuer DN, emits
-\`RelatedTo\` with a separate low-confidence inferred Evidence record named
-\`x509:issuer-candidate:v1\`, and retains both endpoints' direct EvidenceIds.
+`RelatedTo` with a separate low-confidence inferred Evidence record named
+`x509:issuer-candidate:v1`, and retains both endpoints' direct EvidenceIds.
 
 The matcher has fixed ceilings (1,024 certificate assets/records, 32 candidates
 per issuer token, 8,192 pairs, 1,024 edges, traversal depth 16) additionally
 clamped to the invoking RawLimits and InventoryLimits. Exceeding a ceiling,
 encountering unsupported pseudonyms, or skipping a candidate cycle yields
-\`CoverageState::Partial\` under a separate namespaced candidate-coverage key;
+`CoverageState::Partial` under a separate namespaced candidate-coverage key;
 it never upgrades the real collection coverage. Identical certificate assets
 deduplicate; repeated source observations remain traceable. Invalid receipts,
 malformed opaque tokens or conflicting hints for the same asset fail closed.
@@ -112,3 +112,34 @@ malformed opaque tokens or conflicting hints for the same asset fail closed.
 Scope of this first executable increment is **one authorized collection run**.
 It does not yet reconstruct cross-run/file/store evidence histories or supply
 AKI/SKI optional narrowing; those remain required before FOSS-483 is accepted.
+
+
+## Operator verification for Increment A
+
+Run against the FOSS-483 branch with all certificate-related features enabled:
+
+    cargo fmt --all -- --check
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    cargo test -p cryptomap --all-features --locked issuer_candidates
+    cargo test -p cryptomap --all-features --locked --test foss_483_issuer_candidates
+
+The live integration regression uses two public DER certificates supplied by a
+memory-only store provider. Its leaf TBS issuer DN matches a collected
+certificate's subject DN, but the leaf is deliberately not re-signed after the
+edit. Success therefore means **one candidate `RelatedTo` edge** with inferred
+evidence—not cryptographic issuance or certificate validation. The test also
+rejects an incorrect HMAC authority, an unauthenticated default normalization,
+and a forged imported store-source reference.
+
+Inspect `InventorySnapshot.relationships` for `RelatedTo`, resolve each
+`Relationship.evidence` ID, and require an `EvidenceKind::Inferred` entry with
+`inference_rule == "x509:issuer-candidate:v1"`. The direct evidence attached to
+both endpoints remains independently traceable. Inspect the distinct
+`x509:issuer-candidate:v1:<run-id>` coverage entry and treat `Partial` as
+incomplete, *never* as a negative/trust conclusion. Do not interpret a missing
+candidate relationship as proof that no issuer exists.
+
+Use host-supplied CSPRNG-generated HMAC keys, exact source grants and the
+existing `normalize_with_identity` interface. The matcher does not acquire
+any system certificate-store permissions itself. Integration tests must not
+read an actual Windows user or machine certificate store.
