@@ -72,10 +72,38 @@ publish = {str(publish).lower()}
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-[dependencies]
-cryptomap = {{ version = "{VERSION}" }}
-[target.'cfg(windows)'.dependencies]
-windows-sys = {{ version = "=0.61.2" }}
+build = false
+
+[lib]
+name = "cryptomap_windows_store"
+path = "src/lib.rs"
+
+[[example]]
+name = "read_user_store"
+path = "examples/read_user_store.rs"
+
+[dependencies.cryptomap]
+version = "{VERSION}"
+features = ["certificate-store-grants"]
+
+[dev-dependencies.x509-cert]
+version = "=0.2.5"
+default-features = false
+features = ["pem", "std"]
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "=0.61.2"
+features = ["Win32_Foundation", "Win32_Security_Cryptography"]
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
+expect_used = "warn"
 """.encode()
 
 
@@ -114,6 +142,9 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
     def make_archive(self, *, publish=False, omit=None, add=None):
         files = {
             "Cargo.toml": test_manifest(publish),
+            "Cargo.toml.orig": (
+                ROOT / "crates" / ADAPTER / "Cargo.toml"
+            ).read_bytes(),
             "Cargo.lock": lock_content().encode(),
             "README.md": b"Read only",
             "LICENSE-MIT": b"MIT",
@@ -155,6 +186,26 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.inspect()
         self.make_archive(omit="LICENSE-APACHE")
+        with self.assertRaises(ValueError):
+            self.inspect()
+
+    def test_reject_hidden_target_build_and_extra_dependency_tables(self):
+        approved = test_manifest()
+        cases = (
+            approved + b'\n[target.\'cfg(target_os = "macos")\'.dependencies]\nmalicious = "1.0.0"\n',
+            approved + b'\n[build-dependencies]\nmalicious = "1.0.0"\n',
+            approved + b'\n[dependencies.malicious]\nversion = "1.0.0"\n',
+            approved.replace(b'features = ["certificate-store-grants"]',
+                             b'features = ["certificate-store-grants", "unreviewed"]'),
+            approved.replace(b'build = false', b'build = "build.rs"'),
+        )
+        for change in cases:
+            self.make_archive(add={"Cargo.toml": change})
+            with self.assertRaises(ValueError):
+                self.inspect()
+        # Changing both source and normalized archive manifests must not
+        # silently redefine the approved dependency boundary.
+        self.make_archive(add={"Cargo.toml.orig": b"[package]\nname = 'attacker'\n"})
         with self.assertRaises(ValueError):
             self.inspect()
 

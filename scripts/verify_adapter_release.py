@@ -35,12 +35,12 @@ PACKAGED_CORE_EDGES = frozenset({
     "serde_json", "sha2", "x509-cert",
 })
 EXPECTED_FILES = {
-    "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
+    "Cargo.toml", "Cargo.toml.orig", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
     "src/lib.rs", "examples/read_user_store.rs",
     "examples/fixtures/certificate/rsa.pem",
     "examples/fixtures/certificate/ec.pem",
 }
-OPTIONAL_CARGO_FILES = {"Cargo.toml.orig", ".cargo_vcs_info.json"}
+OPTIONAL_CARGO_FILES = {".cargo_vcs_info.json"}
 ALLOWED_FILES = EXPECTED_FILES | OPTIONAL_CARGO_FILES
 ALLOWED_DIRS = {
     "/".join(path.split("/")[:index])
@@ -51,6 +51,30 @@ CERT_PREFIX = "examples/fixtures/certificate/"
 BAD_IDENTIFIERS = {"..", ".git", ".ssh", "target", ".env", "__pycache__"}
 COMMIT = re.compile(r"[a-f0-9]{40}")
 SPDX_CREATED = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+MANIFEST_SECTIONS = {
+    "package", "lib", "example", "dependencies",
+    "dev-dependencies", "target", "lints",
+}
+
+
+def _approved_dependency_contract(source: dict, version: str) -> tuple[dict, dict, dict, dict]:
+    """Derive exact normalized dependency tables from reviewed local source."""
+    package = source.get("package", {})
+    if package.get("name") != ADAPTER:
+        raise ValueError("invalid approved adapter source manifest")
+    direct = source.get("dependencies", {})
+    if set(direct) != {CORE} or not isinstance(direct[CORE], dict):
+        raise ValueError("approved adapter source dependencies changed")
+    core = direct[CORE]
+    if core.get("path") != "../cryptomap" or core.get("version") != version:
+        raise ValueError("approved local core path or version changed")
+    expected_direct = {CORE: {key: value for key, value in core.items() if key != "path"}}
+    return (expected_direct,
+            source.get("dev-dependencies", {}),
+            source.get("target", {}),
+            source.get("lints", {}))
+
+
 
 
 def digest(path: Path, maximum: int = MAX_ARCHIVE) -> str:
@@ -160,6 +184,7 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     regular_files = set()
     total = count = 0
     manifest = None
+    original_manifest = None
     packaged_lock = None
     with archive.open("rb") as raw, gzip.GzipFile(fileobj=raw) as unzip:
         stream = BoundedDecompressedStream(unzip, MAX_ARCHIVE + MAX_ENTRIES * 2048 + 2 * 1024 * 1024)
@@ -217,6 +242,13 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
                         if source is None:
                             raise ValueError("unreadable adapter lockfile")
                         packaged_lock = tomllib.loads(source.read().decode("utf-8"))
+                    if rel == "Cargo.toml.orig":
+                        if member.size > 100_000:
+                            raise ValueError("oversized original adapter manifest")
+                        source = tar.extractfile(member)
+                        if source is None:
+                            raise ValueError("unreadable original adapter manifest")
+                        original_manifest = source.read()
                     if rel == "Cargo.toml":
                         if member.size > 100_000:
                             raise ValueError("oversized adapter manifest")
@@ -227,8 +259,33 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     if count == 0:
         raise ValueError("empty adapter archive")
     audit_physical_tar_layout(archive, count)
-    if not EXPECTED_FILES <= regular_files or manifest is None or packaged_lock is None:
+    if (not EXPECTED_FILES <= regular_files or manifest is None
+            or original_manifest is None or packaged_lock is None):
         raise ValueError("adapter archive missing mandatory files")
+    trusted_source = (Path(__file__).resolve().parents[1] / "crates"
+                      / ADAPTER / "Cargo.toml")
+    if not trusted_source.is_file() or not 0 < trusted_source.stat().st_size <= 100_000:
+        raise ValueError("reviewed adapter source manifest unavailable")
+    approved_bytes = trusted_source.read_bytes()
+    if original_manifest != approved_bytes:
+        raise ValueError("packaged original Cargo.toml differs from reviewed source")
+    reviewed_manifest = tomllib.loads(approved_bytes.decode("utf-8"))
+    direct, development, targets, lints = _approved_dependency_contract(
+        reviewed_manifest, version
+    )
+    if (set(manifest) != MANIFEST_SECTIONS
+            or manifest.get("dependencies") != direct
+            or manifest.get("dev-dependencies") != development
+            or manifest.get("target") != targets
+            or manifest.get("lints") != lints
+            or manifest.get("lib") != {
+                "name": "cryptomap_windows_store", "path": "src/lib.rs"
+            }
+            or manifest.get("example") != [{
+                "name": "read_user_store", "path": "examples/read_user_store.rs"
+            }]
+            or manifest.get("package", {}).get("build") is not False):
+        raise ValueError("normalized adapter dependency/build contract changed")
     if packaged_lock.get("version") != 4 or not isinstance(packaged_lock.get("package"), list):
         raise ValueError("invalid packaged adapter lockfile")
     reviewed_lock, _ = _locked_packages(lockfile, version)
