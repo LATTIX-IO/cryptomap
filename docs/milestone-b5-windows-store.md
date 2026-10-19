@@ -1,6 +1,6 @@
 # Milestone B5.3 — opt-in Windows public certificate-store evidence
 
-**Issue:** FOSS-468. **Status:** implementation under review; this document does not claim a merged or published release.
+**Issues:** FOSS-468 (native read-only collector), FOSS-486 (independent adapter release qualification). **Status:** B5.3 collector merged; companion-archive qualification under review. Nothing is published.
 
 ## Architecture and trust boundary
 
@@ -43,4 +43,6 @@ Run only with informed operator approval and an accurate RFC3339 timestamp. This
 
 ## Release restrictions
 
-Both the SDK and Windows adapter remain `publish = false`. No crates.io publication, store mutation, administrator elevation, production credentials or protected environment change is made. The FOSS-468 merge requires completed exact-head Linux/Windows/Rust 1.85 CI, substantive security review and **post-merge main-only signed provenance/SPDX verification**.
+Both the SDK and Windows adapter remain `publish = false`. No crates.io publication, store mutation, administrator elevation, production credentials or protected environment change is made. FOSS-486 adds separately inspected core and adapter source archives, independent locked SPDX reports and an exact-commit, digest-bound dependency mapping. Native Windows package tests are executed from the *unpacked adapter archive* using an isolated, offline, vendored source workspace and only CryptoAPI memory stores. No real local store is accessed by CI.
+
+The normalized adapter package manifest depends on an unpublished version of `cryptomap`; therefore, neither archive is independently installable from crates.io. A supported offline integration must distribute and verify both source archives together with a local core dependency patch. Only protected `main` workflows may produce and verify separate SLSA and SPDX signatures and a signed paired-archive mapping. A passing PR build is unsigned inspection evidence, not redistribution authorization. Full FOSS-486 qualification requires independent supply-chain/security review plus post-merge main-only signature verification.
