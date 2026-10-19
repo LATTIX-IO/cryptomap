@@ -170,7 +170,7 @@ fn real_der_parser_yields_candidate_but_never_verified_issuance() {
         &scope,
         &ordinary,
         CollectionRequest {
-            run,
+            run: run.clone(),
             sources: sources.to_vec(),
             limits,
             options: BTreeMap::new(),
