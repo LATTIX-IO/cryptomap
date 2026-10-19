@@ -7,6 +7,7 @@ attestations (never this script) establish provenance after policy acceptance.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import gzip
 import hashlib
 import json
@@ -25,6 +26,14 @@ from release_evidence import (
 ADAPTER = "cryptomap-windows-store"
 CORE = "cryptomap"
 EXPECTED_DIRECT = {CORE, "windows-sys", "x509-cert"}
+# The source-packaged core in B5.3 intentionally builds without its optional
+# parser/config features. This is an explicit, REVIEWED Cargo packaging profile,
+# not a policy permitting arbitrary core-edge omissions. Requalify this constant
+# and the archive tests whenever the core's default packaging features change.
+PACKAGED_CORE_EDGES = frozenset({
+    "cap-fs-ext", "cap-std", "const-oid", "serde",
+    "serde_json", "sha2", "x509-cert",
+})
 EXPECTED_FILES = {
     "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
     "src/lib.rs", "examples/read_user_store.rs",
@@ -88,8 +97,9 @@ def _dependency_graph(packages: list, *, origin: str) -> dict:
     """Load a unique package identity -> sorted dependency-edge mapping.
 
     The packaged adapter's direct edge set is required to match EXACTLY.
-    Registry/transitive dependency edges can be pruned by Cargo's packaging
-    resolver, but a packaged edge may never be invented or redirected.
+    The adapter root and every resolved transitive edge are checked against
+    the reviewed lock. The only authorized feature pruning is the explicitly
+    pinned core package profile; arbitrary omissions are forbidden.
     """
     result = {}
     for row in packages:
@@ -107,6 +117,35 @@ def _dependency_graph(packages: list, *, origin: str) -> dict:
             raise ValueError(f"invalid/duplicate {origin} dependency reference")
         result[ident] = tuple(sorted(edges))
     return result
+
+
+def _check_closed_dependency_graph(graph: dict, version: str) -> None:
+    """Require one complete, unambiguous transitive closure from adapter root."""
+    roots = [identity for identity in graph
+             if identity[0] == ADAPTER and identity[1] == version]
+    if len(roots) != 1:
+        raise ValueError("missing or ambiguous adapter dependency graph root")
+    visited = set()
+    pending = roots
+    while pending:
+        identity = pending.pop()
+        if identity in visited:
+            continue
+        visited.add(identity)
+        for reference in graph[identity]:
+            parts = reference.split()
+            if len(parts) not in (1, 2):
+                raise ValueError("invalid dependency reference in packaged lock")
+            matches = [
+                candidate for candidate in graph
+                if candidate[0] == parts[0]
+                and (len(parts) == 1 or candidate[1] == parts[1])
+            ]
+            if len(matches) != 1:
+                raise ValueError("missing or ambiguous packaged transitive dependency")
+            pending.append(matches[0])
+    if visited != graph.keys():
+        raise ValueError("packaged dependency graph includes orphaned packages")
 
 def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str) -> dict:
     if not COMMIT.fullmatch(commit):
@@ -200,15 +239,18 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
         raise ValueError("packaged adapter lock has unreviewed package identities")
     for identity, edges in packaged_graph.items():
         baseline = reviewed_graph[identity]
-        if identity[0] == ADAPTER:
-            # The trust boundary: exact core, native Windows and X.509 dependency
-            # edges must survive packaging with no omission or substitution.
-            if edges != baseline:
-                raise ValueError("packaged adapter direct dependency graph changed")
-        elif not set(edges) <= set(baseline):
-            # Cargo can omit optional edges (e.g. cryptomap source features),
-            # but new/repointed edges are never permitted.
-            raise ValueError("packaged lock has unreviewed dependency edges")
+        if identity[0] == CORE:
+            # Cargo's reviewed source-package profile omits optional parser
+            # features, but MUST retain these exact mandatory dependencies.
+            # Do not accept arbitrary subsets as "feature pruning".
+            if (set(edges) != PACKAGED_CORE_EDGES
+                    or not set(edges) <= set(baseline)):
+                raise ValueError("packaged core dependency profile changed")
+        elif edges != baseline:
+            # Both adapter direct dependencies and ALL registry transitive
+            # dependency edges must match the trusted workspace lock exactly.
+            raise ValueError("packaged dependency graph lost or rewired edges")
+    _check_closed_dependency_graph(packaged_graph, version)
     if any(
         sum(row.get("name") == name and row.get("version") == version for row in selected) != 1
         for name in (CORE, ADAPTER)
@@ -233,13 +275,21 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
         "archive": archive.name, "sha256": archive_digest,
         "dependencies": dependencies, "entry_count": count,
         "files": sorted(entries), "publish_enabled": False,
+        # Preserve a canonical expected SPDX inventory derived from the
+        # validated archive, not from unrelated workspace-only dependencies.
+        "locked_package_versions": sorted(
+            [{"name": identity[0], "version": identity[1]}
+             for identity in packaged_graph],
+            key=lambda item: (item["name"], item["version"]),
+        ),
         "registry_resolvable": False,
         "limitations": ["unsigned", "path-paired source distribution only",
                         "not a crates.io install or code-signing authority"],
     }
 
 
-def validate_adapter_spdx(path: Path, lockfile: Path, version: str) -> dict:
+def validate_adapter_spdx(path: Path, lockfile: Path, version: str,
+                          expected_packages: list[dict]) -> dict:
     _locked, expected = _locked_packages(lockfile, version)
     if not path.is_file() or not 0 < path.stat().st_size <= 16 * 1024 * 1024:
         raise ValueError("missing or oversized adapter SPDX")
@@ -281,6 +331,22 @@ def validate_adapter_spdx(path: Path, lockfile: Path, version: str) -> dict:
                 raise ValueError("unlocked direct dependency version in SPDX")
     if found != EXPECTED_DIRECT:
         raise ValueError("adapter direct dependency coverage incomplete")
+    if not isinstance(expected_packages, list) or not expected_packages:
+        raise ValueError("missing validated adapter lock inventory")
+    expected_inventory = Counter(
+        (row["name"], row["version"]) for row in expected_packages
+    )
+    if len(expected_inventory) != len(expected_packages):
+        raise ValueError("duplicate identity in expected packaged lock inventory")
+    # Syft adds an unversioned scanner-root package alongside the Cargo.lock
+    # packages. Reject any omitted, additional, or duplicated versioned crate;
+    # package identities must match the validated, archive-owned lock exactly.
+    reported_inventory = Counter(
+        (item["name"], item["versionInfo"])
+        for item in entries if isinstance(item.get("versionInfo"), str)
+    )
+    if reported_inventory != expected_inventory:
+        raise ValueError("SPDX does not enumerate exact packaged dependency closure")
     return {
         "sha256": digest(path, 16 * 1024 * 1024),
         "direct_dependencies": expected,
@@ -307,7 +373,9 @@ def aggregate(core: Path, adapter: Path, core_evidence: Path, adapter_evidence: 
         raise ValueError("adapter inspection / archive mismatch")
     from verify_release_sbom import validate as validate_core_spdx
     core_spdx = validate_core_spdx(core_sbom, lockfile)
-    adapter_spdx = validate_adapter_spdx(adapter_sbom, lockfile, version)
+    adapter_spdx = validate_adapter_spdx(
+        adapter_sbom, lockfile, version, inspection["locked_package_versions"]
+    )
     if core_sbom.resolve() == adapter_sbom.resolve() or core == adapter:
         raise ValueError("core and adapter artifacts must be separate")
     # Distinct subject digests and content paths bind the two SPDX reports to

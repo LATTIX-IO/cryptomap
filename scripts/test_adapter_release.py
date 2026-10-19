@@ -1,6 +1,7 @@
 """FOSS-486 adversarial archive, SPDX, compatibility and digest-mapping tests."""
 import copy
 import io
+import tomllib
 import json
 import tarfile
 import tempfile
@@ -22,6 +23,31 @@ def lock_content() -> str:
 [[package]]
 name = "cryptomap"
 version = "0.1.1-alpha.1"
+dependencies = ["cap-fs-ext", "cap-std", "const-oid", "serde", "serde_json", "sha2", "x509-cert"]
+
+[[package]]
+name = "cap-fs-ext"
+version = "4.0.3"
+
+[[package]]
+name = "cap-std"
+version = "4.0.3"
+
+[[package]]
+name = "const-oid"
+version = "0.9.6"
+
+[[package]]
+name = "serde"
+version = "1.0.229"
+
+[[package]]
+name = "serde_json"
+version = "1.0.154"
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
 
 [[package]]
 name = "cryptomap-windows-store"
@@ -63,8 +89,8 @@ def sample_spdx() -> dict:
             {"SPDXID": f"SPDXRef-{i}", "name": name, "versionInfo": vers,
              "downloadLocation": "NOASSERTION"}
             for i, (name, vers) in enumerate([
-                ("cryptomap", VERSION), ("windows-sys", "0.61.2"),
-                ("x509-cert", "0.2.5"),
+                (p["name"], p["version"])
+                for p in tomllib.loads(lock_content())["package"]
             ])
         ],
     }
@@ -187,6 +213,56 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         self.make_archive(add={"Cargo.lock": reordered.encode()})
         self.assertEqual(self.inspect()["crate"], ADAPTER)
 
+    def test_reject_truncated_transitive_graph_and_package_inventory(self):
+        """A valid direct root cannot excuse deleting transitive dependencies."""
+        source = lock_content()
+        original_core = (
+            'dependencies = ["cap-fs-ext", "cap-std", "const-oid", '
+            '"serde", "serde_json", "sha2", "x509-cert"]'
+        )
+        self.assertIn(original_core, source)
+        mutations = (
+            # Drop a real mandatory core edge and its package record.
+            source.replace(
+                original_core,
+                'dependencies = ["cap-std", "const-oid", "serde", "serde_json", "sha2", "x509-cert"]',
+            ).replace('[[package]]\nname = "cap-fs-ext"\nversion = "4.0.3"\n\n', ""),
+            # Direct root intact, but registry transitive dependencies removed.
+            source.replace(
+                '[[package]]\nname = "x509-cert"\nversion = "0.2.5"',
+                '[[package]]\nname = "x509-cert"\nversion = "0.2.5"\ndependencies = ["serde"]',
+            ),
+            # Referenced transitive package disappears without fixing its edge.
+            source.replace('[[package]]\nname = "sha2"\nversion = "0.10.9"\n\n', ""),
+            # Unknown orphaned package not present in the reviewed graph.
+            source + '\n[[package]]\nname = "hidden"\nversion = "1.2.3"\n',
+        )
+        for modified in mutations:
+            self.assertNotEqual(modified, source)
+            self.make_archive(add={"Cargo.lock": modified.encode()})
+            with self.assertRaises(ValueError):
+                self.inspect()
+
+    def test_spdx_requires_every_versioned_package_in_verified_adapter_lock(self):
+        self.make_archive()
+        expected = self.inspect()["locked_package_versions"]
+        self.assertEqual(
+            validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)["package_count"],
+            len(expected),
+        )
+        valid = sample_spdx()
+        for changed in (
+            {**valid, "packages": valid["packages"][:-1]},
+            {**valid, "packages": valid["packages"] + [valid["packages"][-1]]},
+            {**valid, "packages": valid["packages"] + [{
+                "SPDXID": "SPDXRef-forged", "name": "unknown",
+                "versionInfo": "99.0.0", "downloadLocation": "NOASSERTION",
+            }]},
+        ):
+            self.sbom.write_text(json.dumps(changed), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)
+
     def test_reject_wrong_revision_and_locked_dependency(self):
         self.make_archive()
         with self.assertRaises(ValueError):
@@ -196,7 +272,9 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
             self.inspect()
 
     def test_spdx_reject_missing_windows_target_dependency_and_stale_versions(self):
-        good = validate_adapter_spdx(self.sbom, self.lock, VERSION)
+        good = validate_adapter_spdx(
+            self.sbom, self.lock, VERSION, self.inspect()["locked_package_versions"]
+        )
         self.assertEqual(good["direct_dependencies"]["windows-sys"], "0.61.2")
         source = sample_spdx()
         for altered in [
@@ -208,7 +286,9 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         ]:
             self.sbom.write_text(json.dumps(altered))
             with self.assertRaises(ValueError):
-                validate_adapter_spdx(self.sbom, self.lock, VERSION)
+                validate_adapter_spdx(
+            self.sbom, self.lock, VERSION, self.inspect()["locked_package_versions"]
+        )
 
     def test_mapping_ref_digest_swapped_archive_and_sbom_negative_cases(self):
         core = self.dir / f"{CORE}-{VERSION}.crate"
