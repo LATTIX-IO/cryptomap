@@ -314,6 +314,43 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)
 
+    def test_only_reviewed_digest_subtle_feature_pruning_is_accepted(self):
+        """HMAC optional feature may prune subtle, not digest's other edges."""
+        source = lock_content()
+        sha2 = 'name = "sha2"\nversion = "0.10.9"'
+        self.assertIn(sha2, source)
+        reviewed = source.replace(sha2, sha2 + '\ndependencies = ["digest"]')
+        digest_entry = (
+            '\n[[package]]\nname = "digest"\nversion = "0.10.7"\n'
+            'dependencies = ["block-buffer", "crypto-common", "subtle"]\n'
+            '\n[[package]]\nname = "block-buffer"\nversion = "0.10.4"\n'
+            '\n[[package]]\nname = "crypto-common"\nversion = "0.1.7"\n'
+            '\n[[package]]\nname = "subtle"\nversion = "2.6.1"\n'
+        )
+        reviewed += digest_entry
+        self.lock.write_text(reviewed, encoding="utf-8")
+        packaged = reviewed.replace(
+            'dependencies = ["block-buffer", "crypto-common", "subtle"]',
+            'dependencies = ["block-buffer", "crypto-common"]',
+        ).replace(
+            '\n[[package]]\nname = "subtle"\nversion = "2.6.1"\n', "\n"
+        )
+        self.make_archive(add={"Cargo.lock": packaged.encode()})
+        self.assertEqual(self.inspect()["crate"], ADAPTER)
+        for poisoned in (
+            packaged.replace(
+                'dependencies = ["block-buffer", "crypto-common"]',
+                'dependencies = ["block-buffer"]',
+            ),
+            packaged.replace(
+                'dependencies = ["block-buffer", "crypto-common"]',
+                'dependencies = ["crypto-common"]',
+            ),
+        ):
+            self.make_archive(add={"Cargo.lock": poisoned.encode()})
+            with self.assertRaises(ValueError):
+                self.inspect()
+
     def test_reject_wrong_revision_and_locked_dependency(self):
         self.make_archive()
         with self.assertRaises(ValueError):
