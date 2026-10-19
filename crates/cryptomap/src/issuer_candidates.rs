@@ -613,13 +613,8 @@ mod tests {
             record(&auth, "issuer", 'a', Some('a'), Some('c')),
             record(&auth, "leaf", 'b', Some('b'), Some('a')),
         ];
-        let snapshot = correlate_with_completeness(
-            &auth,
-            rows,
-            CandidateLimits::default(),
-            false,
-        )
-        .unwrap();
+        let snapshot =
+            correlate_with_completeness(&auth, rows, CandidateLimits::default(), false).unwrap();
         assert_eq!(snapshot.relationships.len(), 1);
         assert_eq!(status(&snapshot), CoverageState::Partial);
         assert_eq!(snapshot.coverage["unit-source"], CoverageState::Partial);
