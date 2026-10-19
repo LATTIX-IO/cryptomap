@@ -34,6 +34,13 @@ PACKAGED_CORE_EDGES = frozenset({
     "cap-fs-ext", "cap-std", "const-oid", "serde",
     "serde_json", "sha2", "x509-cert",
 })
+# B5.5's opt-in HMAC feature activates the digest->subtle dependency in
+# the REVIEWED workspace lock. The default-feature adapter .crate does not
+# activate HMAC and Cargo legitimately omits precisely that edge. Do not
+# weaken the graph checker to accept arbitrary transitive pruning.
+PACKAGED_TRANSITIVE_PRUNING = {
+    ("digest", "0.10.7"): frozenset({"subtle"}),
+}
 EXPECTED_FILES = {
     "Cargo.toml", "Cargo.toml.orig", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
     "src/lib.rs", "examples/read_user_store.rs",
@@ -303,9 +310,15 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
             if (set(edges) != PACKAGED_CORE_EDGES
                     or not set(edges) <= set(baseline)):
                 raise ValueError("packaged core dependency profile changed")
+        elif (identity[0], identity[1]) in PACKAGED_TRANSITIVE_PRUNING:
+            # One explicitly pinned Cargo feature resolution, not a wildcard
+            # exception permitting loss of dependency edges.
+            removed = PACKAGED_TRANSITIVE_PRUNING[(identity[0], identity[1])]
+            if not removed <= set(baseline) or edges != tuple(sorted(set(baseline) - removed)):
+                raise ValueError("packaged transitive feature-pruning profile changed")
         elif edges != baseline:
-            # Both adapter direct dependencies and ALL registry transitive
-            # dependency edges must match the trusted workspace lock exactly.
+            # All other transitive edges are exact; missing or redirected
+            # packages fail closure and SPDX completeness checks.
             raise ValueError("packaged dependency graph lost or rewired edges")
     _check_closed_dependency_graph(packaged_graph, version)
     if any(
