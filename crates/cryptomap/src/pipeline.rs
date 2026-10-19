@@ -361,12 +361,80 @@ fn validated_certificate_profile(
     Ok(observations)
 }
 
+/// Validate optional scoped pseudonyms without ever parsing or accepting plaintext DNs.
+/// Raw data is untrusted: do not re-key arbitrary attributes or promote trust.
+fn validated_certificate_identity(
+    raw: &RawObservation,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
+) -> Result<Vec<(&'static str, String)>, PipelineError> {
+    const PREFIX: &str = "x509:identity:";
+    #[cfg(not(feature = "certificate-identity"))]
+    if raw.attributes.keys().any(|k| k.starts_with(PREFIX)) {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    const MAPPING: [(&str, &str); 4] = [
+        (
+            "x509:identity:v1:namespace",
+            "certificate:identity-namespace:v1",
+        ),
+        (
+            "x509:identity:v1:subject-dn",
+            "certificate:identity-subject-dn:v1",
+        ),
+        (
+            "x509:identity:v1:issuer-dn",
+            "certificate:identity-issuer-dn:v1",
+        ),
+        (
+            "x509:identity:v1:issuer-serial",
+            "certificate:identity-issuer-serial:v1",
+        ),
+    ];
+    #[cfg(feature = "certificate-identity")]
+    if raw.attributes.keys().any(|key| key.starts_with(PREFIX))
+        && authority.is_none_or(|auth| !auth.verify_record(raw))
+    {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    let mut output = Vec::new();
+    for (key, value) in raw.attributes.iter().filter(|(k, _)| k.starts_with(PREFIX)) {
+        if key == "x509:identity:v1:receipt" {
+            continue;
+        }
+        let (_, property) = MAPPING
+            .iter()
+            .find(|(k, _)| *k == key)
+            .ok_or(PipelineError::InvalidOutcome)?;
+        if !value.starts_with("hmac-sha256:v1:")
+            || value.len() != 79
+            || !value.as_bytes()[15..].iter().all(u8::is_ascii_hexdigit)
+            || value.as_bytes()[15..].iter().any(u8::is_ascii_uppercase)
+        {
+            return Err(PipelineError::InvalidOutcome);
+        }
+        output.push((*property, value.clone()));
+    }
+    if raw
+        .attributes
+        .contains_key("x509:identity:v1:issuer-serial")
+        && !raw.attributes.contains_key("x509:identity:v1:issuer-dn")
+    {
+        return Err(PipelineError::InvalidOutcome);
+    }
+    Ok(output)
+}
+
 fn map_fact(
     builder: &mut InventoryBuilder,
     raw: &RawObservation,
     identity: &IdentityContext,
     registry: &Registry,
     evidence: &EvidenceId,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
 ) -> Result<AssetId, PipelineError> {
     let asset = match &raw.fact {
         RawFactKind::AlgorithmUse {
@@ -521,6 +589,13 @@ fn map_fact(
             // Profile observations enrich the SAME canonical certificate
             // asset, retaining its SHA-256 identity and distinct evidence.
             for (property, value) in validated_certificate_profile(raw)? {
+                observe(builder, raw, &asset, evidence, property, value)?;
+            }
+            for (property, value) in validated_certificate_identity(
+                raw,
+                #[cfg(feature = "certificate-identity")]
+                authority,
+            )? {
                 observe(builder, raw, &asset, evidence, property, value)?;
             }
             asset
@@ -683,6 +758,35 @@ pub fn normalize(
     input: PipelineInput<'_>,
     outcome: CollectionOutcome,
 ) -> Result<InventorySnapshot, PipelineError> {
+    normalize_inner(
+        input,
+        outcome,
+        #[cfg(feature = "certificate-identity")]
+        None,
+    )
+}
+
+/// Opt-in host-authenticated pseudonym promotion into canonical inventory.
+/// The same trusted authority must have sealed the original collector records.
+#[cfg(feature = "certificate-identity")]
+pub fn normalize_with_identity(
+    input: PipelineInput<'_>,
+    outcome: CollectionOutcome,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+) -> Result<InventorySnapshot, PipelineError> {
+    authority
+        .check_scope(input.scope.id())
+        .map_err(|_| PipelineError::InvalidOutcome)?;
+    normalize_inner(input, outcome, Some(authority))
+}
+
+fn normalize_inner(
+    input: PipelineInput<'_>,
+    outcome: CollectionOutcome,
+    #[cfg(feature = "certificate-identity")] authority: Option<
+        &crate::certificate_identity::CertificateIdentityAuthority,
+    >,
+) -> Result<InventorySnapshot, PipelineError> {
     if input.identity.scope != input.scope.id().as_str()
         || outcome.run != *input.expected_run
         || outcome.descriptor != *input.expected_descriptor
@@ -831,6 +935,8 @@ pub fn normalize(
             input.identity,
             input.registry,
             &evidence.id,
+            #[cfg(feature = "certificate-identity")]
+            authority,
         )?;
         mapped_assets.insert(raw.event_id.clone(), asset);
         mapped_evidence.insert(raw.event_id.clone(), evidence.id.clone());

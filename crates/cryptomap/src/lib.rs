@@ -5,6 +5,10 @@
 #![warn(missing_docs)]
 
 pub mod batch;
+#[cfg(feature = "certificate-identity")]
+pub mod certificate_identity;
+#[cfg(feature = "certificate-identity")]
+mod certificate_name;
 #[cfg(feature = "certificate-store-grants")]
 pub mod certificate_store_scope;
 pub mod collector;
