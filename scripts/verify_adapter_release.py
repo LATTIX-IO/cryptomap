@@ -42,13 +42,20 @@ PACKAGED_TRANSITIVE_PRUNING = {
     ("digest", "0.10.7"): frozenset({"subtle"}),
 }
 EXPECTED_FILES = {
-    "Cargo.toml", "Cargo.toml.orig", "Cargo.lock", "README.md", "LICENSE-MIT", "LICENSE-APACHE",
+    ".cargo_vcs_info.json", "Cargo.toml", "Cargo.toml.orig", "Cargo.lock",
+    "README.md", "LICENSE-MIT", "LICENSE-APACHE",
     "src/lib.rs", "examples/read_user_store.rs",
     "examples/fixtures/certificate/rsa.pem",
     "examples/fixtures/certificate/ec.pem",
 }
-OPTIONAL_CARGO_FILES = {".cargo_vcs_info.json"}
-ALLOWED_FILES = EXPECTED_FILES | OPTIONAL_CARGO_FILES
+# All packaged Rust sources, UAT examples, operator docs, license texts, and
+# public fixtures MUST be byte-identical to the reviewed repository checkout.
+# No arbitrary allowlisted source may be signed as belonging to a different
+# commit, even if it compiles and passes its own self-modified tests.
+SOURCE_FILES = EXPECTED_FILES - {
+    ".cargo_vcs_info.json", "Cargo.toml", "Cargo.toml.orig", "Cargo.lock",
+}
+ALLOWED_FILES = EXPECTED_FILES
 ALLOWED_DIRS = {
     "/".join(path.split("/")[:index])
     for path in ALLOWED_FILES
@@ -193,6 +200,9 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
     manifest = None
     original_manifest = None
     packaged_lock = None
+    vcs_info = None
+    checked_source_files = set()
+    source_root = Path(__file__).resolve().parents[1] / "crates" / ADAPTER
     with archive.open("rb") as raw, gzip.GzipFile(fileobj=raw) as unzip:
         stream = BoundedDecompressedStream(unzip, MAX_ARCHIVE + MAX_ENTRIES * 2048 + 2 * 1024 * 1024)
         with tarfile.open(fileobj=stream, mode="r|") as tar:
@@ -242,6 +252,36 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
                         validate_public_certificate_fixture(
                             source.read(MAX_PUBLIC_CERT_FIXTURE_BYTES + 1), expected
                         )
+                    if rel in SOURCE_FILES:
+                        source = source_root.joinpath(*rel.split("/"))
+                        if (not source.is_file() or source.is_symlink()
+                                or not 0 <= source.stat().st_size <= MAX_ARCHIVE
+                                or source.stat().st_size != member.size):
+                            raise ValueError("missing or size-drifted reviewed adapter source")
+                        handle = tar.extractfile(member)
+                        if handle is None:
+                            raise ValueError("unreadable adapter source archive member")
+                        packaged_bytes = handle.read(member.size + 1)
+                        if (len(packaged_bytes) != member.size
+                                or hashlib.sha256(packaged_bytes).digest()
+                                != hashlib.sha256(source.read_bytes()).digest()):
+                            raise ValueError("packaged source differs from exact reviewed checkout")
+                        checked_source_files.add(rel)
+                    if rel == ".cargo_vcs_info.json":
+                        if member.size > 4096:
+                            raise ValueError("oversized Cargo VCS provenance")
+                        handle = tar.extractfile(member)
+                        if handle is None:
+                            raise ValueError("unreadable Cargo VCS provenance")
+                        try:
+                            vcs_info = json.loads(handle.read(member.size + 1))
+                        except (ValueError, UnicodeDecodeError) as exc:
+                            raise ValueError("invalid Cargo VCS provenance") from exc
+                        if vcs_info != {
+                            "git": {"sha1": commit},
+                            "path_in_vcs": "crates/cryptomap-windows-store",
+                        }:
+                            raise ValueError("packaged Git provenance does not match tested commit")
                     if rel == "Cargo.lock":
                         if member.size > 8 * 1024 * 1024:
                             raise ValueError("oversized packaged adapter lock")
@@ -267,8 +307,9 @@ def inspect_adapter(archive: Path, lockfile: Path, workspace: Path, commit: str)
         raise ValueError("empty adapter archive")
     audit_physical_tar_layout(archive, count)
     if (not EXPECTED_FILES <= regular_files or manifest is None
-            or original_manifest is None or packaged_lock is None):
-        raise ValueError("adapter archive missing mandatory files")
+            or original_manifest is None or packaged_lock is None
+            or vcs_info is None or checked_source_files != SOURCE_FILES):
+        raise ValueError("adapter archive lacks authenticated source or metadata")
     trusted_source = (Path(__file__).resolve().parents[1] / "crates"
                       / ADAPTER / "Cargo.toml")
     if not trusted_source.is_file() or not 0 < trusted_source.stat().st_size <= 100_000:

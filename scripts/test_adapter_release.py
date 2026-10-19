@@ -141,16 +141,22 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
 
     def make_archive(self, *, publish=False, omit=None, add=None):
         files = {
+            ".cargo_vcs_info.json": json.dumps({
+                "git": {"sha1": REVISION},
+                "path_in_vcs": "crates/cryptomap-windows-store",
+            }).encode(),
             "Cargo.toml": test_manifest(publish),
             "Cargo.toml.orig": (
                 ROOT / "crates" / ADAPTER / "Cargo.toml"
             ).read_bytes(),
             "Cargo.lock": lock_content().encode(),
-            "README.md": b"Read only",
-            "LICENSE-MIT": b"MIT",
-            "LICENSE-APACHE": b"Apache 2.0",
-            "src/lib.rs": b"// safe fixture",
-            "examples/read_user_store.rs": b"// manual fixture only",
+            "README.md": (ROOT / "crates" / ADAPTER / "README.md").read_bytes(),
+            "LICENSE-MIT": (ROOT / "crates" / ADAPTER / "LICENSE-MIT").read_bytes(),
+            "LICENSE-APACHE": (ROOT / "crates" / ADAPTER / "LICENSE-APACHE").read_bytes(),
+            "src/lib.rs": (ROOT / "crates" / ADAPTER / "src/lib.rs").read_bytes(),
+            "examples/read_user_store.rs": (
+                ROOT / "crates" / ADAPTER / "examples/read_user_store.rs"
+            ).read_bytes(),
         }
         for name in ("rsa.pem", "ec.pem"):
             files[f"examples/fixtures/certificate/{name}"] = (
@@ -236,6 +242,32 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         ).encode()})
         with self.assertRaises(ValueError):
             self.inspect()
+
+    def test_reject_source_substitution_even_for_allowlisted_files(self):
+        for rel in (
+            "src/lib.rs", "examples/read_user_store.rs", "README.md",
+            "LICENSE-MIT", "LICENSE-APACHE",
+            "examples/fixtures/certificate/rsa.pem",
+        ):
+            self.make_archive(add={rel: b"// substituted but allowlisted"})
+            with self.assertRaises(ValueError):
+                self.inspect()
+
+    def test_reject_tampered_or_missing_vcs_source_commit(self):
+        self.make_archive(omit=".cargo_vcs_info.json")
+        with self.assertRaises(ValueError):
+            self.inspect()
+        for metadata in (
+            {"git": {"sha1": "b" * 40}, "path_in_vcs": "crates/cryptomap-windows-store"},
+            {"git": {"sha1": REVISION}, "path_in_vcs": "../../other"},
+            {"git": {"sha1": REVISION}, "path_in_vcs": "crates/cryptomap-windows-store",
+             "extra": "unreviewed"},
+        ):
+            self.make_archive(add={
+                ".cargo_vcs_info.json": json.dumps(metadata).encode()
+            })
+            with self.assertRaises(ValueError):
+                self.inspect()
 
     def test_reject_packaged_dependency_edge_tampering(self):
         """Identical package identities alone cannot authenticate the lock graph."""
