@@ -560,6 +560,7 @@ fn typed_evidence_item<'a>(
     evidence_source: &str,
 ) -> Result<Option<&'a str>, InventoryError> {
     for kind in [
+        "CertificateStore",
         "Dependency",
         "Certificate",
         "TlsEndpoint",

@@ -139,6 +139,18 @@ fn real_der_parser_yields_candidate_but_never_verified_issuance() {
     inventory
         .verify_for_scope(scope.id(), InventoryLimits::default())
         .unwrap();
+    // Store evidence is an exact requested, positively covered source even
+    // after import. Re-hashing must not launder an unauthorized store name.
+    let mut forged = inventory.clone();
+    forged
+        .evidence
+        .values_mut()
+        .find(|entry| entry.kind == EvidenceKind::Inferred)
+        .unwrap()
+        .source = "CertificateStore:unrequested-store".into();
+    assert!(forged
+        .verify_for_scope(scope.id(), InventoryLimits::default())
+        .is_err());
     let json = serde_json::to_string(&inventory).unwrap();
     for forbidden in [
         "-----BEGIN", "PRIVATE KEY", "certificate:identity-subject-dn:v1=CN",
