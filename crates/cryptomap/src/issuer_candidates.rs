@@ -50,14 +50,12 @@ struct Node<'a> {
 }
 
 fn valid_token(token: &str) -> bool {
-    token
-        .strip_prefix("hmac-sha256:v1:")
-        .is_some_and(|hex| {
-            hex.len() == 64
-                && hex
-                    .bytes()
-                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-        })
+    token.strip_prefix("hmac-sha256:v1:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    })
 }
 
 // None means a bounded search could not establish that the edge is acyclic.
@@ -229,10 +227,8 @@ pub(crate) fn link_issuer_candidates(
             let issuer = nodes.get(issuer_id).ok_or(PipelineError::InvalidOutcome)?;
             let serialized = serde_json::to_vec(&(RULE, child_id, issuer_id, run))
                 .map_err(|_| PipelineError::InvalidOutcome)?;
-            let inferred_id = EvidenceId::new(format!(
-                "evidence:v1:{:x}",
-                Sha256::digest(serialized)
-            ))?;
+            let inferred_id =
+                EvidenceId::new(format!("evidence:v1:{:x}", Sha256::digest(serialized)))?;
             let raw = child.record;
             builder.add_evidence(Evidence {
                 id: inferred_id.clone(),
@@ -288,7 +284,7 @@ mod tests {
     use crate::{
         Asset, AssetKind, CollectionRunId, CollectionScopeId, CollectorId,
         coverage::{CollectionRun, CoverageRecord, RunCompleteness},
-        raw::{RawSourceKind, RawSourceLocator, RAW_CONTRACT_VERSION},
+        raw::{RAW_CONTRACT_VERSION, RawSourceKind, RawSourceLocator},
     };
 
     const AT: &str = "2026-10-18T12:00:00Z";
@@ -441,7 +437,11 @@ mod tests {
         assert!(relation.to.as_str().contains(&"a".repeat(64)));
         assert_eq!(relation.evidence.len(), 3);
         assert_eq!(
-            snapshot.evidence.values().filter(|e| e.kind == EvidenceKind::Inferred).count(),
+            snapshot
+                .evidence
+                .values()
+                .filter(|e| e.kind == EvidenceKind::Inferred)
+                .count(),
             1
         );
         assert!(snapshot.evidence.values().any(|e| {
