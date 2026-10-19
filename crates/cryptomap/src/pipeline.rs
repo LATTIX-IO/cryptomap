@@ -959,6 +959,7 @@ fn normalize_inner(
                 raw_limits: input.raw_limits,
                 inventory_limits: input.inventory_limits,
                 limits: crate::issuer_candidates::CandidateLimits::default(),
+                collection_complete: actual_status == CollectionStatus::Complete,
                 run: input.expected_run,
             },
         )?;

@@ -50,6 +50,7 @@ pub(crate) struct CandidateInput<'a> {
     pub(crate) raw_limits: RawLimits,
     pub(crate) inventory_limits: InventoryLimits,
     pub(crate) limits: CandidateLimits,
+    pub(crate) collection_complete: bool,
     pub(crate) run: &'a crate::CollectionRunId,
 }
 
@@ -120,6 +121,7 @@ pub(crate) fn link_issuer_candidates(
         raw_limits,
         inventory_limits,
         limits,
+        collection_complete,
         run,
     } = input;
     let marker = format!("{RULE}:{}", run.as_str());
@@ -130,7 +132,14 @@ pub(crate) fn link_issuer_candidates(
         .filter(|raw| matches!(raw.fact, RawFactKind::Certificate { .. }))
         .count();
     if cert_count == 0 {
-        builder.set_coverage(marker, CoverageState::NotInspected);
+        builder.set_coverage(
+            marker,
+            if collection_complete {
+                CoverageState::NotInspected
+            } else {
+                CoverageState::Partial
+            },
+        );
         return Ok(());
     }
     if cert_count > max_records {
@@ -209,7 +218,7 @@ pub(crate) fn link_issuer_candidates(
     let mut graph: BTreeMap<AssetId, BTreeSet<AssetId>> = BTreeMap::new();
     let mut pairs = 0usize;
     let mut edges = 0usize;
-    let mut partial = incomplete;
+    let mut partial = incomplete || !collection_complete;
     for (child_id, child) in &nodes {
         let Some(issuer_token) = child.issuer else {
             continue;
@@ -364,6 +373,15 @@ mod tests {
         observations: Vec<RawObservation>,
         limits: CandidateLimits,
     ) -> Result<crate::InventorySnapshot, PipelineError> {
+        correlate_with_completeness(auth, observations, limits, true)
+    }
+
+    fn correlate_with_completeness(
+        auth: &CertificateIdentityAuthority,
+        observations: Vec<RawObservation>,
+        limits: CandidateLimits,
+        collection_complete: bool,
+    ) -> Result<crate::InventorySnapshot, PipelineError> {
         let mut builder = InventoryBuilder::new();
         let run = CollectionRunId::new("run-candidate").unwrap();
         builder.add_run(CollectionRun {
@@ -374,15 +392,30 @@ mod tests {
             requested: BTreeSet::from(["unit-source".into()]),
             started_at: AT.into(),
             ended_at: AT.into(),
-            completeness: RunCompleteness::Complete,
+            completeness: if collection_complete {
+                RunCompleteness::Complete
+            } else {
+                RunCompleteness::Partial
+            },
         })?;
         builder.add_coverage_record(CoverageRecord {
             run: run.clone(),
             source_item: "unit-source".into(),
-            state: CoverageState::InspectedObserved,
+            state: if collection_complete {
+                CoverageState::InspectedObserved
+            } else {
+                CoverageState::Partial
+            },
             reason_code: None,
         });
-        builder.set_coverage("unit-source", CoverageState::InspectedObserved);
+        builder.set_coverage(
+            "unit-source",
+            if collection_complete {
+                CoverageState::InspectedObserved
+            } else {
+                CoverageState::Partial
+            },
+        );
         let mut records = BTreeMap::new();
         let mut assets = BTreeMap::new();
         let mut evidences = BTreeMap::new();
@@ -428,6 +461,7 @@ mod tests {
                 raw_limits: RawLimits::default(),
                 inventory_limits: InventoryLimits::default(),
                 limits,
+                collection_complete,
                 run: &run,
             },
         )?;
@@ -570,6 +604,25 @@ mod tests {
         let snapshot = correlate(&auth, rows, CandidateLimits::default()).unwrap();
         assert_eq!(snapshot.relationships.len(), 0);
         assert_eq!(status(&snapshot), CoverageState::Partial);
+    }
+
+    #[test]
+    fn incomplete_collection_is_never_promoted_to_clean_candidate_coverage() {
+        let auth = authority("tenant", "v1", 7);
+        let rows = vec![
+            record(&auth, "issuer", 'a', Some('a'), Some('c')),
+            record(&auth, "leaf", 'b', Some('b'), Some('a')),
+        ];
+        let snapshot = correlate_with_completeness(
+            &auth,
+            rows,
+            CandidateLimits::default(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(snapshot.relationships.len(), 1);
+        assert_eq!(status(&snapshot), CoverageState::Partial);
+        assert_eq!(snapshot.coverage["unit-source"], CoverageState::Partial);
     }
 
     #[test]
