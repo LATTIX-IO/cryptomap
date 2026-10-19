@@ -103,9 +103,12 @@ fn real_der_parser_yields_candidate_but_never_verified_issuance() {
     .unwrap();
     assert_eq!(outcome.coverage[ITEM], CoverageState::InspectedObserved);
     assert_eq!(outcome.observations.len(), 2);
-    assert!(outcome.observations.iter().all(|o| {
-        o.attributes.contains_key("x509:identity:v1:receipt")
-    }));
+    assert!(
+        outcome
+            .observations
+            .iter()
+            .all(|o| { o.attributes.contains_key("x509:identity:v1:receipt") })
+    );
     assert!(matches!(
         pipeline::normalize(make_input(), outcome.clone()),
         Err(PipelineError::InvalidOutcome)
@@ -148,12 +151,16 @@ fn real_der_parser_yields_candidate_but_never_verified_issuance() {
         .find(|entry| entry.kind == EvidenceKind::Inferred)
         .unwrap()
         .source = "CertificateStore:unrequested-store".into();
-    assert!(forged
-        .verify_for_scope(scope.id(), InventoryLimits::default())
-        .is_err());
+    assert!(
+        forged
+            .verify_for_scope(scope.id(), InventoryLimits::default())
+            .is_err()
+    );
     let json = serde_json::to_string(&inventory).unwrap();
     for forbidden in [
-        "-----BEGIN", "PRIVATE KEY", "certificate:identity-subject-dn:v1=CN",
+        "-----BEGIN",
+        "PRIVATE KEY",
+        "certificate:identity-subject-dn:v1=CN",
         "certificate:identity-issuer-dn:v1=CN",
     ] {
         assert!(!json.contains(forbidden));
@@ -180,7 +187,8 @@ fn real_der_parser_yields_candidate_but_never_verified_issuance() {
     .unwrap();
     let old = pipeline::normalize(normal_input, baseline).unwrap();
     assert!(old.relationships.is_empty());
-    assert!(!old
-        .coverage
-        .contains_key("x509:issuer-candidate:v1:b56-store-run"));
+    assert!(
+        !old.coverage
+            .contains_key("x509:issuer-candidate:v1:b56-store-run")
+    );
 }
