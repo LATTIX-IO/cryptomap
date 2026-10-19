@@ -48,12 +48,15 @@ EXPECTED_FILES = {
     "examples/fixtures/certificate/rsa.pem",
     "examples/fixtures/certificate/ec.pem",
 }
-# All packaged Rust sources, UAT examples, operator docs, license texts, and
-# public fixtures MUST be byte-identical to the reviewed repository checkout.
-# No arbitrary allowlisted source may be signed as belonging to a different
-# commit, even if it compiles and passes its own self-modified tests.
+# Authenticated source bytes are compared to the reviewed checkout. Public
+# PEM fixtures are verified separately by immutable SHA-256 pinned certificates,
+# avoiding a second read of the same member from the non-seekable TAR stream.
+# No arbitrary allowlisted code, docs, license, or sample may be signed as
+# belonging to another commit, even when it passes self-modified tests.
 SOURCE_FILES = EXPECTED_FILES - {
     ".cargo_vcs_info.json", "Cargo.toml", "Cargo.toml.orig", "Cargo.lock",
+    "examples/fixtures/certificate/rsa.pem",
+    "examples/fixtures/certificate/ec.pem",
 }
 ALLOWED_FILES = EXPECTED_FILES
 ALLOWED_DIRS = {
