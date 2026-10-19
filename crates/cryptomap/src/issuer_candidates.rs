@@ -6,7 +6,7 @@
 
 use crate::{
     AssetId, Confidence, CoverageState, Evidence, EvidenceId, EvidenceKind, InventoryBuilder,
-    InventoryError, InventoryLimits, Relationship, RelationshipId, RelationshipKind,
+    InventoryLimits, Relationship, RelationshipId, RelationshipKind,
     certificate_identity::CertificateIdentityAuthority,
     pipeline::PipelineError,
     raw::{RawFactKind, RawLimits, RawObservation},
@@ -39,6 +39,18 @@ impl Default for CandidateLimits {
             traversal_depth: 16,
         }
     }
+}
+
+/// Inputs already authenticated and bounded by the host-owned normalizer.
+pub(crate) struct CandidateInput<'a> {
+    pub(crate) records: &'a BTreeMap<String, RawObservation>,
+    pub(crate) assets: &'a BTreeMap<String, AssetId>,
+    pub(crate) evidence: &'a BTreeMap<String, EvidenceId>,
+    pub(crate) authority: &'a CertificateIdentityAuthority,
+    pub(crate) raw_limits: RawLimits,
+    pub(crate) inventory_limits: InventoryLimits,
+    pub(crate) limits: CandidateLimits,
+    pub(crate) run: &'a crate::CollectionRunId,
 }
 
 struct Node<'a> {
@@ -98,15 +110,18 @@ fn creates_cycle(
 /// from the original source-collection coverage and cannot upgrade its state.
 pub(crate) fn link_issuer_candidates(
     builder: &mut InventoryBuilder,
-    records: &BTreeMap<String, RawObservation>,
-    assets: &BTreeMap<String, AssetId>,
-    evidence: &BTreeMap<String, EvidenceId>,
-    authority: &CertificateIdentityAuthority,
-    raw_limits: RawLimits,
-    inventory_limits: InventoryLimits,
-    limits: CandidateLimits,
-    run: &crate::CollectionRunId,
+    input: CandidateInput<'_>,
 ) -> Result<(), PipelineError> {
+    let CandidateInput {
+        records,
+        assets,
+        evidence,
+        authority,
+        raw_limits,
+        inventory_limits,
+        limits,
+        run,
+    } = input;
     let marker = format!("{RULE}:{}", run.as_str());
     let max_records = limits.certificates.min(raw_limits.observations);
     let max_edges = limits.edges.min(inventory_limits.relationships);
@@ -405,14 +420,16 @@ mod tests {
         }
         link_issuer_candidates(
             &mut builder,
-            &records,
-            &assets,
-            &evidences,
-            auth,
-            RawLimits::default(),
-            InventoryLimits::default(),
-            limits,
-            &run,
+            CandidateInput {
+                records: &records,
+                assets: &assets,
+                evidence: &evidences,
+                authority: auth,
+                raw_limits: RawLimits::default(),
+                inventory_limits: InventoryLimits::default(),
+                limits,
+                run: &run,
+            },
         )?;
         Ok(builder.finalize(InventoryLimits::default())?)
     }

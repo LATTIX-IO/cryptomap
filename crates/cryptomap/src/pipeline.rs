@@ -951,14 +951,16 @@ fn normalize_inner(
     if let Some(authority) = authority {
         crate::issuer_candidates::link_issuer_candidates(
             &mut builder,
-            &records,
-            &mapped_assets,
-            &mapped_evidence,
-            authority,
-            input.raw_limits,
-            input.inventory_limits,
-            crate::issuer_candidates::CandidateLimits::default(),
-            input.expected_run,
+            crate::issuer_candidates::CandidateInput {
+                records: &records,
+                assets: &mapped_assets,
+                evidence: &mapped_evidence,
+                authority,
+                raw_limits: input.raw_limits,
+                inventory_limits: input.inventory_limits,
+                limits: crate::issuer_candidates::CandidateLimits::default(),
+                run: input.expected_run,
+            },
         )?;
     }
     Ok(builder.finalize(input.inventory_limits)?)
