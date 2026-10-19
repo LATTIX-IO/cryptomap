@@ -18,6 +18,8 @@ pub mod coverage;
 pub mod diagnostics;
 pub mod filesystem_scope;
 pub mod identity;
+#[cfg(feature = "certificate-identity")]
+mod issuer_candidates;
 pub mod metadata;
 pub mod network_scope;
 pub mod orchestration;

@@ -945,6 +945,22 @@ fn normalize_inner(
     // Second pass: only events that passed host authorization and normalization
     // are addressable. Never synthesize edges from co-located or similar values.
     crate::correlation::link_explicit(&mut builder, &records, &mapped_assets, &mapped_evidence)?;
+    // Candidate-only DN equality over the same HMAC-authenticated raw records;
+    // never emit verified IssuedBy/ValidatedBy from name coincidence.
+    #[cfg(feature = "certificate-identity")]
+    if let Some(authority) = authority {
+        crate::issuer_candidates::link_issuer_candidates(
+            &mut builder,
+            &records,
+            &mapped_assets,
+            &mapped_evidence,
+            authority,
+            input.raw_limits,
+            input.inventory_limits,
+            crate::issuer_candidates::CandidateLimits::default(),
+            input.expected_run,
+        )?;
+    }
     Ok(builder.finalize(input.inventory_limits)?)
 }
 

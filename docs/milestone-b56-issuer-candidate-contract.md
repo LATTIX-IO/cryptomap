@@ -89,3 +89,26 @@ revocation at validation time, certificate compliance scoring, and the
 remaining RustCrypto HMAC process-memory erasure research (FOSS-506) are
 **separate** workstreams. This implementation establishes deterministic,
 bounded issuer *candidates*, never verified PKI chains or trust decisions.
+
+
+## Increment A — same-run bounded matcher implementation
+
+The current branch implements a private, opt-in \`issuer_candidates\` stage in
+\`normalize_with_identity\` after the existing source, run, host-window and
+B5.5 HMAC receipt validation. It indexes unique certificate AssetIds by
+role-neutral pseudonymous subject DN, matches authenticated issuer DN, emits
+\`RelatedTo\` with a separate low-confidence inferred Evidence record named
+\`x509:issuer-candidate:v1\`, and retains both endpoints' direct EvidenceIds.
+
+The matcher has fixed ceilings (1,024 certificate assets/records, 32 candidates
+per issuer token, 8,192 pairs, 1,024 edges, traversal depth 16) additionally
+clamped to the invoking RawLimits and InventoryLimits. Exceeding a ceiling,
+encountering unsupported pseudonyms, or skipping a candidate cycle yields
+\`CoverageState::Partial\` under a separate namespaced candidate-coverage key;
+it never upgrades the real collection coverage. Identical certificate assets
+deduplicate; repeated source observations remain traceable. Invalid receipts,
+malformed opaque tokens or conflicting hints for the same asset fail closed.
+
+Scope of this first executable increment is **one authorized collection run**.
+It does not yet reconstruct cross-run/file/store evidence histories or supply
+AKI/SKI optional narrowing; those remain required before FOSS-483 is accepted.
