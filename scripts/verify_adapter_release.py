@@ -25,6 +25,13 @@ from release_evidence import (
 
 ADAPTER = "cryptomap-windows-store"
 CORE = "cryptomap"
+# Syft creates exactly one unversioned input-directory root when scanning the
+# approved adapter manifest/lock snapshot. Its identity is deterministic for
+# the configured scanner path and must never mask an unversioned extra package.
+ADAPTER_SPDX_ROOT_NAME = "target/release-evidence/adapter-sbom-input"
+ADAPTER_SPDX_ROOT_ID = (
+    "SPDXRef-DocumentRoot-Directory-target-release-evidence-adapter-sbom-input"
+)
 EXPECTED_DIRECT = {CORE, "windows-sys", "x509-cert"}
 # The source-packaged core in B5.3 intentionally builds without its optional
 # parser/config features. This is an explicit, REVIEWED Cargo packaging profile,
@@ -425,6 +432,8 @@ def validate_adapter_spdx(path: Path, lockfile: Path, version: str,
         raise ValueError("empty adapter dependency SPDX")
     found = set()
     ids = set()
+    root_count = 0
+    reported_inventory = Counter()
     for item in entries:
         if not isinstance(item, dict):
             raise ValueError("invalid SPDX package record")
@@ -435,6 +444,21 @@ def validate_adapter_spdx(path: Path, lockfile: Path, version: str,
             raise ValueError("duplicate or incomplete SPDX package")
         ids.add(identifier)
         name, actual = item["name"], item.get("versionInfo")
+        if actual is None:
+            # A NULL/omitted version is valid only for Syft's one input-root
+            # directory. No other unversioned SPDX package is permitted.
+            if ("versionInfo" in item
+                    or name != ADAPTER_SPDX_ROOT_NAME
+                    or identifier != ADAPTER_SPDX_ROOT_ID
+                    or item.get("primaryPackagePurpose") != "FILE"
+                    or item.get("filesAnalyzed") is not False
+                    or item.get("downloadLocation") != "NOASSERTION"):
+                raise ValueError("unapproved unversioned adapter SPDX package")
+            root_count += 1
+            continue
+        if not isinstance(actual, str) or not actual.strip():
+            raise ValueError("missing or malformed versioned SPDX package identity")
+        reported_inventory[(name, actual)] += 1
         if name in expected:
             if actual == expected[name]:
                 found.add(name)
@@ -445,6 +469,8 @@ def validate_adapter_spdx(path: Path, lockfile: Path, version: str,
                 raise ValueError("unlocked direct dependency version in SPDX")
     if found != EXPECTED_DIRECT:
         raise ValueError("adapter direct dependency coverage incomplete")
+    if root_count != 1:
+        raise ValueError("missing or duplicated Syft adapter input-directory root")
     if not isinstance(expected_packages, list) or not expected_packages:
         raise ValueError("missing validated adapter lock inventory")
     expected_inventory = Counter(
@@ -452,13 +478,9 @@ def validate_adapter_spdx(path: Path, lockfile: Path, version: str,
     )
     if len(expected_inventory) != len(expected_packages):
         raise ValueError("duplicate identity in expected packaged lock inventory")
-    # Syft adds an unversioned scanner-root package alongside the Cargo.lock
-    # packages. Reject any omitted, additional, or duplicated versioned crate;
-    # package identities must match the validated, archive-owned lock exactly.
-    reported_inventory = Counter(
-        (item["name"], item["versionInfo"])
-        for item in entries if isinstance(item.get("versionInfo"), str)
-    )
+    # Every other package MUST be versioned and exactly represented by the
+    # validated archive-owned Cargo.lock (name, version and multiplicity).
+    # Syft's single known directory root has already been checked separately.
     if reported_inventory != expected_inventory:
         raise ValueError("SPDX does not enumerate exact packaged dependency closure")
     return {

@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 
 from verify_adapter_release import (
-    ADAPTER, CORE, inspect_adapter, validate_adapter_spdx, verify_mapping, digest,
+    ADAPTER, CORE, ADAPTER_SPDX_ROOT_NAME, ADAPTER_SPDX_ROOT_ID,
+    inspect_adapter, validate_adapter_spdx, verify_mapping, digest,
 )
 
 VERSION = "0.1.1-alpha.1"
@@ -120,7 +121,13 @@ def sample_spdx() -> dict:
                 (p["name"], p["version"])
                 for p in tomllib.loads(lock_content())["package"]
             ])
-        ],
+        ] + [{
+            "SPDXID": ADAPTER_SPDX_ROOT_ID,
+            "name": ADAPTER_SPDX_ROOT_NAME,
+            "downloadLocation": "NOASSERTION",
+            "primaryPackagePurpose": "FILE",
+            "filesAnalyzed": False,
+        }],
     }
 
 
@@ -331,7 +338,7 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
         expected = self.inspect()["locked_package_versions"]
         self.assertEqual(
             validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)["package_count"],
-            len(expected),
+            len(expected) + 1,
         )
         valid = sample_spdx()
         for changed in (
@@ -343,6 +350,43 @@ class AdapterReleaseSecurityTests(unittest.TestCase):
             }]},
         ):
             self.sbom.write_text(json.dumps(changed), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)
+
+    def test_spdx_rejects_unauthorized_unversioned_packages_and_root_tampering(self):
+        """Exactly one identified Syft input-directory root is permissible."""
+        self.make_archive()
+        expected = self.inspect()["locked_package_versions"]
+        valid = sample_spdx()
+        self.assertEqual(
+            validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)["package_count"],
+            len(expected) + 1,
+        )
+        root = valid["packages"][-1]
+        invalid_packages = (
+            valid["packages"][:-1],  # missing Syft root
+            valid["packages"] + [{
+                "SPDXID": "SPDXRef-Injected", "name": "untracked-crate",
+                "downloadLocation": "NOASSERTION",
+            }],
+            valid["packages"] + [{
+                "SPDXID": "SPDXRef-Injected", "name": "untracked-crate",
+                "versionInfo": None, "downloadLocation": "NOASSERTION",
+            }],
+            valid["packages"] + [{**root, "SPDXID": "SPDXRef-Duplicate-Directory"}],
+            valid["packages"][:-1] + [{**root, "name": "other-directory"}],
+            valid["packages"][:-1] + [{**root, "filesAnalyzed": True}],
+            valid["packages"][:-1] + [{**root, "primaryPackagePurpose": "APPLICATION"}],
+            valid["packages"][:-1] + [{**root, "versionInfo": ""}],
+            valid["packages"][:1] + [{
+                key: value for key, value in valid["packages"][1].items()
+                if key != "versionInfo"
+            }] + valid["packages"][2:],
+        )
+        for packages in invalid_packages:
+            self.sbom.write_text(
+                json.dumps({**valid, "packages": packages}), encoding="utf-8"
+            )
             with self.assertRaises(ValueError):
                 validate_adapter_spdx(self.sbom, self.lock, VERSION, expected)
 
