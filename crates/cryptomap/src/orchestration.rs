@@ -113,11 +113,10 @@ pub fn collect_normalized_isolated(
 /// A valid Failed/Partial collector outcome remains evidence, not an
 /// authorization or normalization error. If a collector returns a fatal
 /// error, the function fails without producing a partial canonical snapshot.
-pub fn collect_normalized_batch(
-    mut invocations: Vec<ScopedInvocation<'_>>,
+fn preflight_batch(
+    invocations: &[ScopedInvocation<'_>],
     limits: BatchLimits,
-    cancel: &CancellationToken,
-) -> Result<InventorySnapshot, PipelineError> {
+) -> Result<(), PipelineError> {
     limits.validate()?;
     if invocations.is_empty()
         || invocations.len() > limits.runs
@@ -143,6 +142,15 @@ pub fn collect_normalized_batch(
             return Err(InventoryError::LimitExceeded("batch sources").into());
         }
     }
+    Ok(())
+}
+
+pub fn collect_normalized_batch(
+    mut invocations: Vec<ScopedInvocation<'_>>,
+    limits: BatchLimits,
+    cancel: &CancellationToken,
+) -> Result<InventorySnapshot, PipelineError> {
+    preflight_batch(&invocations, limits)?;
     invocations.sort_by(|a, b| a.input.expected_run.cmp(b.input.expected_run));
     let mut normalized_inputs = Vec::with_capacity(invocations.len());
     for invocation in invocations {
@@ -164,6 +172,48 @@ pub fn collect_normalized_batch(
         });
     }
     normalize_batch(normalized_inputs, limits)
+}
+
+
+/// Perform a heterogeneous authorized collection batch and correlate issuer
+/// *candidates* using the same host-owned B5.5 scope-bound key.
+///
+/// All invocation grants and the common scope are checked BEFORE invoking
+/// the first collector. Per-run normalization authenticates original record
+/// receipts before the candidate graph is built. No ambient stores or AIA
+/// network discovery are performed by this orchestration layer.
+#[cfg(feature = "certificate-identity")]
+pub fn collect_normalized_batch_with_identity(
+    mut invocations: Vec<ScopedInvocation<'_>>,
+    limits: BatchLimits,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+    cancel: &CancellationToken,
+) -> Result<InventorySnapshot, PipelineError> {
+    preflight_batch(&invocations, limits)?;
+    authority
+        .check_scope(invocations[0].input.scope.id())
+        .map_err(|_| PipelineError::InvalidOutcome)?;
+    invocations.sort_by(|a, b| a.input.expected_run.cmp(b.input.expected_run));
+    let mut normalized_inputs = Vec::with_capacity(invocations.len());
+    for invocation in invocations {
+        let request = CollectionRequest {
+            run: invocation.input.expected_run.clone(),
+            sources: invocation.input.sources.to_vec(),
+            limits: invocation.input.raw_limits,
+            options: Default::default(),
+        };
+        let outcome = collect_scoped(
+            invocation.input.scope,
+            invocation.collector,
+            request,
+            cancel,
+        )?;
+        normalized_inputs.push(BatchRun {
+            input: invocation.input,
+            outcome,
+        });
+    }
+    crate::batch::normalize_batch_with_identity(normalized_inputs, limits, authority)
 }
 
 #[cfg(test)]
