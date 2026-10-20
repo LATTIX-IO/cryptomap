@@ -385,7 +385,11 @@ mod tests {
         collection_complete: bool,
     ) -> Result<crate::InventorySnapshot, PipelineError> {
         correlate_with_inventory_limits(
-            auth, observations, limits, collection_complete, InventoryLimits::default()
+            auth,
+            observations,
+            limits,
+            collection_complete,
+            InventoryLimits::default(),
         )
     }
 
