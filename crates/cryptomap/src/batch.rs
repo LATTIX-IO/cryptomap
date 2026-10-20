@@ -264,7 +264,17 @@ pub fn normalize_batch_with_identity(
                 }
             }
             for raw in raw_certificates {
-                if !authority.verify_record(&raw) {
+                // B5.5 is opt-in per collector. Unknown/unkeyed input is
+                // retained as partial candidate coverage, not a forged token.
+                // The normalizer has already authenticated every supplied
+                // identity-bearing attribute; repeat verification here only
+                // for records that actually carry those attributes.
+                if raw
+                    .attributes
+                    .keys()
+                    .any(|key| key.starts_with("x509:identity:"))
+                    && !authority.verify_record(&raw)
+                {
                     return Err(PipelineError::InvalidOutcome);
                 }
                 let RawFactKind::Certificate { fingerprint_sha256 } = &raw.fact else {
