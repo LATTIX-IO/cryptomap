@@ -106,12 +106,6 @@ fn absorb_snapshot(
     Ok(())
 }
 
-/// Normalize independently trusted collector outcomes and reconcile the resulting
-/// canonical assets, evidence, relations and per-run coverage deterministically.
-///
-/// Fail-closed structural failures reject the whole batch. A *valid* failed or
-/// partially complete collection outcome is retained alongside successful runs;
-/// it does not erase previously observed evidence.
 fn check_batch<'a>(runs: &mut Vec<BatchRun<'a>>, limits: BatchLimits) -> Result<(), PipelineError> {
     limits.validate()?;
     if runs.is_empty() || runs.len() > limits.runs || runs.len() > limits.inventory.runs {
@@ -165,6 +159,12 @@ fn check_batch<'a>(runs: &mut Vec<BatchRun<'a>>, limits: BatchLimits) -> Result<
     Ok(())
 }
 
+/// Normalize independently trusted collector outcomes and reconcile the resulting
+/// canonical assets, evidence, relations and per-run coverage deterministically.
+///
+/// Fail-closed structural failures reject the whole batch. A *valid* failed or
+/// partially complete collection outcome is retained alongside successful runs;
+/// it does not erase previously observed evidence.
 pub fn normalize_batch(
     mut runs: Vec<BatchRun<'_>>,
     limits: BatchLimits,
