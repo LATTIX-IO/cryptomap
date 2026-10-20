@@ -369,7 +369,6 @@ pub fn normalize_batch_with_identity(
     Ok(builder.finalize(limits.inventory)?)
 }
 
-
 #[cfg(all(test, feature = "certificate-identity"))]
 #[allow(clippy::unwrap_used)]
 mod issuer_batch_window_tests {
@@ -378,18 +377,34 @@ mod issuer_batch_window_tests {
     #[test]
     fn windows_require_a_real_utc_intersection_not_similar_strings() {
         let mut common = None;
-        assert!(intersect_collection_windows(
-            &mut common, "2026-10-18T12:00:00Z", "2026-10-18T12:01:00Z",
-        ).unwrap());
-        assert!(intersect_collection_windows(
-            &mut common, "2026-10-18T08:00:30-04:00", "2026-10-18T12:00:45Z",
-        ).unwrap());
-        assert!(!intersect_collection_windows(
-            &mut common, "2026-10-18T12:02:00Z", "2026-10-18T12:03:00Z",
-        ).unwrap());
+        assert!(
+            intersect_collection_windows(
+                &mut common,
+                "2026-10-18T12:00:00Z",
+                "2026-10-18T12:01:00Z",
+            )
+            .unwrap()
+        );
+        assert!(
+            intersect_collection_windows(
+                &mut common,
+                "2026-10-18T08:00:30-04:00",
+                "2026-10-18T12:00:45Z",
+            )
+            .unwrap()
+        );
+        assert!(
+            !intersect_collection_windows(
+                &mut common,
+                "2026-10-18T12:02:00Z",
+                "2026-10-18T12:03:00Z",
+            )
+            .unwrap()
+        );
         let mut bad = None;
-        assert!(intersect_collection_windows(
-            &mut bad, "2026-10-18T12:00:01Z", "2026-10-18T12:00:00Z"
-        ).is_err());
+        assert!(
+            intersect_collection_windows(&mut bad, "2026-10-18T12:00:01Z", "2026-10-18T12:00:00Z")
+                .is_err()
+        );
     }
 }
