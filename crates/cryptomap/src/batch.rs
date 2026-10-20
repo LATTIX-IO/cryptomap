@@ -1,7 +1,8 @@
 //! Deterministic, bounded reconciliation of independently authorized collection runs.
 //!
 //! Every collector is first normalized through the existing host-pinned pipeline;
-//! this module cannot inspect a source or synthesize cross-run relationships.
+//! this module never acquires source access. Keyed issuer-candidate federation
+//! requires the same host-owned authority for every independently normalized run.
 use crate::{
     InventoryBuilder, InventoryError, InventoryLimits, InventorySnapshot,
     collector::{CollectionOutcome, CollectionRequest},
@@ -75,16 +76,43 @@ fn charge(
     Ok(())
 }
 
+fn absorb_snapshot(
+    builder: &mut InventoryBuilder,
+    snapshot: InventorySnapshot,
+) -> Result<(), PipelineError> {
+        for item in snapshot.runs.into_values() {
+            builder.add_run(item)?;
+        }
+        for asset in snapshot.assets.into_values() {
+            builder.add_asset(asset)?;
+        }
+        for evidence in snapshot.evidence.into_values() {
+            builder.add_evidence(evidence)?;
+        }
+        for observation in snapshot.observations.into_values() {
+            builder.add_observation(observation)?;
+        }
+        for relationship in snapshot.relationships.into_values() {
+            builder.add_relationship(relationship)?;
+        }
+        // Batch snapshots use only typed coverage. Writing synthetic legacy
+        // entries keyed by ephemeral run IDs would make otherwise identical
+        // reinspection batches appear to change coverage in snapshot diffs.
+        // Typed records retain exact (run, source) provenance while the diff
+        // projects stable (scope, collector, source) identities.
+        for record in snapshot.coverage_records {
+            builder.add_coverage_record(record);
+        }
+    Ok(())
+}
+
 /// Normalize independently trusted collector outcomes and reconcile the resulting
 /// canonical assets, evidence, relations and per-run coverage deterministically.
 ///
 /// Fail-closed structural failures reject the whole batch. A *valid* failed or
 /// partially complete collection outcome is retained alongside successful runs;
 /// it does not erase previously observed evidence.
-pub fn normalize_batch(
-    mut runs: Vec<BatchRun<'_>>,
-    limits: BatchLimits,
-) -> Result<InventorySnapshot, PipelineError> {
+fn check_batch<'a>(runs: &mut Vec<BatchRun<'a>>, limits: BatchLimits) -> Result<(), PipelineError> {
     limits.validate()?;
     if runs.is_empty() || runs.len() > limits.runs || runs.len() > limits.inventory.runs {
         return Err(InventoryError::LimitExceeded("batch runs").into());
@@ -134,32 +162,171 @@ pub fn normalize_batch(
     // Order by independent host-pinned run IDs, not collector completion or
     // caller input order. Reject duplicate run IDs, even across collectors.
     runs.sort_by(|left, right| left.input.expected_run.cmp(right.input.expected_run));
+    Ok(())
+}
+
+pub fn normalize_batch(
+    mut runs: Vec<BatchRun<'_>>,
+    limits: BatchLimits,
+) -> Result<InventorySnapshot, PipelineError> {
+    check_batch(&mut runs, limits)?;
     let mut builder = InventoryBuilder::new();
     for run in runs {
         let snapshot = normalize(run.input, run.outcome)?;
-        for item in snapshot.runs.into_values() {
-            builder.add_run(item)?;
+        absorb_snapshot(&mut builder, snapshot)?;
+    }
+    Ok(builder.finalize(limits.inventory)?)
+}
+
+
+/// Normalize a bounded collection batch using the *same* host-owned B5.5
+/// authority for every run, then correlate X.509 issuer candidates across runs.
+///
+/// All run IDs, collector descriptors, source grants, event times and HMAC
+/// receipts are revalidated against their independently pinned host input.
+/// No imported snapshot or pseudonym-shape-only hint can authorize a join.
+/// Inferred relationships are candidate-only; no signature or trust decision.
+#[cfg(feature = "certificate-identity")]
+pub fn normalize_batch_with_identity(
+    mut runs: Vec<BatchRun<'_>>,
+    limits: BatchLimits,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+) -> Result<InventorySnapshot, PipelineError> {
+    use crate::{
+        AssetId, AssetKind, EvidenceId,
+        certificate_identity::IdentityError,
+        issuer_candidates::{CandidateInput, CandidateLimits, link_issuer_candidates},
+        pipeline::{evidence_for, normalize_with_identity_without_candidates},
+        raw::{RawFactKind, RawLimits, RawObservation},
+    };
+    use std::collections::BTreeMap;
+
+    check_batch(&mut runs, limits)?;
+    authority
+        .check_scope(runs[0].input.scope.id())
+        .map_err(|_: IdentityError| PipelineError::InvalidOutcome)?;
+
+    let candidates_limit = CandidateLimits::default();
+    let mut builder = InventoryBuilder::new();
+    let mut records: BTreeMap<String, RawObservation> = BTreeMap::new();
+    let mut assets: BTreeMap<String, AssetId> = BTreeMap::new();
+    let mut evidence: BTreeMap<String, EvidenceId> = BTreeMap::new();
+    let mut complete = true;
+    let mut candidate_records = 0usize;
+    let mut over_budget = false;
+
+    for run in runs {
+        let run_id = run.input.expected_run.clone();
+        // Host-granted source/run identity remains borrowed only by the
+        // current normalizer; never reconstruct it from an imported snapshot.
+        let eligible = run
+            .outcome
+            .observations
+            .iter()
+            .filter(|raw| matches!(raw.fact, RawFactKind::Certificate { .. }));
+        let mut raw_certificates = Vec::new();
+        for raw in eligible {
+            candidate_records = candidate_records
+                .checked_add(1)
+                .ok_or(InventoryError::LimitExceeded("candidate record count"))?;
+            if candidate_records <= candidates_limit.certificates {
+                raw_certificates.push(raw.clone());
+            } else {
+                over_budget = true;
+            }
         }
-        for asset in snapshot.assets.into_values() {
-            builder.add_asset(asset)?;
+        let snapshot = normalize_with_identity_without_candidates(
+            run.input, run.outcome, authority,
+        )?;
+        let metadata = snapshot
+            .runs
+            .get(&run_id)
+            .ok_or(PipelineError::InvalidOutcome)?;
+        complete &= matches!(
+            metadata.completeness,
+            crate::coverage::RunCompleteness::Complete
+        );
+
+        if !over_budget {
+            // Derive the *canonical* ID from the actual normalized evidence
+            // and fingerprint observation, not a guessed filename or token.
+            let mut mapped = BTreeMap::new();
+            for observation in snapshot.observations.values() {
+                if observation.property == "certificate:fingerprint-sha256"
+                    && mapped
+                        .insert(
+                            observation.evidence.clone(),
+                            (observation.asset.clone(), observation.value.clone()),
+                        )
+                        .is_some()
+                {
+                    return Err(PipelineError::InvalidOutcome);
+                }
+            }
+            for raw in raw_certificates {
+                if !authority.verify_record(&raw) {
+                    return Err(PipelineError::InvalidOutcome);
+                }
+                let RawFactKind::Certificate { fingerprint_sha256 } = &raw.fact else {
+                    return Err(PipelineError::InvalidOutcome);
+                };
+                let direct_id = evidence_for(&raw)?.id;
+                let (asset, observed_fingerprint) = mapped
+                    .get(&direct_id)
+                    .ok_or(PipelineError::InvalidOutcome)?;
+                let expected_fingerprint = fingerprint_sha256.to_ascii_lowercase();
+                if observed_fingerprint != &expected_fingerprint
+                    || !matches!(
+                        snapshot.assets.get(asset).map(|a| &a.kind),
+                        Some(AssetKind::Certificate {
+                            fingerprint_sha256: digest,
+                            ..
+                        }) if digest == &expected_fingerprint
+                    )
+                {
+                    return Err(PipelineError::InvalidOutcome);
+                }
+                // Length-prefix the run so arbitrary event identifiers cannot
+                // alias across runs. Raw event IDs remain unchanged for MACs.
+                let event_key = format!(
+                    "{}:{}:{}",
+                    run_id.as_str().len(),
+                    run_id.as_str(),
+                    raw.event_id
+                );
+                if records.insert(event_key.clone(), raw).is_some()
+                    || assets.insert(event_key.clone(), asset.clone()).is_some()
+                    || evidence.insert(event_key, direct_id).is_some()
+                {
+                    return Err(PipelineError::InvalidOutcome);
+                }
+            }
         }
-        for evidence in snapshot.evidence.into_values() {
-            builder.add_evidence(evidence)?;
-        }
-        for observation in snapshot.observations.into_values() {
-            builder.add_observation(observation)?;
-        }
-        for relationship in snapshot.relationships.into_values() {
-            builder.add_relationship(relationship)?;
-        }
-        // Batch snapshots use only typed coverage. Writing synthetic legacy
-        // entries keyed by ephemeral run IDs would make otherwise identical
-        // reinspection batches appear to change coverage in snapshot diffs.
-        // Typed records retain exact (run, source) provenance while the diff
-        // projects stable (scope, collector, source) identities.
-        for record in snapshot.coverage_records {
-            builder.add_coverage_record(record);
-        }
+        absorb_snapshot(&mut builder, snapshot)?;
+    }
+
+    if over_budget {
+        // Do not emit a misleading candidate subgraph for only the first
+        // arbitrarily chosen N of a larger authorized batch.
+        builder.set_coverage("x509:issuer-candidate:v1:batch", crate::CoverageState::Partial);
+    } else {
+        link_issuer_candidates(
+            &mut builder,
+            CandidateInput {
+                records: &records,
+                assets: &assets,
+                evidence: &evidence,
+                authority,
+                raw_limits: RawLimits {
+                    observations: limits.observations,
+                    ..RawLimits::default()
+                },
+                inventory_limits: limits.inventory,
+                limits: candidates_limit,
+                collection_complete: complete,
+                coverage_label: "batch",
+            },
+        )?;
     }
     Ok(builder.finalize(limits.inventory)?)
 }
