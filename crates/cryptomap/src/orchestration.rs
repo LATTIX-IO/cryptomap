@@ -174,7 +174,6 @@ pub fn collect_normalized_batch(
     normalize_batch(normalized_inputs, limits)
 }
 
-
 /// Perform a heterogeneous authorized collection batch and correlate issuer
 /// *candidates* using the same host-owned B5.5 scope-bound key.
 ///
