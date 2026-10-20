@@ -4,8 +4,8 @@
 #![allow(clippy::unwrap_used)]
 
 use cryptomap::{
-    CollectionRunId, CollectionScopeId, CoverageState, EvidenceKind,
-    IdentityContext, InventoryLimits, RelationshipKind,
+    CollectionRunId, CollectionScopeId, CoverageState, EvidenceKind, IdentityContext,
+    InventoryLimits, RelationshipKind,
     batch::{BatchLimits, BatchRun, normalize_batch_with_identity},
     certificate_identity::CertificateIdentityAuthority,
     certificate_store_scope::{
@@ -191,22 +191,37 @@ fn authorized_three_run_pem_der_store_federation_is_candidate_only() {
         let mut runs = vec![
             BatchRun {
                 input: pinned_input(
-                    &scope, &identity, &registry, &file_descriptor,
-                    &leaf_run, &leaf_sources, raw_limits,
+                    &scope,
+                    &identity,
+                    &registry,
+                    &file_descriptor,
+                    &leaf_run,
+                    &leaf_sources,
+                    raw_limits,
                 ),
                 outcome: leaf,
             },
             BatchRun {
                 input: pinned_input(
-                    &scope, &identity, &registry, &file_descriptor,
-                    &root_run, &root_sources, raw_limits,
+                    &scope,
+                    &identity,
+                    &registry,
+                    &file_descriptor,
+                    &root_run,
+                    &root_sources,
+                    raw_limits,
                 ),
                 outcome: root_outcome.clone(),
             },
             BatchRun {
                 input: pinned_input(
-                    &scope, &identity, &registry, &store_descriptor,
-                    &store_run, &store_sources, raw_limits,
+                    &scope,
+                    &identity,
+                    &registry,
+                    &store_descriptor,
+                    &store_run,
+                    &store_sources,
+                    raw_limits,
                 ),
                 outcome: store_outcome.clone(),
             },
