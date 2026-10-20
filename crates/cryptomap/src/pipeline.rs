@@ -179,7 +179,7 @@ fn nonsecret_configuration(property: &str) -> Result<(), InventoryError> {
     Ok(())
 }
 
-fn evidence_for(raw: &RawObservation) -> Result<Evidence, InventoryError> {
+pub(crate) fn evidence_for(raw: &RawObservation) -> Result<Evidence, InventoryError> {
     let id = EvidenceId::new(format!(
         "evidence:v1:{}",
         digest_id(&[raw.run.as_str(), raw.collector.as_str(), &raw.event_id])?
@@ -763,6 +763,8 @@ pub fn normalize(
         outcome,
         #[cfg(feature = "certificate-identity")]
         None,
+        #[cfg(feature = "certificate-identity")]
+        false,
     )
 }
 
@@ -777,7 +779,21 @@ pub fn normalize_with_identity(
     authority
         .check_scope(input.scope.id())
         .map_err(|_| PipelineError::InvalidOutcome)?;
-    normalize_inner(input, outcome, Some(authority))
+    normalize_inner(input, outcome, Some(authority), true)
+}
+
+/// Host-authenticated canonical promotion for batch federation, without
+/// claiming a complete issuer graph before independent runs are reconciled.
+#[cfg(feature = "certificate-identity")]
+pub(crate) fn normalize_with_identity_without_candidates(
+    input: PipelineInput<'_>,
+    outcome: CollectionOutcome,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+) -> Result<InventorySnapshot, PipelineError> {
+    authority
+        .check_scope(input.scope.id())
+        .map_err(|_| PipelineError::InvalidOutcome)?;
+    normalize_inner(input, outcome, Some(authority), false)
 }
 
 fn normalize_inner(
@@ -786,6 +802,7 @@ fn normalize_inner(
     #[cfg(feature = "certificate-identity")] authority: Option<
         &crate::certificate_identity::CertificateIdentityAuthority,
     >,
+    #[cfg(feature = "certificate-identity")] correlate_candidates: bool,
 ) -> Result<InventorySnapshot, PipelineError> {
     if input.identity.scope != input.scope.id().as_str()
         || outcome.run != *input.expected_run
@@ -948,7 +965,7 @@ fn normalize_inner(
     // Candidate-only DN equality over the same HMAC-authenticated raw records;
     // never emit verified IssuedBy/ValidatedBy from name coincidence.
     #[cfg(feature = "certificate-identity")]
-    if let Some(authority) = authority {
+    if let (true, Some(authority)) = (correlate_candidates, authority) {
         crate::issuer_candidates::link_issuer_candidates(
             &mut builder,
             crate::issuer_candidates::CandidateInput {
@@ -960,7 +977,7 @@ fn normalize_inner(
                 inventory_limits: input.inventory_limits,
                 limits: crate::issuer_candidates::CandidateLimits::default(),
                 collection_complete: actual_status == CollectionStatus::Complete,
-                run: input.expected_run,
+                coverage_label: input.expected_run.as_str(),
             },
         )?;
     }

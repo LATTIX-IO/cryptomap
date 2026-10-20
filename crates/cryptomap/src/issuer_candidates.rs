@@ -51,7 +51,7 @@ pub(crate) struct CandidateInput<'a> {
     pub(crate) inventory_limits: InventoryLimits,
     pub(crate) limits: CandidateLimits,
     pub(crate) collection_complete: bool,
-    pub(crate) run: &'a crate::CollectionRunId,
+    pub(crate) coverage_label: &'a str,
 }
 
 struct Node<'a> {
@@ -122,9 +122,9 @@ pub(crate) fn link_issuer_candidates(
         inventory_limits,
         limits,
         collection_complete,
-        run,
+        coverage_label,
     } = input;
-    let marker = format!("{RULE}:{}", run.as_str());
+    let marker = format!("{RULE}:{coverage_label}");
     let max_records = limits.certificates.min(raw_limits.observations);
     let max_edges = limits.edges.min(inventory_limits.relationships);
     let cert_count = records
@@ -249,7 +249,7 @@ pub(crate) fn link_issuer_candidates(
                 }
             }
             let issuer = nodes.get(issuer_id).ok_or(PipelineError::InvalidOutcome)?;
-            let serialized = serde_json::to_vec(&(RULE, child_id, issuer_id, run))
+            let serialized = serde_json::to_vec(&(RULE, child_id, issuer_id, &child.record.run))
                 .map_err(|_| PipelineError::InvalidOutcome)?;
             let inferred_id =
                 EvidenceId::new(format!("evidence:v1:{:x}", Sha256::digest(serialized)))?;
@@ -462,7 +462,7 @@ mod tests {
                 inventory_limits: InventoryLimits::default(),
                 limits,
                 collection_complete,
-                run: &run,
+                coverage_label: run.as_str(),
             },
         )?;
         Ok(builder.finalize(InventoryLimits::default())?)
