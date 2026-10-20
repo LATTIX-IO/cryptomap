@@ -103,16 +103,6 @@ pub fn collect_normalized_isolated(
     normalize(invocation.input, outcome)
 }
 
-/// Execute heterogeneous authorized collectors and deterministically reconcile.
-///
-/// Preflight is **all-or-nothing**: a bad tenant, run, descriptor, source or
-/// aggregate run/source budget prevents execution of *any* collector. Raw
-/// observation and byte caps are independently enforced by the existing
-/// per-run sinks and `normalize_batch` before canonical aggregation.
-///
-/// A valid Failed/Partial collector outcome remains evidence, not an
-/// authorization or normalization error. If a collector returns a fatal
-/// error, the function fails without producing a partial canonical snapshot.
 fn preflight_batch(
     invocations: &[ScopedInvocation<'_>],
     limits: BatchLimits,
@@ -145,6 +135,16 @@ fn preflight_batch(
     Ok(())
 }
 
+/// Execute heterogeneous authorized collectors and deterministically reconcile.
+///
+/// Preflight is **all-or-nothing**: a bad tenant, run, descriptor, source or
+/// aggregate run/source budget prevents execution of *any* collector. Raw
+/// observation and byte caps are independently enforced by the existing
+/// per-run sinks and `normalize_batch` before canonical aggregation.
+///
+/// A valid Failed/Partial collector outcome remains evidence, not an
+/// authorization or normalization error. If a collector returns a fatal
+/// error, the function fails without producing a partial canonical snapshot.
 pub fn collect_normalized_batch(
     mut invocations: Vec<ScopedInvocation<'_>>,
     limits: BatchLimits,

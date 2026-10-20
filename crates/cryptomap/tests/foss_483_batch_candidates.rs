@@ -11,7 +11,10 @@ use cryptomap::{
     certificate_store_scope::{
         CertificateStoreGrant, CertificateStoreLocation, CertificateStoreTarget,
     },
-    collector::{CancellationToken, CollectionRequest, CollectionStatus, Collector, RequestedSource},
+    collector::{
+        CancellationToken, CollectionRequest, CollectionStatus, Collector, CollectorDescriptor,
+        RequestedSource,
+    },
     collectors::{
         certificate::{CertificateFileCollector, MAX_CERT_FILE_BYTES},
         certificate_store::{
@@ -46,6 +49,29 @@ impl PublicCertificateStoreBackend for Memory {
         visitor(&self.0)
     }
 }
+fn pinned_input<'a>(
+    scope: &'a CollectionScope,
+    identity: &'a IdentityContext,
+    registry: &'a Registry,
+    descriptor: &'a CollectorDescriptor,
+    run: &'a CollectionRunId,
+    sources: &'a [RequestedSource],
+    raw_limits: RawLimits,
+) -> PipelineInput<'a> {
+    PipelineInput {
+        scope,
+        identity,
+        registry,
+        expected_descriptor: descriptor,
+        expected_run: run,
+        sources,
+        raw_limits,
+        inventory_limits: InventoryLimits::default(),
+        started_at: AT,
+        ended_at: AT,
+    }
+}
+
 struct Cleanup(PathBuf);
 impl Drop for Cleanup {
     fn drop(&mut self) {
@@ -161,33 +187,27 @@ fn authorized_three_run_pem_der_store_federation_is_candidate_only() {
     );
 
     let inputs = |reverse: bool, leaf: cryptomap::collector::CollectionOutcome| {
-        let make_input =
-            |run: &CollectionRunId,
-             sources: &[RequestedSource],
-             descriptor: &cryptomap::collector::CollectorDescriptor| PipelineInput {
-                scope: &scope,
-                identity: &identity,
-                registry: &registry,
-                expected_descriptor: descriptor,
-                expected_run: run,
-                sources,
-                raw_limits,
-                inventory_limits: InventoryLimits::default(),
-                started_at: AT,
-                ended_at: AT,
-            };
         // Inline contexts retain independent host-pinned run and source refs.
         let mut runs = vec![
             BatchRun {
-                input: make_input(&leaf_run, &leaf_sources, &file_descriptor),
+                input: pinned_input(
+                    &scope, &identity, &registry, &file_descriptor,
+                    &leaf_run, &leaf_sources, raw_limits,
+                ),
                 outcome: leaf,
             },
             BatchRun {
-                input: make_input(&root_run, &root_sources, &file_descriptor),
+                input: pinned_input(
+                    &scope, &identity, &registry, &file_descriptor,
+                    &root_run, &root_sources, raw_limits,
+                ),
                 outcome: root_outcome.clone(),
             },
             BatchRun {
-                input: make_input(&store_run, &store_sources, &store_descriptor),
+                input: pinned_input(
+                    &scope, &identity, &registry, &store_descriptor,
+                    &store_run, &store_sources, raw_limits,
+                ),
                 outcome: store_outcome.clone(),
             },
         ];
