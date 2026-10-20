@@ -178,6 +178,27 @@ pub fn normalize_batch(
     Ok(builder.finalize(limits.inventory)?)
 }
 
+// Comparability of independent collection windows is *not* certificate
+// validity or path validation. Disjoint windows make issuer candidates
+// temporally ambiguous; retain possible edges but mark coverage Partial.
+#[cfg(feature = "certificate-identity")]
+fn intersect_collection_windows(
+    common: &mut Option<(crate::validation::UtcInstant, crate::validation::UtcInstant)>,
+    start: &str,
+    end: &str,
+) -> Result<bool, InventoryError> {
+    let start = crate::validation::utc_instant(start)?;
+    let end = crate::validation::utc_instant(end)?;
+    if start > end {
+        return Err(InventoryError::InvalidTimestamp);
+    }
+    let next = common
+        .map(|(latest, earliest)| (latest.max(start), earliest.min(end)))
+        .unwrap_or((start, end));
+    *common = Some(next);
+    Ok(next.0 <= next.1)
+}
+
 /// Normalize a bounded collection batch using the *same* host-owned B5.5
 /// authority for every run, then correlate X.509 issuer candidates across runs.
 ///
@@ -211,6 +232,7 @@ pub fn normalize_batch_with_identity(
     let mut assets: BTreeMap<String, AssetId> = BTreeMap::new();
     let mut evidence: BTreeMap<String, EvidenceId> = BTreeMap::new();
     let mut complete = true;
+    let mut common_window = None;
     let mut candidate_records = 0usize;
     let mut over_budget = false;
 
@@ -244,6 +266,11 @@ pub fn normalize_batch_with_identity(
             metadata.completeness,
             crate::coverage::RunCompleteness::Complete
         );
+        complete &= intersect_collection_windows(
+            &mut common_window,
+            &metadata.started_at,
+            &metadata.ended_at,
+        )?;
 
         if !over_budget {
             // Derive the *canonical* ID from the actual normalized evidence
@@ -340,4 +367,29 @@ pub fn normalize_batch_with_identity(
         )?;
     }
     Ok(builder.finalize(limits.inventory)?)
+}
+
+
+#[cfg(all(test, feature = "certificate-identity"))]
+#[allow(clippy::unwrap_used)]
+mod issuer_batch_window_tests {
+    use super::*;
+
+    #[test]
+    fn windows_require_a_real_utc_intersection_not_similar_strings() {
+        let mut common = None;
+        assert!(intersect_collection_windows(
+            &mut common, "2026-10-18T12:00:00Z", "2026-10-18T12:01:00Z",
+        ).unwrap());
+        assert!(intersect_collection_windows(
+            &mut common, "2026-10-18T08:00:30-04:00", "2026-10-18T12:00:45Z",
+        ).unwrap());
+        assert!(!intersect_collection_windows(
+            &mut common, "2026-10-18T12:02:00Z", "2026-10-18T12:03:00Z",
+        ).unwrap());
+        let mut bad = None;
+        assert!(intersect_collection_windows(
+            &mut bad, "2026-10-18T12:00:01Z", "2026-10-18T12:00:00Z"
+        ).is_err());
+    }
 }
