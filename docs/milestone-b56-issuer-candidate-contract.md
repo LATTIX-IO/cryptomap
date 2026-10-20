@@ -143,3 +143,58 @@ Use host-supplied CSPRNG-generated HMAC keys, exact source grants and the
 existing `normalize_with_identity` interface. The matcher does not acquire
 any system certificate-store permissions itself. Integration tests must not
 read an actual Windows user or machine certificate store.
+
+
+## Increment B — authenticated PEM/DER/store batch federation
+
+The implementation adds two explicit entry points, both behind the existing
+`certificate-identity` feature:
+
+- `batch::normalize_batch_with_identity(runs, limits, authority)`: consumes
+  independently collected `BatchRun` values with their host-pinned per-run
+  scope/descriptor/source grants and one shared authority. It normalizes every
+  run with verified B5.5 receipts before constructing the candidate graph.
+- `orchestration::collect_normalized_batch_with_identity(invocations, limits,
+  authority, cancel)`: preflights **all** exact source grants and run
+  descriptors before executing the first collector, and delegates to the
+  authenticated batch normalizer.
+
+The ordinary non-keyed `normalize_batch` and `collect_normalized_batch`
+functions remain unchanged in behavior; they do not accept keyed X.509 hints.
+
+The batch matcher uses real canonical asset IDs and independently verified
+direct EvidenceIds from per-run normalization. It cannot build a relationship
+from imported snapshots or unauthenticated HMAC-shaped strings. Duplicate
+public certificates observed through PEM and DER or through the explicitly
+granted Windows-store adapter become one certificate asset while preserving
+distinct direct evidence and typed source coverage. The inferred evidence
+references an actual child observation's run and authorized source, not a
+fabricated batch run.
+
+The candidate coverage marker is
+`x509:issuer-candidate:v1:batch`. Partial/failed source coverage, a missing
+or unsupported identity, skipped cycle, ambiguous fanout or a resource cap
+results in `Partial` rather than a statement that no issuer exists.
+
+### Batch verification
+
+Run:
+
+    cargo test -p cryptomap --all-features --locked --test foss_483_batch_candidates
+    cargo test -p cryptomap --all-features --locked --test foss_483_issuer_candidates
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+The cross-run integration uses an authorized DER file containing an
+intentionally *un-signed* issuer TBS edit, a separate authorized PEM file,
+and a separate memory-only Windows-store backend containing the PEM
+certificate's canonical DER. It verifies one inferred candidate edge,
+reproducible results under reversed run ordering, both issuer-source direct
+evidence records, and retained partial coverage after an incomplete run.
+No real user/machine store or network source is read during these tests.
+
+### Out of scope
+
+This batch join is not temporal path validation, trust-anchor endorsement,
+signature verification or revocation checking. It also does not authorize
+federating previously materialized/imported snapshots: an attacker who can
+rewrite a snapshot digest cannot impersonate a host-owned HMAC authority.
