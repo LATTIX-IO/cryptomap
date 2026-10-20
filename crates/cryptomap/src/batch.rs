@@ -80,29 +80,29 @@ fn absorb_snapshot(
     builder: &mut InventoryBuilder,
     snapshot: InventorySnapshot,
 ) -> Result<(), PipelineError> {
-        for item in snapshot.runs.into_values() {
-            builder.add_run(item)?;
-        }
-        for asset in snapshot.assets.into_values() {
-            builder.add_asset(asset)?;
-        }
-        for evidence in snapshot.evidence.into_values() {
-            builder.add_evidence(evidence)?;
-        }
-        for observation in snapshot.observations.into_values() {
-            builder.add_observation(observation)?;
-        }
-        for relationship in snapshot.relationships.into_values() {
-            builder.add_relationship(relationship)?;
-        }
-        // Batch snapshots use only typed coverage. Writing synthetic legacy
-        // entries keyed by ephemeral run IDs would make otherwise identical
-        // reinspection batches appear to change coverage in snapshot diffs.
-        // Typed records retain exact (run, source) provenance while the diff
-        // projects stable (scope, collector, source) identities.
-        for record in snapshot.coverage_records {
-            builder.add_coverage_record(record);
-        }
+    for item in snapshot.runs.into_values() {
+        builder.add_run(item)?;
+    }
+    for asset in snapshot.assets.into_values() {
+        builder.add_asset(asset)?;
+    }
+    for evidence in snapshot.evidence.into_values() {
+        builder.add_evidence(evidence)?;
+    }
+    for observation in snapshot.observations.into_values() {
+        builder.add_observation(observation)?;
+    }
+    for relationship in snapshot.relationships.into_values() {
+        builder.add_relationship(relationship)?;
+    }
+    // Batch snapshots use only typed coverage. Writing synthetic legacy
+    // entries keyed by ephemeral run IDs would make otherwise identical
+    // reinspection batches appear to change coverage in snapshot diffs.
+    // Typed records retain exact (run, source) provenance while the diff
+    // projects stable (scope, collector, source) identities.
+    for record in snapshot.coverage_records {
+        builder.add_coverage_record(record);
+    }
     Ok(())
 }
 
@@ -124,7 +124,7 @@ fn check_batch<'a>(runs: &mut Vec<BatchRun<'a>>, limits: BatchLimits) -> Result<
     let mut total_sources = 0;
     let mut total_records = 0;
     let mut total_bytes = 0;
-    for run in &runs {
+    for run in runs.iter() {
         let input = &run.input;
         if input.scope.id() != &administrative_scope
             || input.identity.scope != administrative_scope.as_str()
@@ -177,7 +177,6 @@ pub fn normalize_batch(
     }
     Ok(builder.finalize(limits.inventory)?)
 }
-
 
 /// Normalize a bounded collection batch using the *same* host-owned B5.5
 /// authority for every run, then correlate X.509 issuer candidates across runs.
@@ -235,9 +234,8 @@ pub fn normalize_batch_with_identity(
                 over_budget = true;
             }
         }
-        let snapshot = normalize_with_identity_without_candidates(
-            run.input, run.outcome, authority,
-        )?;
+        let snapshot =
+            normalize_with_identity_without_candidates(run.input, run.outcome, authority)?;
         let metadata = snapshot
             .runs
             .get(&run_id)
@@ -318,7 +316,10 @@ pub fn normalize_batch_with_identity(
     if over_budget {
         // Do not emit a misleading candidate subgraph for only the first
         // arbitrarily chosen N of a larger authorized batch.
-        builder.set_coverage("x509:issuer-candidate:v1:batch", crate::CoverageState::Partial);
+        builder.set_coverage(
+            "x509:issuer-candidate:v1:batch",
+            crate::CoverageState::Partial,
+        );
     } else {
         link_issuer_candidates(
             &mut builder,
