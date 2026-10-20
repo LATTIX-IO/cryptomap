@@ -675,6 +675,17 @@ impl InventoryBuilder {
         self.coverage.insert(item.into(), state);
         self
     }
+    /// Remaining room for inferred candidate edges, which each require one
+    /// new evidence record as well as one relationship. Enforce actual
+    /// snapshot headroom rather than allowing a resource-limited search to
+    /// fail during finalization without an explicit Partial coverage result.
+    pub(crate) fn remaining_candidate_edge_capacity(&self, limits: InventoryLimits) -> usize {
+        limits
+            .relationships
+            .saturating_sub(self.relationships.len())
+            .min(limits.evidence.saturating_sub(self.evidence.len()))
+    }
+
     /// Validate references, detect divergent observations and finalize an immutable snapshot.
     pub fn finalize(
         mut self,

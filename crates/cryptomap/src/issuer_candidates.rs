@@ -126,7 +126,9 @@ pub(crate) fn link_issuer_candidates(
     } = input;
     let marker = format!("{RULE}:{coverage_label}");
     let max_records = limits.certificates.min(raw_limits.observations);
-    let max_edges = limits.edges.min(inventory_limits.relationships);
+    let max_edges = limits
+        .edges
+        .min(builder.remaining_candidate_edge_capacity(inventory_limits));
     let cert_count = records
         .values()
         .filter(|raw| matches!(raw.fact, RawFactKind::Certificate { .. }))
@@ -382,6 +384,18 @@ mod tests {
         limits: CandidateLimits,
         collection_complete: bool,
     ) -> Result<crate::InventorySnapshot, PipelineError> {
+        correlate_with_inventory_limits(
+            auth, observations, limits, collection_complete, InventoryLimits::default()
+        )
+    }
+
+    fn correlate_with_inventory_limits(
+        auth: &CertificateIdentityAuthority,
+        observations: Vec<RawObservation>,
+        limits: CandidateLimits,
+        collection_complete: bool,
+        inventory_limits: InventoryLimits,
+    ) -> Result<crate::InventorySnapshot, PipelineError> {
         let mut builder = InventoryBuilder::new();
         let run = CollectionRunId::new("run-candidate").unwrap();
         builder.add_run(CollectionRun {
@@ -459,13 +473,13 @@ mod tests {
                 evidence: &evidences,
                 authority: auth,
                 raw_limits: RawLimits::default(),
-                inventory_limits: InventoryLimits::default(),
+                inventory_limits,
                 limits,
                 collection_complete,
                 coverage_label: run.as_str(),
             },
         )?;
-        Ok(builder.finalize(InventoryLimits::default())?)
+        Ok(builder.finalize(inventory_limits)?)
     }
 
     fn status(snapshot: &crate::InventorySnapshot) -> CoverageState {
@@ -579,6 +593,47 @@ mod tests {
         let partial = correlate(&auth, rows, limited_edges).unwrap();
         assert_eq!(partial.relationships.len(), 1);
         assert_eq!(status(&partial), CoverageState::Partial);
+    }
+
+    #[test]
+    fn existing_evidence_and_relationship_quotas_yield_partial_candidates() {
+        let auth = authority("tenant", "v1", 7);
+        let rows = vec![
+            record(&auth, "issuer-a", 'a', Some('a'), Some('d')),
+            record(&auth, "issuer-b", 'c', Some('a'), Some('d')),
+            record(&auth, "leaf", 'b', Some('b'), Some('a')),
+        ];
+        let one_edge = correlate_with_inventory_limits(
+            &auth,
+            rows.clone(),
+            CandidateLimits::default(),
+            true,
+            InventoryLimits {
+                relationships: 1,
+                evidence: 4,
+                ..InventoryLimits::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(one_edge.relationships.len(), 1);
+        assert_eq!(one_edge.evidence.len(), 4);
+        assert_eq!(status(&one_edge), CoverageState::Partial);
+
+        let zero_edges = correlate_with_inventory_limits(
+            &auth,
+            rows,
+            CandidateLimits::default(),
+            true,
+            InventoryLimits {
+                relationships: 1,
+                evidence: 3,
+                ..InventoryLimits::default()
+            },
+        )
+        .unwrap();
+        assert!(zero_edges.relationships.is_empty());
+        assert_eq!(zero_edges.evidence.len(), 3);
+        assert_eq!(status(&zero_edges), CoverageState::Partial);
     }
 
     #[test]
