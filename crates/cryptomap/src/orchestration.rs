@@ -128,7 +128,7 @@ fn preflight_batch(
     let mut unique_runs = BTreeSet::new();
     let mut source_count = 0_usize;
     // Do not call collectors until ALL independent invocations are trusted.
-    for invocation in &invocations {
+    for invocation in invocations.iter() {
         preflight(invocation)?;
         if invocation.input.scope.id() != &expected_scope
             || !unique_runs.insert(invocation.input.expected_run.clone())
