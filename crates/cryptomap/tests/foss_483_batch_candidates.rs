@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cryptomap::{
-    CollectionRunId, CollectionScopeId, CollectionStatus, CoverageState, EvidenceKind,
+    CollectionRunId, CollectionScopeId, CoverageState, EvidenceKind,
     IdentityContext, InventoryLimits, RelationshipKind,
     batch::{BatchLimits, BatchRun, normalize_batch_with_identity},
     certificate_identity::CertificateIdentityAuthority,
@@ -12,7 +12,7 @@ use cryptomap::{
         CertificateStoreGrant, CertificateStoreLocation, CertificateStoreTarget,
     },
     collector::{
-        CancellationToken, CollectionRequest, Collector, RequestedSource,
+        CancellationToken, CollectionRequest, CollectionStatus, Collector, RequestedSource,
     },
     collectors::{
         certificate::{CertificateFileCollector, MAX_CERT_FILE_BYTES},
