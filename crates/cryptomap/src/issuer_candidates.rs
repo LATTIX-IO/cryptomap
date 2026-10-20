@@ -544,6 +544,39 @@ mod tests {
     }
 
     #[test]
+    fn three_tier_root_intermediate_leaf_is_only_a_possible_graph() {
+        let auth = authority("tenant", "v1", 7);
+        let rows = vec![
+            record(&auth, "root", 'a', Some('a'), Some('a')),
+            record(&auth, "intermediate", 'b', Some('b'), Some('a')),
+            record(&auth, "leaf", 'c', Some('c'), Some('b')),
+        ];
+        let snapshot = correlate(&auth, rows, CandidateLimits::default()).unwrap();
+        assert_eq!(snapshot.relationships.len(), 2);
+        assert_eq!(status(&snapshot), CoverageState::InspectedObserved);
+        assert!(snapshot.relationships.values().all(|edge| {
+            edge.kind == RelationshipKind::RelatedTo && edge.evidence.len() == 3
+        }));
+        assert_eq!(
+            snapshot
+                .evidence
+                .values()
+                .filter(|entry| {
+                    entry.kind == EvidenceKind::Inferred
+                        && entry.inference_rule.as_deref() == Some(RULE)
+                })
+                .count(),
+            2
+        );
+        // Observing two matching name pairs does not validate either
+        // signature or make the terminal root into a trusted anchor.
+        assert!(!snapshot.relationships.values().any(|edge| {
+            edge.kind == RelationshipKind::IssuedBy
+                || edge.kind == RelationshipKind::ValidatedBy
+        }));
+    }
+
+    #[test]
     fn tampered_receipt_and_wrong_tenant_key_cannot_create_candidates() {
         let auth = authority("tenant-a", "v1", 7);
         let rows = vec![
