@@ -554,9 +554,11 @@ mod tests {
         let snapshot = correlate(&auth, rows, CandidateLimits::default()).unwrap();
         assert_eq!(snapshot.relationships.len(), 2);
         assert_eq!(status(&snapshot), CoverageState::InspectedObserved);
-        assert!(snapshot.relationships.values().all(|edge| {
-            edge.kind == RelationshipKind::RelatedTo && edge.evidence.len() == 3
-        }));
+        assert!(
+            snapshot.relationships.values().all(|edge| {
+                edge.kind == RelationshipKind::RelatedTo && edge.evidence.len() == 3
+            })
+        );
         assert_eq!(
             snapshot
                 .evidence
@@ -571,8 +573,7 @@ mod tests {
         // Observing two matching name pairs does not validate either
         // signature or make the terminal root into a trusted anchor.
         assert!(!snapshot.relationships.values().any(|edge| {
-            edge.kind == RelationshipKind::IssuedBy
-                || edge.kind == RelationshipKind::ValidatedBy
+            edge.kind == RelationshipKind::IssuedBy || edge.kind == RelationshipKind::ValidatedBy
         }));
     }
 
