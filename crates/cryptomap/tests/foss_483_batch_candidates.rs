@@ -250,12 +250,8 @@ fn authorized_three_run_pem_der_store_federation_is_candidate_only() {
     let mut replayed_runs = inputs(false, leaf_outcome.clone());
     let replay = replayed_runs[1].outcome.observations[0].clone();
     replayed_runs[1].outcome.observations.push(replay);
-    let replayed = normalize_batch_with_identity(
-        replayed_runs,
-        BatchLimits::default(),
-        &authority,
-    )
-    .unwrap();
+    let replayed =
+        normalize_batch_with_identity(replayed_runs, BatchLimits::default(), &authority).unwrap();
     assert_eq!(replayed, first);
 
     // Differing records under one event ID remain a normalization violation.
@@ -263,12 +259,9 @@ fn authorized_three_run_pem_der_store_federation_is_candidate_only() {
     let mut conflicting = divergent_runs[1].outcome.observations[0].clone();
     conflicting.source.offset = Some(1);
     divergent_runs[1].outcome.observations.push(conflicting);
-    assert!(normalize_batch_with_identity(
-        divergent_runs,
-        BatchLimits::default(),
-        &authority,
-    )
-    .is_err());
+    assert!(
+        normalize_batch_with_identity(divergent_runs, BatchLimits::default(), &authority,).is_err()
+    );
 
     assert_eq!(first.assets.len(), 2);
     assert_eq!(first.relationships.len(), 1);
