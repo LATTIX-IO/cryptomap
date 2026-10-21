@@ -788,14 +788,9 @@ mod tests {
             snapshot_bytes: semantic_size(&full) + 2048,
             ..InventoryLimits::default()
         };
-        let accepted = correlate_with_inventory_limits(
-            &auth,
-            rows,
-            CandidateLimits::default(),
-            true,
-            ample,
-        )
-        .unwrap();
+        let accepted =
+            correlate_with_inventory_limits(&auth, rows, CandidateLimits::default(), true, ample)
+                .unwrap();
         assert_eq!(accepted.relationships.len(), 1);
         assert_eq!(status(&accepted), CoverageState::InspectedObserved);
     }
