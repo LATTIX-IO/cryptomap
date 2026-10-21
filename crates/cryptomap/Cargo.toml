@@ -30,6 +30,8 @@ certificate-files = ["dep:x509-cert"]
 certificate-store-grants = ["certificate-files"]
 # Optional host-keyed X.509 identity hints; no default identity disclosure.
 certificate-identity = ["certificate-files", "dep:hmac", "dep:zeroize"]
+# B6.1 inert host-granted TLS connection plan. No DNS or handshake implementation.
+tls-probe = []
 
 [[example]]
 name = "certificate_store_authorization"
