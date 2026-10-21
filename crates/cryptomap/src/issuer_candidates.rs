@@ -217,6 +217,9 @@ pub(crate) fn link_issuer_candidates(
         }
     }
 
+    // Reserve a complete candidate coverage marker and the already-validated
+    // canonical base snapshot before adding any optional candidate records.
+    let mut byte_headroom = builder.candidate_snapshot_headroom(&marker, inventory_limits)?;
     let mut graph: BTreeMap<AssetId, BTreeSet<AssetId>> = BTreeMap::new();
     let mut pairs = 0usize;
     let mut edges = 0usize;
@@ -256,7 +259,7 @@ pub(crate) fn link_issuer_candidates(
             let inferred_id =
                 EvidenceId::new(format!("evidence:v1:{:x}", Sha256::digest(serialized)))?;
             let raw = child.record;
-            builder.add_evidence(Evidence {
+            let inferred = Evidence {
                 id: inferred_id.clone(),
                 collector: raw.collector.clone(),
                 collector_version: raw.collector_version.clone(),
@@ -267,11 +270,11 @@ pub(crate) fn link_issuer_candidates(
                 confidence: Confidence::Low,
                 source_sha256: None,
                 inference_rule: Some(RULE.to_owned()),
-            })?;
+            };
             let mut backing = child.evidence.clone();
             backing.extend(issuer.evidence.iter().cloned());
             backing.insert(inferred_id);
-            builder.add_relationship(Relationship {
+            let relation = Relationship {
                 id: RelationshipId::from_endpoints(
                     RelationshipKind::RelatedTo,
                     child_id,
@@ -281,7 +284,18 @@ pub(crate) fn link_issuer_candidates(
                 to: issuer_id.clone(),
                 kind: RelationshipKind::RelatedTo,
                 evidence: backing,
-            })?;
+            };
+            // The size limit covers the final serialized snapshot, not just
+            // evidence/relationship counts. Reserving worst-case JSON map
+            // growth keeps an otherwise valid base inventory returnable.
+            let growth = InventoryBuilder::candidate_edge_byte_growth(&inferred, &relation)?;
+            if growth > byte_headroom {
+                partial = true;
+                break;
+            }
+            builder.add_evidence(inferred)?;
+            builder.add_relationship(relation)?;
+            byte_headroom -= growth;
             graph
                 .entry(child_id.clone())
                 .or_default()
