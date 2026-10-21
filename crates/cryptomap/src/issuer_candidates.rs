@@ -731,6 +731,76 @@ mod tests {
     }
 
     #[test]
+    fn serialized_snapshot_limit_truncates_only_optional_candidates() {
+        let auth = authority("tenant", "v1", 7);
+        let rows = vec![
+            record(&auth, "issuer", 'a', Some('a'), Some('c')),
+            record(&auth, "leaf", 'b', Some('b'), Some('a')),
+        ];
+        let semantic_size = |snapshot: &crate::InventorySnapshot| {
+            serde_json::to_vec(&(
+                snapshot.schema_version,
+                &snapshot.assets,
+                &snapshot.observations,
+                &snapshot.evidence,
+                &snapshot.relationships,
+                &snapshot.conflicts,
+                &snapshot.coverage,
+                &snapshot.runs,
+                &snapshot.coverage_records,
+            ))
+            .unwrap()
+            .len()
+        };
+        let zero_edges = correlate(
+            &auth,
+            rows.clone(),
+            CandidateLimits {
+                edges: 0,
+                ..CandidateLimits::default()
+            },
+        )
+        .unwrap();
+        let mut reserved = zero_edges.clone();
+        reserved.coverage.insert(
+            "x509:issuer-candidate:v1:run-candidate".into(),
+            CoverageState::InspectedNoObservation,
+        );
+        let tight = InventoryLimits {
+            snapshot_bytes: semantic_size(&reserved) + 8,
+            ..InventoryLimits::default()
+        };
+        let partial = correlate_with_inventory_limits(
+            &auth,
+            rows.clone(),
+            CandidateLimits::default(),
+            true,
+            tight,
+        )
+        .unwrap();
+        assert_eq!(partial.relationships.len(), 0);
+        assert_eq!(partial.assets.len(), 2);
+        assert_eq!(status(&partial), CoverageState::Partial);
+        assert!(semantic_size(&partial) <= tight.snapshot_bytes);
+
+        let full = correlate(&auth, rows.clone(), CandidateLimits::default()).unwrap();
+        let ample = InventoryLimits {
+            snapshot_bytes: semantic_size(&full) + 2048,
+            ..InventoryLimits::default()
+        };
+        let accepted = correlate_with_inventory_limits(
+            &auth,
+            rows,
+            CandidateLimits::default(),
+            true,
+            ample,
+        )
+        .unwrap();
+        assert_eq!(accepted.relationships.len(), 1);
+        assert_eq!(status(&accepted), CoverageState::InspectedObserved);
+    }
+
+    #[test]
     fn cycles_and_self_issued_do_not_become_verified_issuance() {
         let auth = authority("tenant", "v1", 7);
         let rows = vec![
