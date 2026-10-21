@@ -1,9 +1,9 @@
 # FOSS-483 — B5.6 bounded X.509 issuer-candidate correlation contract
 
-Status: implementation contract; **not an accepted implementation**. Baseline:
-protected `cryptomap/main` at `88cbd2d7fab9d1965d7f6480e1079ca9520fc2e6`, with B5.5 and separate Windows
-adapter provenance signed and verified. The B5.6 changes must remain on the
-FOSS-483 branch until the complete issue acceptance is satisfied.
+Status: B5.6 implementation and acceptance contract for PR #71, based on
+protected `cryptomap/main` at `88cbd2d7fab9d1965d7f6480e1079ca9520fc2e6`.
+B5.5 and the separate Windows adapter have verified protected-main provenance.
+B5.6 is not production-attested until its own merge and main-only signature checks.
 
 ## Security and semantic invariants
 
@@ -109,9 +109,13 @@ it never upgrades the real collection coverage. Identical certificate assets
 deduplicate; repeated source observations remain traceable. Invalid receipts,
 malformed opaque tokens or conflicting hints for the same asset fail closed.
 
-Scope of this first executable increment is **one authorized collection run**.
-It does not yet reconstruct cross-run/file/store evidence histories or supply
-AKI/SKI optional narrowing; those remain required before FOSS-483 is accepted.
+Increment A covers one authorized collection run; Increment B below extends
+matching across independently authorized PEM/DER and memory-only certificate-store
+runs while preserving exact source evidence and one common host-owned authority.
+The B5.5 identity profile contains role-neutral issuer/subject DN hints and an
+issuer-scoped serial hint, but **does not expose AKI/SKI comparison hints**.
+AKI/SKI-based narrowing is optional future work requiring a separately reviewed
+and versioned keyed-hint contract. Its absence does not imply X.509 verification.
 
 
 ## Operator verification for Increment A
@@ -198,3 +202,27 @@ This batch join is not temporal path validation, trust-anchor endorsement,
 signature verification or revocation checking. It also does not authorize
 federating previously materialized/imported snapshots: an attacker who can
 rewrite a snapshot digest cannot impersonate a host-owned HMAC authority.
+
+## Review hardening and bounded snapshot growth
+
+B5.6 reconciles identical certificate `event_id` replays within each run before
+charging candidate index quotas. The original outcome is retained unchanged for
+the existing normalizer, which rejects duplicate IDs carrying divergent content.
+
+Derived candidate coverage cannot overwrite any existing coverage key or a
+requested/typed source label, even if that source emitted no observations. Such
+a collision fails closed rather than changing the reported inspection outcome.
+
+The matcher preflights the canonical semantic JSON size of the base inventory,
+including a worst-case candidate-stage coverage marker. Each proposed inferred
+evidence and relationship entry consumes a conservative additive serialization
+budget (keys, values, separators). Once the remaining snapshot-byte headroom
+cannot accommodate an edge, further inference is bounded and candidate coverage
+becomes `Partial`, retaining the original asset and direct-source evidence.
+If even the base inventory plus its coverage marker exceeds a configured byte
+ceiling, normal validation reports `LimitExceeded`; it does not fabricate a
+successful or exhaustive inventory.
+
+The source grant boundary and the HMAC authority are unchanged. No trust-chain
+path search, certificate signature validation or automatic CA/store discovery
+is performed by the candidate matcher.
