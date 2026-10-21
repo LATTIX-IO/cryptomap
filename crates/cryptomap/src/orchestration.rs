@@ -103,6 +103,38 @@ pub fn collect_normalized_isolated(
     normalize(invocation.input, outcome)
 }
 
+fn preflight_batch(
+    invocations: &[ScopedInvocation<'_>],
+    limits: BatchLimits,
+) -> Result<(), PipelineError> {
+    limits.validate()?;
+    if invocations.is_empty()
+        || invocations.len() > limits.runs
+        || invocations.len() > limits.inventory.runs
+    {
+        return Err(InventoryError::LimitExceeded("batch runs").into());
+    }
+    let expected_scope = invocations[0].input.scope.id().clone();
+    let mut unique_runs = BTreeSet::new();
+    let mut source_count = 0_usize;
+    // Do not call collectors until ALL independent invocations are trusted.
+    for invocation in invocations.iter() {
+        preflight(invocation)?;
+        if invocation.input.scope.id() != &expected_scope
+            || !unique_runs.insert(invocation.input.expected_run.clone())
+        {
+            return Err(PipelineError::InvalidOutcome);
+        }
+        source_count = source_count
+            .checked_add(invocation.input.sources.len())
+            .ok_or(InventoryError::LimitExceeded("batch sources"))?;
+        if source_count > limits.sources {
+            return Err(InventoryError::LimitExceeded("batch sources").into());
+        }
+    }
+    Ok(())
+}
+
 /// Execute heterogeneous authorized collectors and deterministically reconcile.
 ///
 /// Preflight is **all-or-nothing**: a bad tenant, run, descriptor, source or
@@ -118,31 +150,7 @@ pub fn collect_normalized_batch(
     limits: BatchLimits,
     cancel: &CancellationToken,
 ) -> Result<InventorySnapshot, PipelineError> {
-    limits.validate()?;
-    if invocations.is_empty()
-        || invocations.len() > limits.runs
-        || invocations.len() > limits.inventory.runs
-    {
-        return Err(InventoryError::LimitExceeded("batch runs").into());
-    }
-    let expected_scope = invocations[0].input.scope.id().clone();
-    let mut unique_runs = BTreeSet::new();
-    let mut source_count = 0_usize;
-    // Do not call collectors until ALL independent invocations are trusted.
-    for invocation in &invocations {
-        preflight(invocation)?;
-        if invocation.input.scope.id() != &expected_scope
-            || !unique_runs.insert(invocation.input.expected_run.clone())
-        {
-            return Err(PipelineError::InvalidOutcome);
-        }
-        source_count = source_count
-            .checked_add(invocation.input.sources.len())
-            .ok_or(InventoryError::LimitExceeded("batch sources"))?;
-        if source_count > limits.sources {
-            return Err(InventoryError::LimitExceeded("batch sources").into());
-        }
-    }
+    preflight_batch(&invocations, limits)?;
     invocations.sort_by(|a, b| a.input.expected_run.cmp(b.input.expected_run));
     let mut normalized_inputs = Vec::with_capacity(invocations.len());
     for invocation in invocations {
@@ -164,6 +172,47 @@ pub fn collect_normalized_batch(
         });
     }
     normalize_batch(normalized_inputs, limits)
+}
+
+/// Perform a heterogeneous authorized collection batch and correlate issuer
+/// *candidates* using the same host-owned B5.5 scope-bound key.
+///
+/// All invocation grants and the common scope are checked BEFORE invoking
+/// the first collector. Per-run normalization authenticates original record
+/// receipts before the candidate graph is built. No ambient stores or AIA
+/// network discovery are performed by this orchestration layer.
+#[cfg(feature = "certificate-identity")]
+pub fn collect_normalized_batch_with_identity(
+    mut invocations: Vec<ScopedInvocation<'_>>,
+    limits: BatchLimits,
+    authority: &crate::certificate_identity::CertificateIdentityAuthority,
+    cancel: &CancellationToken,
+) -> Result<InventorySnapshot, PipelineError> {
+    preflight_batch(&invocations, limits)?;
+    authority
+        .check_scope(invocations[0].input.scope.id())
+        .map_err(|_| PipelineError::InvalidOutcome)?;
+    invocations.sort_by(|a, b| a.input.expected_run.cmp(b.input.expected_run));
+    let mut normalized_inputs = Vec::with_capacity(invocations.len());
+    for invocation in invocations {
+        let request = CollectionRequest {
+            run: invocation.input.expected_run.clone(),
+            sources: invocation.input.sources.to_vec(),
+            limits: invocation.input.raw_limits,
+            options: Default::default(),
+        };
+        let outcome = collect_scoped(
+            invocation.input.scope,
+            invocation.collector,
+            request,
+            cancel,
+        )?;
+        normalized_inputs.push(BatchRun {
+            input: invocation.input,
+            outcome,
+        });
+    }
+    crate::batch::normalize_batch_with_identity(normalized_inputs, limits, authority)
 }
 
 #[cfg(test)]
