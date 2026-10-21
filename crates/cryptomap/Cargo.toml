@@ -58,7 +58,7 @@ required-features = ["rust-source"]
 
 [dependencies]
 # RustCrypto structured DER/PEM certificate decoder, no time crate or trust validation.
-x509-cert = { version = "=0.2.5", default-features = false, features = ["pem", "std"], optional = true }
+x509-cert = { version = "=0.3.0", default-features = false, features = ["pem", "std"], optional = true }
 # Parser only: disable display, unbounded recursion and preserved ordering.
 toml = { version = "=0.8.23", default-features = false, features = ["parse"], optional = true }
 # Inspect parsed table syntax rather than brittle raw header text.
