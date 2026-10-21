@@ -2,12 +2,12 @@
 #![cfg(feature = "tls-probe")]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use cryptomap::{
+    CollectionScopeId,
     collector::RequestedSource,
     collectors::tls::probe::{TlsProbeLimits, TlsProbePlan, TlsProbePlanError},
     network_scope::NetworkTarget,
     raw::RawSourceKind,
     scope::CollectionScope,
-    CollectionScopeId,
 };
 use std::{
     io::ErrorKind,
@@ -71,7 +71,13 @@ fn missing_wrong_kind_or_ungranted_endpoint_is_rejected() {
     scope
         .grant_endpoint(NetworkTarget::new("127.0.0.1", 443, None, []).unwrap())
         .unwrap();
-    for item in ["127.0.0.2:443", "127.0.0.1:444", "EXAMPLE.ORG:443", "", "127.0.0.1:443 "] {
+    for item in [
+        "127.0.0.2:443",
+        "127.0.0.1:444",
+        "EXAMPLE.ORG:443",
+        "",
+        "127.0.0.1:443 ",
+    ] {
         assert!(matches!(
             TlsProbePlan::prepare(&scope, &requested(item), TlsProbeLimits::default()),
             Err(TlsProbePlanError::Unauthorized)
@@ -110,12 +116,8 @@ fn no_ambient_dns_no_sni_fallback_and_ipv6_bracketing() {
         name.destinations(),
         &[SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443)]
     );
-    let ipv6 = TlsProbePlan::prepare(
-        &scope,
-        &requested("[::1]:8443"),
-        TlsProbeLimits::default(),
-    )
-    .unwrap();
+    let ipv6 =
+        TlsProbePlan::prepare(&scope, &requested("[::1]:8443"), TlsProbeLimits::default()).unwrap();
     assert_eq!(ipv6.target_id(), "[::1]:8443");
     assert_eq!(ipv6.sni(), None);
     assert_eq!(
@@ -129,19 +131,58 @@ fn budgets_reject_zero_oversized_and_inconsistent_values() {
     let base = TlsProbeLimits::default();
     assert!(base.validate().is_ok());
     for limit in [
-        TlsProbeLimits { connect_timeout: Duration::ZERO, ..base },
-        TlsProbeLimits { connect_timeout: Duration::from_secs(31), ..base },
-        TlsProbeLimits { handshake_timeout: Duration::ZERO, ..base },
-        TlsProbeLimits { handshake_timeout: Duration::from_secs(31), ..base },
-        TlsProbeLimits { max_handshake_bytes: 0, ..base },
-        TlsProbeLimits { max_handshake_bytes: usize::MAX, ..base },
-        TlsProbeLimits { max_chain_der_bytes: 0, ..base },
-        TlsProbeLimits { max_chain_der_bytes: usize::MAX, ..base },
-        TlsProbeLimits { max_chain_der_bytes: base.max_handshake_bytes + 1, ..base },
-        TlsProbeLimits { max_certificates: 0, ..base },
-        TlsProbeLimits { max_certificates: 17, ..base },
-        TlsProbeLimits { max_attempts: 0, ..base },
-        TlsProbeLimits { max_attempts: 33, ..base },
+        TlsProbeLimits {
+            connect_timeout: Duration::ZERO,
+            ..base
+        },
+        TlsProbeLimits {
+            connect_timeout: Duration::from_secs(31),
+            ..base
+        },
+        TlsProbeLimits {
+            handshake_timeout: Duration::ZERO,
+            ..base
+        },
+        TlsProbeLimits {
+            handshake_timeout: Duration::from_secs(31),
+            ..base
+        },
+        TlsProbeLimits {
+            max_handshake_bytes: 0,
+            ..base
+        },
+        TlsProbeLimits {
+            max_handshake_bytes: usize::MAX,
+            ..base
+        },
+        TlsProbeLimits {
+            max_chain_der_bytes: 0,
+            ..base
+        },
+        TlsProbeLimits {
+            max_chain_der_bytes: usize::MAX,
+            ..base
+        },
+        TlsProbeLimits {
+            max_chain_der_bytes: base.max_handshake_bytes + 1,
+            ..base
+        },
+        TlsProbeLimits {
+            max_certificates: 0,
+            ..base
+        },
+        TlsProbeLimits {
+            max_certificates: 17,
+            ..base
+        },
+        TlsProbeLimits {
+            max_attempts: 0,
+            ..base
+        },
+        TlsProbeLimits {
+            max_attempts: 33,
+            ..base
+        },
     ] {
         assert_eq!(limit.validate(), Err(TlsProbePlanError::InvalidLimits));
     }
@@ -153,7 +194,10 @@ fn budgets_reject_zero_oversized_and_inconsistent_values() {
         TlsProbePlan::prepare(
             &scope,
             &requested("127.0.0.1:443"),
-            TlsProbeLimits { max_attempts: 0, ..base },
+            TlsProbeLimits {
+                max_attempts: 0,
+                ..base
+            },
         ),
         Err(TlsProbePlanError::InvalidLimits)
     ));

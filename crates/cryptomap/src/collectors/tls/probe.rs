@@ -6,9 +6,7 @@
 //! A plan never proves peer identity, availability or cryptographic use.
 
 use crate::{
-    collector::RequestedSource,
-    network_scope::AuthorizedEndpoint,
-    raw::RawSourceKind,
+    collector::RequestedSource, network_scope::AuthorizedEndpoint, raw::RawSourceKind,
     scope::CollectionScope,
 };
 use std::{net::SocketAddr, time::Duration};
