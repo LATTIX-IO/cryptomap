@@ -69,7 +69,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 # Already locked by RustCrypto DER: canonical ASN.1 OID validation for imported raw facts.
-const-oid = "=0.9.6"
+const-oid = "=0.10.2"
 # RustCrypto HMAC-SHA256 with exact 0.10 digest compatibility.
 hmac = { version = "=0.12.1", default-features = false, optional = true }
 zeroize = { version = "=1.9.1", default-features = false, features = ["alloc"], optional = true }
