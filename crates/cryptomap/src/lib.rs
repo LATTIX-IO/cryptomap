@@ -675,6 +675,25 @@ impl InventoryBuilder {
         self.coverage.insert(item.into(), state);
         self
     }
+    /// Record candidate-stage coverage without overwriting source coverage.
+    /// Source identifiers can otherwise collide with generated stage labels.
+    #[cfg(feature = "certificate-identity")]
+    pub(crate) fn set_candidate_coverage(
+        &mut self,
+        label: impl Into<String>,
+        state: CoverageState,
+    ) -> Result<(), InventoryError> {
+        let label = label.into();
+        if self.coverage.contains_key(&label)
+            || self.runs.values().any(|run| run.requested.contains(&label))
+            || self.coverage_records.iter().any(|r| r.source_item == label)
+        {
+            return Err(InventoryError::InvalidMetadata);
+        }
+        self.coverage.insert(label, state);
+        Ok(())
+    }
+
     /// Remaining room for inferred candidate edges, which each require one
     /// new evidence record as well as one relationship. Enforce actual
     /// snapshot headroom rather than allowing a resource-limited search to
