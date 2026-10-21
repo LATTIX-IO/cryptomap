@@ -246,7 +246,13 @@ pub fn normalize_batch_with_identity(
             .iter()
             .filter(|raw| matches!(raw.fact, RawFactKind::Certificate { .. }));
         let mut raw_certificates = Vec::new();
+        let mut seen_certificate_events = BTreeSet::new();
         for raw in eligible {
+            // Match normalize_inner's identical-event replay semantics while
+            // retaining the complete original outcome for conflict validation.
+            if !seen_certificate_events.insert(raw.event_id.as_str()) {
+                continue;
+            }
             candidate_records = candidate_records
                 .checked_add(1)
                 .ok_or(InventoryError::LimitExceeded("candidate record count"))?;
@@ -343,10 +349,10 @@ pub fn normalize_batch_with_identity(
     if over_budget {
         // Do not emit a misleading candidate subgraph for only the first
         // arbitrarily chosen N of a larger authorized batch.
-        builder.set_coverage(
+        builder.set_candidate_coverage(
             "x509:issuer-candidate:v1:batch",
             crate::CoverageState::Partial,
-        );
+        )?;
     } else {
         link_issuer_candidates(
             &mut builder,
