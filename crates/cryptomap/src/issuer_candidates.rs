@@ -134,18 +134,18 @@ pub(crate) fn link_issuer_candidates(
         .filter(|raw| matches!(raw.fact, RawFactKind::Certificate { .. }))
         .count();
     if cert_count == 0 {
-        builder.set_coverage(
+        builder.set_candidate_coverage(
             marker,
             if collection_complete {
                 CoverageState::NotInspected
             } else {
                 CoverageState::Partial
             },
-        );
+        )?;
         return Ok(());
     }
     if cert_count > max_records {
-        builder.set_coverage(marker, CoverageState::Partial);
+        builder.set_candidate_coverage(marker, CoverageState::Partial)?;
         return Ok(());
     }
 
@@ -203,7 +203,7 @@ pub(crate) fn link_issuer_candidates(
         }
     }
     if nodes.is_empty() {
-        builder.set_coverage(marker, CoverageState::Partial);
+        builder.set_candidate_coverage(marker, CoverageState::Partial)?;
         return Ok(());
     }
 
@@ -290,7 +290,7 @@ pub(crate) fn link_issuer_candidates(
         }
     }
 
-    builder.set_coverage(
+    builder.set_candidate_coverage(
         marker,
         if partial {
             CoverageState::Partial
@@ -299,7 +299,7 @@ pub(crate) fn link_issuer_candidates(
         } else {
             CoverageState::InspectedNoObservation
         },
-    );
+    )?;
     Ok(())
 }
 
