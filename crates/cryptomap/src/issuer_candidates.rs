@@ -491,6 +491,48 @@ mod tests {
     }
 
     #[test]
+    fn candidate_stage_cannot_clobber_real_source_coverage() {
+        let marker = "x509:issuer-candidate:v1:run-candidate";
+        let mut builder = InventoryBuilder::new();
+        builder.set_coverage(marker, CoverageState::InspectedObserved);
+        assert!(matches!(
+            builder.set_candidate_coverage(marker, CoverageState::InspectedNoObservation),
+            Err(crate::InventoryError::InvalidMetadata)
+        ));
+        let snapshot = builder.finalize(InventoryLimits::default()).unwrap();
+        assert_eq!(snapshot.coverage[marker], CoverageState::InspectedObserved);
+
+        // A source can own this name even when it yields no observations.
+        let mut builder = InventoryBuilder::new();
+        builder
+            .add_run(CollectionRun {
+                id: CollectionRunId::new("run-candidate").unwrap(),
+                collector: CollectorId::new("candidate-unit").unwrap(),
+                collector_version: "1".into(),
+                scope: CollectionScopeId::new("candidate-scope").unwrap(),
+                requested: BTreeSet::from([marker.to_owned()]),
+                started_at: AT.into(),
+                ended_at: AT.into(),
+                completeness: RunCompleteness::Complete,
+            })
+            .unwrap();
+        assert!(matches!(
+            builder.set_candidate_coverage(marker, CoverageState::Partial),
+            Err(crate::InventoryError::InvalidMetadata)
+        ));
+        builder.add_coverage_record(CoverageRecord {
+            run: CollectionRunId::new("run-candidate").unwrap(),
+            source_item: marker.into(),
+            state: CoverageState::InspectedNoObservation,
+            reason_code: None,
+        });
+        assert!(matches!(
+            builder.set_candidate_coverage(marker, CoverageState::Partial),
+            Err(crate::InventoryError::InvalidMetadata)
+        ));
+    }
+
+    #[test]
     fn leaf_matches_issuer_only_as_inferred_related_to() {
         let auth = authority("tenant", "v1", 7);
         let rows = vec![
