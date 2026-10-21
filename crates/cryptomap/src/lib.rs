@@ -582,7 +582,7 @@ fn typed_evidence_item<'a>(
 }
 
 /// Mutable accumulator; finalize validates and computes canonical snapshot identity.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct InventoryBuilder {
     assets: BTreeMap<AssetId, Asset>,
     observations: BTreeMap<ObservationId, Observation>,
@@ -692,6 +692,63 @@ impl InventoryBuilder {
         }
         self.coverage.insert(label, state);
         Ok(())
+    }
+
+    /// Remaining canonical JSON snapshot bytes after reserving the longest
+    /// candidate-stage coverage state. Finalization normally consumes the
+    /// builder, so perform this preflight on one bounded copy before graph
+    /// mutation; subsequent edge accounting is additive and conservative.
+    #[cfg(feature = "certificate-identity")]
+    pub(crate) fn candidate_snapshot_headroom(
+        &self,
+        label: &str,
+        limits: InventoryLimits,
+    ) -> Result<usize, InventoryError> {
+        let mut probe = self.clone();
+        probe.set_candidate_coverage(label, CoverageState::InspectedNoObservation)?;
+        let snapshot = probe.finalize(InventoryLimits {
+            snapshot_bytes: usize::MAX,
+            ..limits
+        })?;
+        let canonical = serde_json::to_vec(&(
+            snapshot.schema_version,
+            &snapshot.assets,
+            &snapshot.observations,
+            &snapshot.evidence,
+            &snapshot.relationships,
+            &snapshot.conflicts,
+            &snapshot.coverage,
+            &snapshot.runs,
+            &snapshot.coverage_records,
+        ))
+        .map_err(|err| InventoryError::Encoding(err.to_string()))?;
+        limits
+            .snapshot_bytes
+            .checked_sub(canonical.len())
+            .ok_or(InventoryError::LimitExceeded("snapshot bytes"))
+    }
+
+    /// Upper bound for one inferred evidence and candidate relationship JSON
+    /// map entry, including both map keys and separators. Existing relation
+    /// merges only grow less; no observations or conflict entries are added.
+    #[cfg(feature = "certificate-identity")]
+    pub(crate) fn candidate_edge_byte_growth(
+        evidence: &Evidence,
+        relation: &Relationship,
+    ) -> Result<usize, InventoryError> {
+        let mut total = 4usize; // two map colons and worst-case commas
+        for part in [
+            serde_json::to_vec(&evidence.id),
+            serde_json::to_vec(evidence),
+            serde_json::to_vec(&relation.id),
+            serde_json::to_vec(relation),
+        ] {
+            let bytes = part.map_err(|err| InventoryError::Encoding(err.to_string()))?;
+            total = total
+                .checked_add(bytes.len())
+                .ok_or(InventoryError::LimitExceeded("snapshot bytes"))?;
+        }
+        Ok(total)
     }
 
     /// Remaining room for inferred candidate edges, which each require one
