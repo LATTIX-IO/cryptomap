@@ -349,31 +349,31 @@ jobs:
           persist-credentials: false
 
       - name: Download exact CI-tested release candidate
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cryptomap-tested-crate
           path: candidate
 
       - name: Download validated SPDX inventory
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cryptomap-software-sbom
           path: sbom
 
       - name: Download separately qualified adapter archive
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cryptomap-adapter-tested-crate
           path: adapter-candidate
 
       - name: Download separately validated adapter SPDX
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cryptomap-adapter-software-sbom
           path: adapter-sbom
 
       - name: Download CI-tested core/adapter mapping
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cryptomap-paired-release-evidence
           path: paired
